@@ -14,7 +14,7 @@ def conv_time(time):
     return h+m+s
 
 
-def normalize(images, mAs_array, kV_array, gammas):
+def normalize(images, mAs_array, kV_array, gammas, window_center, window_width):
     print("normalize images")
     kVs = np.array([40, 50, 60, 70, 80, 90, 100, 109, 120, 125])
     a = np.array([20.4125, 61.6163, 138.4021, 250.8008, 398.963, 586.5949, 794.5124, 1006.1, 1252.2, 1404.2202])
@@ -46,11 +46,16 @@ def normalize(images, mAs_array, kV_array, gammas):
     
     #norm_images = images / fs
     norm_images = np.zeros((images.shape[0], images.shape[1]-20, images.shape[2]-20), dtype=np.float32)
+    minWindow = window_center - window_width / 2
+    windowScale = window_width / 4096
+    maxValue = minWindow + window_width
     for i in range(len(fs)):
+        images[i] = (minWindow[i] + windowScale[i]*images[i])
         norm_images[i] = -np.log(images[i,10:-10,10:-10] / fs[i])
-    #print(np.mean(f), np.median(f), np.max(f), np.min(f))
-    #print(np.mean(images), np.median(images), np.max(images), np.min(images))
-    #print(np.mean(norm_images), np.median(norm_images), np.max(norm_images), np.min(norm_images))
+    print(np.mean(fs), np.median(fs), np.max(fs), np.min(fs))
+    print(np.mean(mAs_array), np.median(mAs_array), np.max(mAs_array), np.min(mAs_array))
+    print(np.mean(images), np.median(images), np.max(images), np.min(images))
+    print(np.mean(norm_images), np.median(norm_images), np.max(norm_images), np.min(norm_images))
     return norm_images
 
 def filter_images(ims, ts, angles, mas):
@@ -85,6 +90,8 @@ def read_dicoms(indir):
     phis = []
     ims = []
     gammas = []
+    window_center = []
+    window_width = []
     for root, dirs, files in os.walk(indir):
         for entry in files:
             path = os.path.abspath(os.path.join(root, entry))
@@ -101,6 +108,8 @@ def read_dicoms(indir):
                 thetas.append(ds.PositionerPrimaryAngleIncrement)
                 phis.append(ds.PositionerSecondaryAngleIncrement)
                 ims.append(ds.pixel_array)
+                window_center.append(float(ds.WindowCenter))
+                window_width.append(float(ds.WindowCenter))
             else:
                 #ts.append(conv_time(ds.AcquisitionTime))
                 #ts.append(ds.AcquisitionTime + " - " + str(len(ts)))
@@ -109,6 +118,8 @@ def read_dicoms(indir):
                 phis.append(float(ds.PositionerSecondaryAngle))
                 ims.append(ds.pixel_array)
                 gammas.append(np.array(ds[0x0021,0x1028][0][0x0021,0x1042].value))
+                window_center.append(float(ds.WindowCenter))
+                window_width.append(float(ds.WindowCenter))
 
     print("create numpy arrays")
     kvs = np.array(kvs)
@@ -119,6 +130,8 @@ def read_dicoms(indir):
     thetas = np.array(thetas)
     phis = np.array(phis)
     ims = np.array(ims)
+    window_center = np.array(window_center)
+    window_width = np.array(window_width)
 
     dicom_angles = np.vstack((thetas*np.pi/180.0, phis*np.pi/180.0, np.zeros_like(thetas))).T
     angles = read_reg_angles(prefix, dicom_angles)
@@ -139,8 +152,10 @@ def read_dicoms(indir):
     kvs = kvs[filt]
     gammas = gammas[filt]
     angles = angles[filt]
+    window_center = window_center[filt]
+    window_width = window_width[filt]
 
-    ims = normalize(ims, μas, kvs, gammas)
+    ims = normalize(ims, μas, kvs, gammas, window_center, window_width)
 
     return ims, angles
 
@@ -212,11 +227,26 @@ def reco(prefix, path, origin, size, spacing):
     save_image(image, prefix+"reco_tigre_asd_pocs.nrrd")
     print("Runtime: ", time.process_time() - proctime)
 
+def circle_mask(size):
+    _xx, yy, zz = np.mgrid[:size[0], :size[1], :size[2]]
+    tube = (yy - size[1]/2)**2 + (zz - size[2]/2)**2
+    #sitk.WriteImage(sitk.GetImageFromArray(tube), "test.nrrd")
+    mask = tube > (size[1]/2 - 20)**2
+    #sitk.WriteImage(sitk.GetImageFromArray(np.array(mask,dtype=int)), "mask.nrrd")
+    return mask
+
 def save_image(image, filename):
-    image = sitk.GetImageFromArray(image)
+    μW = 0.019286726
+    μA = 0.000021063006
+    mask = circle_mask(image.shape)
+    image[mask] = 0
+    image = image[20:-20,20:-20,20:-20]
+    image = ((1000.0*image)/(μW-μA)) - 1000.0
+    image = sitk.GetImageFromArray(np.swapaxes(image, 1,2)[::-1,::-1])
     image.SetOrigin(origin[0])
     image.SetDirection(origin[1])
-    sitk.WriteImage(image, filename)
+    image.SetSpacing(spacing)
+    sitk.WriteImage(image, os.path.join("recos", filename))
 
 def read_cbct_info(path):
     reader = sitk.ImageSeriesReader()
@@ -228,24 +258,30 @@ def read_cbct_info(path):
     spacing = np.array(image.GetSpacing())
     return (origin, direction), size, spacing
 
-data = [#('lumb_cbct_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-163837.330000\\5sDR Body'),
-#('lumb_sin_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-123239.316000\\P16_DR_LD'),
-#('lumb_opti_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-150514.166000\\P16_DR_LD'),
-('loc_imbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'),
-('loc_imbu_sin_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
-('loc_imbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
-('loc_imbu_circ_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'),
-('loc_noimbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
-('loc_noimbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),]
+if __name__ == "__main__":
+    data = [#('lumb_short_cbct_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-163837.330000\\5sDR Body'),
+    #('lumb_cbct_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-163837.330000\\5sDR Body'),
+    #('lumb_sin_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-123239.316000\\P16_DR_LD'),
+    #('lumb_opti_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-150514.166000\\P16_DR_LD'),
+    #('lumb_imb_cbct_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-093446.875000\\20sDCT Head 70kV'),
+    #('lumb_imb_sin_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-122515.399000\\P16_DR_LD'),
+    #('lumb_imb_opti_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-093446.875000\\P16_DR_LD'),
+    #('lumb_imb_circ_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-140352.179000\\P16_DR_LD'),
+    ('loc_imbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'),
+    ('loc_imbu_sin_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
+    ('loc_imbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
+    ('loc_imbu_circ_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'),
+    ('loc_noimbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
+    ('loc_noimbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),]
 
-origin, size, spacing = read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+    origin, size, spacing = read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
 
-for prefix, path in data:
-    print(prefix, path)
-    proctime = time.process_time()
-    try:
-        reco(prefix, path, origin, size, spacing)
-    except Exception as e:
-        print(str(e))
+    for prefix, path in data:
+        print(prefix, path)
+        proctime = time.process_time()
+        try:
+            reco(prefix, path, origin, size, spacing)
+        except Exception as e:
+            print(str(e))
 
-    print("Runtime :", time.process_time() - proctime)
+        print("Runtime :", time.process_time() - proctime)
