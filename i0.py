@@ -86,7 +86,7 @@ def fit_i0(s):
     f4 = np.polyfit(s["μAs"]*0.001, avg, 2)
     return f1, f2, f3, f4
 
-def get_i0(input_path = r"D:\lumbal_spine_13.10.2020\output\70kVp"):
+def get_i0(input_path = r".\output\70kVp"):
     s = read_dicoms(input_path)
     avg = np.array([np.mean(i[:,100:-100,100:-100]) for i in s["im"]])
     image_count = np.array([len(i) for i in s["im"]])
@@ -96,7 +96,7 @@ def get_i0(input_path = r"D:\lumbal_spine_13.10.2020\output\70kVp"):
 
 
 if __name__ == "__main__":
-    s = read_dicoms(r"D:\lumbal_spine_13.10.2020\output\70kVp")
+    s = read_dicoms(r".\output\70kVp")
     
     s = norm_images(s)
     f1, f2, f3, f4 = fit_i0(s)

@@ -33,7 +33,7 @@ def normalize(images, mAs_array, kV_array, gammas, window_center, window_width):
     #kVs[70] = (86.04351234294207, 20.17212116766863)
     #kVs[70] = (-3.27759476, 264.10304478, 602.69536172)
 
-    f, gamma = i0.get_i0(r"D:\lumbal_spine_13.10.2020\output\70kVp")
+    f, gamma = i0.get_i0(r".\output\70kVp")
     kVs[70] = f
 
     fs = []
@@ -338,15 +338,15 @@ if __name__ == "__main__":
     #('lumb_imb_sin_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-122515.399000\\P16_DR_LD'),
     #('lumb_imb_opti_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-093446.875000\\P16_DR_LD'),
     #('lumb_imb_circ_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-140352.179000\\P16_DR_LD'),
-    #('loc_imbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'),
-    #('loc_imbu_sin_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
-    #('loc_imbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
-    ('loc_imbu_circ_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'),
-    #('loc_noimbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
-    #('loc_noimbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),
+    #('loc_imbu_cbct_', '.\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'),
+    #('loc_imbu_sin_', '.\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
+    #('loc_imbu_opti_', '.\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
+    ('loc_imbu_circ_', '.\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'),
+    #('loc_noimbu_cbct_', '.\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
+    #('loc_noimbu_opti_', '.\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),
     ]
 
-    origin, size, spacing = read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+    origin, size, spacing = read_cbct_info(r".\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
 
     for prefix, path in data:
         print(prefix, path)
