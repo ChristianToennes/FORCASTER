@@ -6,6 +6,7 @@ import os
 import os.path
 import tigre
 import time
+import i0
 
 def conv_time(time):
     h = float(time[:2])*60*60
@@ -16,42 +17,66 @@ def conv_time(time):
 
 def normalize(images, mAs_array, kV_array, gammas, window_center, window_width):
     print("normalize images")
-    kVs = np.array([40, 50, 60, 70, 80, 90, 100, 109, 120, 125])
-    a = np.array([20.4125, 61.6163, 138.4021, 250.8008, 398.963, 586.5949, 794.5124, 1006.1, 1252.2, 1404.2202])
-    b = np.array([677.964, 686.4824, 684.1844, 691.9573, 701.1038, 711.416, 729.8813, 750.0054, 791.9865, 796.101])
-    kVs = np.array([70])
-    a = np.array([98.2053])
-    b = np.array([232.7655])
+    kVs = {}
+    kVs[40] = (20.4125, 677.964)
+    kVs[50] = (61.6163, 686.4824)
+    kVs[60] = (138.4021, 684.1844)
+    kVs[70] = (250.8008, 691.9573)
+    kVs[80] = (398.963, 701.1038)
+    kVs[90] = (586.5949, 711.416)
+    kVs[100] = (794.5124, 729.8813)
+    kVs[109] = (1006.1, 750.0054)
+    kVs[120] = (1252.2, 791.9865)
+    kVs[125] = (1404.2202, 796.101)
+
+    #kVs[70] = (98.2053, 232.7655)
+    #kVs[70] = (86.04351234294207, 20.17212116766863)
+    #kVs[70] = (-3.27759476, 264.10304478, 602.69536172)
+
+    f, gamma = i0.get_i0(r"D:\lumbal_spine_13.10.2020\output\70kVp")
+    kVs[70] = f
 
     fs = []
     for mAs, kV in zip(mAs_array, kV_array):
-        if kV < kVs[0]:
-            f = a[0]*mAs + b[0]
-        elif kV > kVs[-1]:
-            f = a[-1]*mAs + b[-1]
-        elif kV in kVs:
-            f = a[kVs==kV]*mAs + b[kVs==kV]
+        if kV in kVs:
+            f = np.polyval(kVs[kV], mAs)
         else:
-            i1, i2 = np.argsort(np.abs(kVs-kV))[:2]
-            f1 = a[i1]*mAs + b[i1]
-            f2 = a[i2]*mAs + b[i2]
-            d1 = np.abs(kVs[i1]-kV)*1.0
-            d2 = np.abs(kVs[i2]-kV)*1.0
-            f = f1*(1.0-(d1/(d1+d2))) + f2*(1.0-(d2/(d1+d2)))
-        
-        #print(mAs, kV, f)
+            kVs_keys = np.array(list(sorted(kVs.keys())))
+            if kV < kVs_keys[0]:
+                f = np.polyval(kVs[kVs_keys[0]], mAs)
+            elif kV > kVs_keys[-1]:
+                f = np.polyval(kVs[kVs_keys[-1]], mAs)
+            else:
+                i1, i2 = np.argsort(np.abs(kVs_keys-kV))[:2]
+                f1 = np.polyval(kVs[kVs_keys[i1]], mAs)
+                f2 = np.polyval(kVs[kVs_keys[i2]], mAs)
+                d1 = np.abs(kVs_keys[i1]-kV)*1.0
+                d2 = np.abs(kVs_keys[i2]-kV)*1.0
+                f = f1*(1.0-(d1/(d1+d2))) + f2*(1.0-(d2/(d1+d2)))
         fs.append(f)
     
     fs = np.array(fs).flatten()
-    
+
     #norm_images = images / fs
-    norm_images = np.zeros((images.shape[0], images.shape[1]-20, images.shape[2]-20), dtype=np.float32)
+    norm_images = np.zeros((images.shape[0], images.shape[1]//4-20, images.shape[2]//4-20), dtype=np.float32)
     minWindow = window_center - window_width / 2
     windowScale = window_width / 4096
     maxValue = minWindow + window_width
+    
+    igamma = inverse_lut(gamma)
     for i in range(len(fs)):
-        images[i] = (minWindow[i] + windowScale[i]*images[i])
-        norm_images[i] = -np.log(images[i,10:-10,10:-10] / fs[i])
+        ilut = inverse_lut(gammas[i])
+        norm_img = images[i,40:-40:4,40:-40:4]
+        #norm_img[norm_img<0] = 0
+        #norm_img[norm_img>4095] = 4095
+
+        #norm_img = ilut[norm_img]
+        #norm_img = gamma[norm_img]
+
+        #norm_img = (minWindow[i] + windowScale[i]*norm_img)
+        #initial = fs[i]
+        #fs[i] = gammas[i][igamma[int(initial)]]
+        norm_images[i] = -np.log(norm_img / fs[i])
     print(np.mean(fs), np.median(fs), np.max(fs), np.min(fs))
     print(np.mean(mAs_array), np.median(mAs_array), np.max(mAs_array), np.min(mAs_array))
     print(np.mean(images), np.median(images), np.max(images), np.min(images))
@@ -60,14 +85,11 @@ def normalize(images, mAs_array, kV_array, gammas, window_center, window_width):
 
 def filter_images(ims, ts, angles, mas):
     print("filter images")  
-    if len(ts) == 1:
-        filt = 0
-    else:
-        filt = np.zeros_like(ts, dtype=bool)
+    filt = np.zeros_like(ts, dtype=bool)
 
-        for i, (angle, ma) in enumerate(zip(angles, mas)):
-            if ma <= np.min(mas[np.bitwise_and(angles[:,0]==angle[0], angles[:,1]==angle[1])]):
-                filt[i] = True
+    for i, (angle, ma) in enumerate(zip(angles, mas)):
+        if ma <= np.min(mas[np.bitwise_and(angles[:,0]==angle[0], angles[:,1]==angle[1])]):
+            filt[i] = True
     return filt
 
 def inverse_lut(lut):
@@ -92,28 +114,45 @@ def read_dicoms(indir):
     gammas = []
     window_center = []
     window_width = []
+    #sid = []
     for root, dirs, files in os.walk(indir):
         for entry in files:
             path = os.path.abspath(os.path.join(root, entry))
             #read DICOM files
             ds = pydicom.dcmread(path)
 
-            kvs.append(float(ds.KVP))
-            mas.append(float(ds.XRayTubeCurrent)*float(ds.ExposureTime))
-            μas.append(float(ds[0x0021,0x1004].value))
             if "PositionerPrimaryAngleIncrement" in dir(ds):
                 #ts.append(conv_time(ds.AcquisitionTime))
                 #ts.append(ds.AcquisitionTime + " - " + str(len(ts)))
-                ts.append(len(ts))
-                thetas.append(ds.PositionerPrimaryAngleIncrement)
-                phis.append(ds.PositionerSecondaryAngleIncrement)
-                ims.append(ds.pixel_array)
-                window_center.append(float(ds.WindowCenter))
-                window_width.append(float(ds.WindowCenter))
+                ims = ds.pixel_array
+                if (ds.BitsStored == 16):
+                    ims = np.array(ims*(2.0**14/2.0**16), dtype=int)
+                ts = list(range(len(ims)))
+                thetas = ds.PositionerPrimaryAngleIncrement
+                phis = ds.PositionerSecondaryAngleIncrement
+                window_center = [float(ds.WindowCenter)] * len(ts)
+                window_width = [float(ds.WindowCenter)] * len(ts)
+                gammas = [np.array(ds[0x0021,0x1028][0][0x0021,0x1042].value)] * len(ts)
+                #sid = ds[0x0021,0x1031].value
+                xray_info = np.array(ds[0x0021,0x100F].value)
+                kvs = xray_info[0::4]
+                mas = xray_info[1::4]*xray_info[2::4]*0.001
+                μas = xray_info[2::4]*0.001
+
+                thetas2 = np.array(ds[0x0021,0x1068].value)
+                phis2 = np.array(ds[0x0021,0x1072].value)/100
+
+                #print(thetas-thetas2/100)
+                #print(phis-phis2)
+                #angulation = ds[0x0021,0x105D].value
+                #orbital = ds[0x0021,0x105E].value
             else:
                 #ts.append(conv_time(ds.AcquisitionTime))
                 #ts.append(ds.AcquisitionTime + " - " + str(len(ts)))
                 ts.append(len(ts))
+                kvs.append(float(ds.KVP))
+                mas.append(float(ds.XRayTubeCurrent)*float(ds.ExposureTime)*0.001)
+                μas.append(float(ds[0x0021,0x1004].value)*0.001)
                 thetas.append(float(ds.PositionerPrimaryAngle))
                 phis.append(float(ds.PositionerSecondaryAngle))
                 ims.append(ds.pixel_array)
@@ -146,7 +185,7 @@ def read_dicoms(indir):
     print(dicom_angles[diff>0.1,2], angles[diff>0.1,2], diff[diff>0.1])
 
     filt = filter_images(ims, ts, angles, mas)
-    ims = ims[filt, ::4, ::4]
+    ims = ims[filt]
     μas = μas[filt]
     mas = mas[filt]
     kvs = kvs[filt]
@@ -241,17 +280,48 @@ def save_image(image, filename):
     mask = circle_mask(image.shape)
     image[mask] = 0
     image = image[20:-20,20:-20,20:-20]
-    image = ((1000.0*image)/(μW-μA)) - 1000.0
-    image = sitk.GetImageFromArray(np.swapaxes(image, 1,2)[::-1,::-1])
+    image = 1000.0*((image - μW)/(μW-μA))
+    name = 'vectors_' + prefix.split('_', maxsplit=1)[1][:-1] + '.mat'
+    if not os.path.isfile(name):
+        image = sitk.GetImageFromArray(image)
+    else:
+        image = sitk.GetImageFromArray(np.swapaxes(image, 1,2)[::-1,::-1])
     image.SetOrigin(origin[0])
     image.SetDirection(origin[1])
     image.SetSpacing(spacing)
     sitk.WriteImage(image, os.path.join("recos", filename))
 
 def read_cbct_info(path):
+
+    # open 2 fds
+    null_fds = [os.open(os.devnull, os.O_RDWR) for x in range(2)]
+    # save the current file descriptors to a tuple
+    save = os.dup(1), os.dup(2)
+    # put /dev/null fds on 1 and 2
+    os.dup2(null_fds[0], 1)
+    os.dup2(null_fds[1], 2)
+
+    # *** run the function ***
+    
+
+    sitk.ProcessObject_GlobalDefaultDebugOff()
+    sitk.ProcessObject_GlobalWarningDisplayOff()
     reader = sitk.ImageSeriesReader()
+    reader.DebugOff()
+    reader.GlobalWarningDisplayOff()
+    reader.MetaDataDictionaryArrayUpdateOn()
+    reader.LoadPrivateTagsOn()
     reader.SetFileNames([os.path.join(path, f) for f in sorted(os.listdir(path))])
     image = reader.Execute()
+    
+
+    # restore file descriptors so I can print the results
+    os.dup2(save[0], 1)
+    os.dup2(save[1], 2)
+    # close the temporary fds
+    os.close(null_fds[0])
+    os.close(null_fds[1])
+
     size = np.array(image.GetSize())
     origin = image.GetOrigin()
     direction = image.GetDirection()
@@ -259,7 +329,8 @@ def read_cbct_info(path):
     return (origin, direction), size, spacing
 
 if __name__ == "__main__":
-    data = [#('lumb_short_cbct_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-163837.330000\\5sDR Body'),
+    data = [
+    #('lumb_short_cbct_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-163837.330000\\5sDR Body'),
     #('lumb_cbct_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-163837.330000\\5sDR Body'),
     #('lumb_sin_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-123239.316000\\P16_DR_LD'),
     #('lumb_opti_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine\\20201013-150514.166000\\P16_DR_LD'),
@@ -267,12 +338,13 @@ if __name__ == "__main__":
     #('lumb_imb_sin_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-122515.399000\\P16_DR_LD'),
     #('lumb_imb_opti_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-093446.875000\\P16_DR_LD'),
     #('lumb_imb_circ_', 'C:\\Users\\ich\\Source\\reco\\CKM_LumbalSpine_Imbu\\20201020-140352.179000\\P16_DR_LD'),
-    ('loc_imbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'),
-    ('loc_imbu_sin_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
-    ('loc_imbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
+    #('loc_imbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'),
+    #('loc_imbu_sin_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
+    #('loc_imbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
     ('loc_imbu_circ_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'),
-    ('loc_noimbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
-    ('loc_noimbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),]
+    #('loc_noimbu_cbct_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
+    #('loc_noimbu_opti_', 'D:\\lumbal_spine_13.10.2020\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),
+    ]
 
     origin, size, spacing = read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
 
@@ -283,5 +355,6 @@ if __name__ == "__main__":
             reco(prefix, path, origin, size, spacing)
         except Exception as e:
             print(str(e))
+            raise
 
         print("Runtime :", time.process_time() - proctime)
