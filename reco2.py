@@ -32,7 +32,7 @@ def normalize(images, mAs_array, kV_array, gammas, window_center, window_width):
     #kVs[70] = (98.2053, 232.7655)
     #kVs[70] = (86.04351234294207, 20.17212116766863)
     #kVs[70] = (-3.27759476, 264.10304478, 602.69536172)
-
+    
     f, gamma = i0.get_i0(r".\output\70kVp")
     kVs[70] = f
 
@@ -65,18 +65,13 @@ def normalize(images, mAs_array, kV_array, gammas, window_center, window_width):
     
     igamma = inverse_lut(gamma)
     for i in range(len(fs)):
-        ilut = inverse_lut(gammas[i])
         norm_img = images[i,40:-40:4,40:-40:4]
-        #norm_img[norm_img<0] = 0
-        #norm_img[norm_img>4095] = 4095
 
-        #norm_img = ilut[norm_img]
-        #norm_img = gamma[norm_img]
+        norm_img = norm_img / fs[i]
+        
+        norm_img = -np.log(norm_img)
 
-        #norm_img = (minWindow[i] + windowScale[i]*norm_img)
-        #initial = fs[i]
-        #fs[i] = gammas[i][igamma[int(initial)]]
-        norm_images[i] = -np.log(norm_img / fs[i])
+        norm_images[i] = norm_img
     print(np.mean(fs), np.median(fs), np.max(fs), np.min(fs))
     print(np.mean(mAs_array), np.median(mAs_array), np.max(mAs_array), np.min(mAs_array))
     print(np.mean(images), np.median(images), np.max(images), np.min(images))
@@ -85,7 +80,7 @@ def normalize(images, mAs_array, kV_array, gammas, window_center, window_width):
 
 def filter_images(ims, ts, angles, mas):
     print("filter images")  
-    filt = np.zeros_like(ts, dtype=bool)
+    filt = np.zeros(ts.shape, dtype=bool)
 
     for i, (angle, ma) in enumerate(zip(angles, mas)):
         if ma <= np.min(mas[np.bitwise_and(angles[:,0]==angle[0], angles[:,1]==angle[1])]):
@@ -229,9 +224,9 @@ def reco(prefix, path, origin, size, spacing):
     geo.DSD = dSD
     geo.DSO = dSI
 
-    geo.nVoxel = size           # number of voxels              (vx)
-    geo.sVoxel = size*spacing    # total size of the image       (mm)
-    geo.dVoxel = spacing
+    geo.nVoxel = np.roll(size+20, 1)           # number of voxels              (vx)
+    geo.sVoxel = np.roll((size+20)*spacing, 1)    # total size of the image       (mm)
+    geo.dVoxel = np.roll(spacing, 1)
 
     print("start fdk")
     proctime = time.process_time()
@@ -283,7 +278,7 @@ def save_image(image, filename):
     image = 1000.0*((image - μW)/(μW-μA))
     name = 'vectors_' + prefix.split('_', maxsplit=1)[1][:-1] + '.mat'
     if not os.path.isfile(name):
-        image = sitk.GetImageFromArray(image)
+        image = sitk.GetImageFromArray(np.swapaxes(image, 1,2)[::-1,::-1])
     else:
         image = sitk.GetImageFromArray(np.swapaxes(image, 1,2)[::-1,::-1])
     image.SetOrigin(origin[0])
