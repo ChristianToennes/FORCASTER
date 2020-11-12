@@ -12,6 +12,8 @@ def read_dicoms(path):
     wc = []
     ww = []
     im = []
+    wv = []
+    dose = []
     gamma = []
     for basepath, _, files in os.walk(path):
         for filename in files:
@@ -23,6 +25,8 @@ def read_dicoms(path):
             pw.append(float(dicom.AveragePulseWidth))
             wc.append(float(dicom.WindowCenter))
             ww.append(float(dicom.WindowWidth))
+            dose.append(float(dicom[0x0021,0x1005].value))
+            wv.append(float(dicom[0x0021,0x1049].value))
             im.append(dicom.pixel_array)
             gamma.append(np.array(dicom[0x0021,0x1028][0][0x0021,0x1042].value))
     
@@ -34,9 +38,11 @@ def read_dicoms(path):
     wc = np.array(wc)
     ww = np.array(ww)
     im = np.array(im)
+    dose = np.array(dose)
+    wv = np.array(wv)
     gamma = np.array(gamma)
 
-    return {"kv": kv, "mA": mA, "ms": ms, "μAs": μAs, "pw": pw, "wc": wc, "ww": ww, "im": im, "gamma": gamma}
+    return {"kv": kv, "mA": mA, "ms": ms, "μAs": μAs, "pw": pw, "wc": wc, "ww": ww, "im": im, "gamma": gamma, "wv": wv, "dose": dose}
 
 def inverse_lut(lut):
     ilut = np.zeros_like(lut)
@@ -68,12 +74,12 @@ def norm_images(s):
     im_norm = np.array([igamma[im_norm] for igamma, im_norm in zip(igamma, im_norm)])
     print("averaging")
     im_norm = np.array([np.mean(i) for i in im_norm])
-    print("reverse windowing")
-    im_norm_windowed = im_norm*(s["ww"]/4096) + (s["wc"]-s["ww"]/2)
-    im_windowed = s["im"]*(s["ww"]/4096) + (s["wc"]-s["ww"]/2)
+    #print("reverse windowing")
+    #im_norm_windowed = im_norm*(s["ww"]/4096) + (s["wc"]-s["ww"]/2)
+    #im_windowed = s["im"]*(s["ww"]/4096) + (s["wc"]-s["ww"]/2)
     s["im_norm"] = im_norm
-    s["im_norm_windowed"] = im_norm_windowed
-    s["im_windowed"] = im_windowed
+    s["im_norm_windowed"] = s["wv"]
+    s["im_windowed"] = s["dose"]
     return s
 
 def fit_i0(s):
@@ -82,7 +88,7 @@ def fit_i0(s):
     f2 = np.polyfit(s["μAs"]*0.001, s["im_norm_windowed"], 2)
     avg = np.array([np.mean(i) for i in s["im"]])
     avg_windowed = np.array([np.mean(i) for i in s["im_windowed"]])
-    f3 = np.polyfit(s["μAs"]*0.001, avg_windowed,  2)
+    f3 = np.polyfit(s["μAs"]*0.001, s["im_windowed"],  2)
     f4 = np.polyfit(s["μAs"]*0.001, avg, 2)
     return f1, f2, f3, f4
 
@@ -117,7 +123,7 @@ if __name__ == "__main__":
     plt.title("windowing reversed")
     plt.plot(x, np.polyval(f3, x), "r", label="{}".format(f3))
     avg = np.array([np.mean(i) for i in s["im_windowed"]])
-    plt.scatter(y, avg, c="g", label="")
+    plt.scatter(y, s["im_windowed"], c="g", label="")
     plt.legend()
     ax = plt.subplot(221)
     plt.title("no corrections")

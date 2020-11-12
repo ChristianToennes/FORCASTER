@@ -7,6 +7,7 @@ import os.path
 import tigre
 import time
 import i0
+import mlem
 
 def conv_time(time):
     h = float(time[:2])*60*60
@@ -15,7 +16,7 @@ def conv_time(time):
     return h+m+s
 
 
-def normalize(images, mAs_array, kV_array, gammas, window_center, window_width):
+def normalize(images, mAs_array, kV_array, gammas, window_center, window_width, water_value):
     print("normalize images")
     kVs = {}
     kVs[40] = (20.4125, 677.964)
@@ -62,7 +63,7 @@ def normalize(images, mAs_array, kV_array, gammas, window_center, window_width):
     minWindow = window_center - window_width / 2
     windowScale = window_width / 4096
     maxValue = minWindow + window_width
-    
+    wv = []
     igamma = inverse_lut(gamma)
     for i in range(len(fs)):
         norm_img = images[i,40:-40:4,40:-40:4]
@@ -109,6 +110,8 @@ def read_dicoms(indir):
     gammas = []
     window_center = []
     window_width = []
+    water_value = []
+
     #sid = []
     for root, dirs, files in os.walk(indir):
         for entry in files:
@@ -117,7 +120,7 @@ def read_dicoms(indir):
             ds = pydicom.dcmread(path)
 
             if "PositionerPrimaryAngleIncrement" in dir(ds):
-                #ts.append(conv_time(ds.AcquisitionTime))
+                #ts.append(conv_time(ds.AcqusitionTime))
                 #ts.append(ds.AcquisitionTime + " - " + str(len(ts)))
                 ims = ds.pixel_array
                 if (ds.BitsStored == 16):
@@ -126,7 +129,7 @@ def read_dicoms(indir):
                 thetas = ds.PositionerPrimaryAngleIncrement
                 phis = ds.PositionerSecondaryAngleIncrement
                 window_center = [float(ds.WindowCenter)] * len(ts)
-                window_width = [float(ds.WindowCenter)] * len(ts)
+                window_width = [float(ds.WindowWidth)] * len(ts)
                 gammas = [np.array(ds[0x0021,0x1028][0][0x0021,0x1042].value)] * len(ts)
                 #sid = ds[0x0021,0x1031].value
                 xray_info = np.array(ds[0x0021,0x100F].value)
@@ -137,11 +140,13 @@ def read_dicoms(indir):
                 thetas2 = np.array(ds[0x0021,0x1068].value)
                 phis2 = np.array(ds[0x0021,0x1072].value)/100
 
+                water_value = [float(ds[0x0021,0x1049].value)]*len(ts)
+
                 #print(thetas-thetas2/100)
                 #print(phis-phis2)
                 #angulation = ds[0x0021,0x105D].value
                 #orbital = ds[0x0021,0x105E].value
-            else:
+            elif "PositionerPrimaryAngle" in dir(ds):
                 #ts.append(conv_time(ds.AcquisitionTime))
                 #ts.append(ds.AcquisitionTime + " - " + str(len(ts)))
                 ts.append(len(ts))
@@ -153,7 +158,8 @@ def read_dicoms(indir):
                 ims.append(ds.pixel_array)
                 gammas.append(np.array(ds[0x0021,0x1028][0][0x0021,0x1042].value))
                 window_center.append(float(ds.WindowCenter))
-                window_width.append(float(ds.WindowCenter))
+                window_width.append(float(ds.WindowWidth))
+                water_value.append(float(ds[0x0021,0x1049].value))
 
     print("create numpy arrays")
     kvs = np.array(kvs)
@@ -166,6 +172,7 @@ def read_dicoms(indir):
     ims = np.array(ims)
     window_center = np.array(window_center)
     window_width = np.array(window_width)
+    water_value = np.array(water_value)
 
     dicom_angles = np.vstack((thetas*np.pi/180.0, phis*np.pi/180.0, np.zeros_like(thetas))).T
     angles = read_reg_angles(prefix, dicom_angles)
@@ -179,6 +186,7 @@ def read_dicoms(indir):
     diff = np.abs(dicom_angles[:,2]-angles[:,2])
     print(dicom_angles[diff>0.1,2], angles[diff>0.1,2], diff[diff>0.1])
 
+        
     filt = filter_images(ims, ts, angles, mas)
     ims = ims[filt]
     μas = μas[filt]
@@ -188,8 +196,9 @@ def read_dicoms(indir):
     angles = angles[filt]
     window_center = window_center[filt]
     window_width = window_width[filt]
+    water_value = water_value[filt]
 
-    ims = normalize(ims, μas, kvs, gammas, window_center, window_width)
+    ims = normalize(ims, μas, kvs, gammas, window_center, window_width, water_value)
 
     return ims, angles
 
@@ -211,12 +220,11 @@ def read_reg_angles(prefix, dicom_angles):
         return np.array(angles)
     return dicom_angles
 
-def reco(prefix, path, origin, size, spacing):
-    ims, angles = read_dicoms(path)
-
+def create_geo(ims_shape, size, spacing):
+    
     geo = tigre.geometry(mode='cone', nVoxel=np.array([512,512,512]),default=True)
-    geo.nDetector = np.array((ims.shape[1], ims.shape[2]))             # number of pixels              (px)
-    geo.dDetector = np.array((0.154*1920/ims.shape[1], 0.154*2480/ims.shape[2]))             # size of each pixel            (mm)
+    geo.nDetector = np.array((ims_shape[1], ims_shape[2]))             # number of pixels              (px)
+    geo.dDetector = np.array((0.154*1920/ims_shape[1], 0.154*2480/ims_shape[2]))             # size of each pixel            (mm)
     geo.sDetector = geo.dDetector * geo.nDetector
 
     dSD = 1198
@@ -228,11 +236,25 @@ def reco(prefix, path, origin, size, spacing):
     geo.sVoxel = np.roll((size+20)*spacing, 1)    # total size of the image       (mm)
     geo.dVoxel = np.roll(spacing, 1)
 
+    return geo
+
+def reco(prefix, path, origin, size, spacing):
+    ims, angles = read_dicoms(path)
+
+    geo = create_geo(ims.shape, size, spacing)
+
     print("start fdk")
     proctime = time.process_time()
     image = tigre.algorithms.fdk(ims,geo,angles)
     save_image(image, prefix+"reco_tigre_fdk.nrrd")
     print("Runtime: ", time.process_time() - proctime)
+    print("start mlem")
+    niter = 15
+    proctime = time.process_time()
+    image = mlem.mlem(ims,geo,angles,niter)
+    save_image(image, prefix+"reco_tigre_mlem.nrrd")
+    print("Runtime: ", time.process_time() - proctime)
+    return
     print("start ossart")
     niter = 30
     proctime = time.process_time()
@@ -339,6 +361,7 @@ if __name__ == "__main__":
     ('loc_imbu_circ_', '.\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'),
     #('loc_noimbu_cbct_', '.\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
     #('loc_noimbu_opti_', '.\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),
+    #('fake_imbu_cbct_', r".\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
     ]
 
     origin, size, spacing = read_cbct_info(r".\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
