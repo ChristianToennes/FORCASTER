@@ -1,4 +1,5 @@
 import tigre
+import astra
 import numpy as np
 import time
 import scipy.ndimage
@@ -98,6 +99,27 @@ def R(fs, q=2,λ=0.2):
             w_sum += w*np.abs(fs[k]-fs[j])**(q-1)*np.sign(fs[k]-fs[j])
     return λ**q * q * w_sum
 
+
+W = np.zeros((3,3,3), dtype=np.bool)
+for i in range(W.shape[0]):
+    for j in range(W.shape[1]):
+        for k in range(W.shape[2]):
+            if i != 1 and j != 1 and k != 1:
+                W[i, j, k] = 1.0 / np.sqrt((1-i)*(1-i) + (1-j)*(1-j) + (1-k)*(1-k))
+
+W = W.flatten()
+
+def μm(μ, f):
+    def filt(data):
+        return np.sum([w*f(data[13]-d) for d,w in zip(data,W)])
+    return scipy.ndimage.generic_filter(μ, filt, size=3)
+
+δ = 0.001
+ψ = lambda x: x**2/2 if x <= δ else δ*np.abs(x)-0.5*δ**2
+δψ = lambda x: x if x <= δ else δ*x/np.abs(x)
+δδψ = lambda x: 1 if x <= δ else 0
+
+
 def mlem0(proj, geo, angles, iters, initial=None): # aootaphao 2008
     if initial is None:
         initial = tigre.algorithms.fdk(proj,geo,angles)
@@ -118,26 +140,6 @@ def mlem0(proj, geo, angles, iters, initial=None): # aootaphao 2008
     f[f==0] = 0.1
     print("backprojected data", time.process_time()-proctime, "s mean value:", np.mean(f))
 
-    W = np.zeros((3,3,3), dtype=np.bool)
-    for i in range(W.shape[0]):
-        for j in range(W.shape[1]):
-            for k in range(W.shape[2]):
-                if i != 1 and j != 1 and k != 1:
-                    W[i, j, k] = 1.0 / np.sqrt((1-i)*(1-i) + (1-j)*(1-j) + (1-k)*(1-k))
-    
-    W = W.flatten()
-    
-    def μm(μ, f):
-        t = μ.reshape(μshape)
-        def filt(data):
-            return np.sum([w*f(data[13]-d) for d,w in zip(data,W)])
-        return scipy.ndimage.generic_filter(t, filt, size=3).flatten()
-
-    δ = 0.001
-    ψ = lambda x: x**2/2 if x <= δ else δ*np.abs(x)-0.5*δ**2
-    δψ = lambda x: x if x <= δ else δ*x/np.abs(x)
-    δδψ = lambda x: 1 if x <= δ else 0
-
     for i in range(iters):
         proctime = time.process_time()
         print("start iter ", i)
@@ -145,10 +147,10 @@ def mlem0(proj, geo, angles, iters, initial=None): # aootaphao 2008
         print("projected lines: ", time.process_time()-proctime, "s mean value:", np.mean(l), np.median(l), l.shape)
         proctime = time.process_time()
 
-        nom = tigre.Atb((b*np.exp(-l) - y).reshape(yshape), geo, angles).flatten() - β * μm(μ, δψ)
+        nom = 0.01*tigre.Atb((b*np.exp(-l) - y).reshape(yshape), geo, angles).flatten() - β * μm(μ.reshape(μshape), δψ).flatten()
         print("calculated nominator: ", time.process_time()-proctime, "s mean value:", np.mean(nom), np.median(nom), nom.shape)
         proctime = time.process_time()
-        denom = tigre.Atb((l*b*np.exp(-l)).reshape(yshape), geo, angles).flatten() + μ*β* μm(μ, δδψ)
+        denom = 0.01*tigre.Atb((l*b*np.exp(-l)).reshape(yshape), geo, angles).flatten() + μ*β* μm(μ.reshape(μshape), δδψ).flatten()
         #Rfs = R(μ)
         print("calucated denom: ", time.process_time()-proctime, "s mean value:", np.mean(denom), np.median(denom), denom.shape)
         proctime = time.process_time()
@@ -295,4 +297,107 @@ def mlem3(proj, geo, angles, iters, initial=None): # stayman 2013
             A( c * A(μ)) + βr * Ψr**2 * ωfr * (ψr*μ) + βp * ψp**2 * ωfp * Ψp*(μ - W(λ[-1])*μp )
         )
     
+    return μ
+
+def CCA(proj, geo, angles, iters): # fessler 1995
+
+    b = 100
+    y = b*np.exp(-proj)
+    μ = tigre.algorithms.fdk(proj, geo, angles)
+    μ = np.ones(geo.nVoxel, dtype=np.float32)
+    r = 0.1
+    ω = 0.6
+    β = 5
+
+    c = tigre.Atb(tigre.Ax(np.ones_like(μ), geo, angles), geo, angles)
+    c2 = tigre.At2b(tigre.Ax(np.ones_like(μ), geo, angles), geo, angles)
+
+    Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
+    Σi_a_ij = lambda x: tigre.Atb(x, geo, angles) / c
+    Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles) / c2
+
+    for i in range(iters):
+        l = Σj_a_ij( μ )
+        ȳ = b*np.exp(-l) + r
+        #L̇ = Σi_a_ij( (1-y/ȳ) * b * np.exp(-l) )
+        L̇ = Σi_a_ij( ȳ - r - y + r*y/ȳ )
+
+        #L̈ = - Σi_a_ij2( (1-y*r/(ȳ*ȳ)) * b * np.exp(-l) )
+        L̈ = - Σi_a_ij2( ȳ - r - y*r/ȳ + y*r*r/(ȳ*ȳ) )
+
+        Ṗ = μm(μ, δψ)
+        P̈ = μm(μ, δδψ)
+
+        nom = (L̇ - β * Ṗ)
+        den = (-L̈ + β * P̈)
+
+        print(i, np.mean(nom), np.mean(den), np.median(nom), np.median(den), np.mean(nom/den), np.median(nom/den))
+        print(i, np.mean(μ), np.median(μ), np.mean(nom/den), np.median(nom/den) )
+
+        μ = μ + ω * nom / den
+
+    return μ
+
+def ML_OSTR(proj, geo, angles, iters, b=100):
+    
+    y = b*np.exp(-proj)
+    μ = np.ones(geo.nVoxel, dtype=np.float32)
+    r = 0.1
+
+    c = tigre.Atb(tigre.Ax(np.ones_like(μ), geo, angles), geo, angles)
+
+    Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
+    Σi_a_ij = lambda x: tigre.Atb(x, geo, angles) / c
+
+    d = Σi_a_ij( Σj_a_ij(np.ones_like(μ)) * (y-r)**2 / y)
+    M = 1 # subsets
+    for it in range(iters):
+        l̂ = Σj_a_ij(μ)
+        ḣ = (y / ( b*np.exp(-l̂) + r ) - 1)*b*np.exp(-l̂)
+        n = M * Σi_a_ij(ḣ)
+        if it%100 == 0:
+            print(it, np.mean(n), np.mean(d), np.median(n), np.median(d), np.mean(n/d), np.median(n/d))
+            print(it, np.mean(μ), np.median(μ), np.mean(μ*(n/d)), np.median(μ*(n/d)) )
+            
+        μ = μ - (n / d)
+
+        μ[μ<0] = 0
+    
+    return μ
+
+def PL_OSTR(proj, geo, angles, iters):
+
+    μ = tigre.algorithms.fdk(proj, geo, angles) # initial guess
+    μ = np.ones(geo.nVoxel, dtype=np.float32)
+
+    b = 100 # i0
+    y = b * np.exp(-proj)
+    r = 0.1
+    β = 5
+
+    M = 1 # subsets
+
+    c = tigre.Atb(tigre.Ax(np.ones_like(μ), geo, angles), geo, angles)
+
+    Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
+    Σi_a_ij = lambda x: tigre.Atb(x, geo, angles) / c
+
+    d = Σi_a_ij( Σj_a_ij(np.ones_like(μ)) * (y-r)**2 / y)
+
+    for n in range(iters):
+        for m in range(M):
+            l̂ = Σj_a_ij(μ)
+            ḣ = (y / ( b*np.exp(-l̂) + r ))*b*np.exp(-l̂)
+            L̇ = M * Σi_a_ij(ḣ)
+
+            nom = (L̇ + β * μm(μ, δψ) )
+            den = (d + 2*β* μm(μ, δδψ) )
+            #if iter%10 == 0:
+            print(n, np.mean(nom), np.mean(den), np.median(nom), np.median(den), np.mean(nom/den), np.median(nom/den))
+            print(n, np.mean(μ), np.median(μ), np.mean(nom/den), np.median(nom/den) )
+
+            μ = μ - nom / den
+            μ[μ<0] = 0
+
+
     return μ
