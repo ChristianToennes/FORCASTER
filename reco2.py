@@ -238,34 +238,37 @@ def create_geo(ims_shape, size, spacing):
 
     return geo
 
-def reco(prefix, path, origin, size, spacing):
-    ims, angles = read_dicoms(path)
+def reco(prefix, ims, angles, geo, origin, size, spacing):
 
-    geo = create_geo(ims.shape, size, spacing)
 
+    print("start backprojecon")
+    proctime = time.process_time()
+    image = tigre.Atb(ims,geo,angles)
+    save_image(image, prefix+"reco_tigre_Atb.nrrd", origin, spacing)
+    print("Runtime: ", time.process_time() - proctime)
     print("start fdk")
     proctime = time.process_time()
     image = tigre.algorithms.fdk(ims,geo,angles)
-    save_image(image, prefix+"reco_tigre_fdk.nrrd")
+    save_image(image, prefix+"reco_tigre_fdk.nrrd", origin, spacing)
     print("Runtime: ", time.process_time() - proctime)
     print("start mlem")
-    niter = 15
+    niter = 5
     proctime = time.process_time()
     image = mlem.mlem(ims,geo,angles,niter)
-    save_image(image, prefix+"reco_tigre_mlem.nrrd")
+    save_image(image, prefix+"reco_tigre_mlem.nrrd", origin, spacing)
     print("Runtime: ", time.process_time() - proctime)
     return
     print("start ossart")
     niter = 30
     proctime = time.process_time()
     image = tigre.algorithms.ossart(ims,geo,angles,niter,blocksize=20)
-    save_image(image, prefix+"reco_tigre_ossart.nrrd")
+    save_image(image, prefix+"reco_tigre_ossart.nrrd", origin, spacing)
     print("Runtime: ", time.process_time() - proctime)
     print("start cgls")
     niter = 15
     proctime = time.process_time()
     image = tigre.algorithms.cgls(ims,geo,angles,niter)
-    save_image(image, prefix+"reco_tigre_cgls.nrrd")
+    save_image(image, prefix+"reco_tigre_cgls.nrrd", origin, spacing)
     print("Runtime: ", time.process_time() - proctime)
     #print("start fista")
     #niter = 70
@@ -274,13 +277,13 @@ def reco(prefix, path, origin, size, spacing):
     #image = sitk.GetImageFromArray(fistaout)
     #image.SetOrigin(origin[0])
     #image.SetDirection(origin[1])
-    #sitk.WriteImage(image, prefix+"reco_tigre_fista.nrrd")
+    #sitk.WriteImage(image, prefix+"reco_tigre_fista.nrrd", origin, spacing)
     #print("Runtime: ", time.process_time() - proctime)
     print("start asd pocs")
     niter = 10
     proctime = time.process_time()
     image = tigre.algorithms.asd_pocs(ims,geo,angles,niter)
-    save_image(image, prefix+"reco_tigre_asd_pocs.nrrd")
+    save_image(image, prefix+"reco_tigre_asd_pocs.nrrd", origin, spacing)
     print("Runtime: ", time.process_time() - proctime)
 
 def circle_mask(size):
@@ -291,13 +294,13 @@ def circle_mask(size):
     #sitk.WriteImage(sitk.GetImageFromArray(np.array(mask,dtype=int)), "mask.nrrd")
     return mask
 
-def save_image(image, filename):
+def save_image(image, filename, origin, spacing):
     μW = 0.019286726
     μA = 0.000021063006
     mask = circle_mask(image.shape)
     image[mask] = 0
     image = image[20:-20,20:-20,20:-20]
-    image = 1000.0*((image - μW)/(μW-μA))
+    #image = 1000.0*((image - μW)/(μW-μA))
     name = 'vectors_' + prefix.split('_', maxsplit=1)[1][:-1] + '.mat'
     if not os.path.isfile(name):
         image = sitk.GetImageFromArray(np.swapaxes(image, 1,2)[::-1,::-1])
@@ -370,7 +373,24 @@ if __name__ == "__main__":
         print(prefix, path)
         proctime = time.process_time()
         try:
-            reco(prefix, path, origin, size, spacing)
+            #ims, angles = read_dicoms(path)
+            #geo = create_geo(ims.shape, size, spacing)
+            geo = tigre.geometry_default(high_quality=False)
+            size = size // 10
+            spacing = spacing * 10
+            geo.nVoxel = np.roll(size+20, 1)           # number of voxels              (vx)
+            geo.sVoxel = np.roll((size+20)*spacing, 1)    # total size of the image       (mm)
+            geo.dVoxel = np.roll(spacing, 1)
+            # define angles
+            angles=np.linspace(0,2*np.pi,dtype=np.float32)
+            # load head phantom data
+            from tigre.demos.Test_data import data_loader
+            head=data_loader.load_head_phantom(number_of_voxels=geo.nVoxel)
+            save_image(head, prefix+"reco_tigre_head.nrrd", origin, spacing)
+            # generate projections
+            ims=tigre.Ax(head,geo,angles,'interpolated')
+
+            reco(prefix, ims, angles, geo, origin, size, spacing)
         except Exception as e:
             print(str(e))
             raise
