@@ -1,3 +1,4 @@
 input/
 output/
 *.nrrd
+__pycache__/
