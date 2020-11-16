@@ -251,11 +251,31 @@ def reco(prefix, ims, angles, geo, origin, size, spacing):
     image = tigre.algorithms.fdk(ims,geo,angles)
     save_image(image, prefix+"reco_tigre_fdk.nrrd", origin, spacing)
     print("Runtime: ", time.process_time() - proctime)
-    print("start mlem")
-    niter = 5
+    print("start ML_OSTR")
+    niter = 500
     proctime = time.process_time()
-    image = mlem.mlem(ims,geo,angles,niter)
-    save_image(image, prefix+"reco_tigre_mlem.nrrd", origin, spacing)
+    image = mlem.ML_OSTR(ims,geo,angles,niter)
+    print(np.mean(image), np.min(image), np.max(image), np.median(image), image.dtype)
+    save_image(image, prefix+"reco_tigre_ml_ostr.nrrd", origin, spacing)
+    print("Runtime: ", time.process_time() - proctime)
+    print("start PL_OSTR")
+    niter = 100
+    proctime = time.process_time()
+    image = mlem.PL_OSTR(ims,geo,angles,niter)
+    save_image(image, prefix+"reco_tigre_pl_ostr.nrrd", origin, spacing)
+    print("Runtime: ", time.process_time() - proctime)
+    print("start CCA")
+    niter = 100
+    proctime = time.process_time()
+    image = mlem.CCA(ims,geo,angles,niter)
+    save_image(image, prefix+"reco_tigre_cca.nrrd", origin, spacing)
+    print("Runtime: ", time.process_time() - proctime)
+    return
+    print("start mlem0")
+    niter = 100
+    proctime = time.process_time()
+    image = mlem.mlem0(ims,geo,angles,niter)
+    save_image(image, prefix+"reco_tigre_mlem0.nrrd", origin, spacing)
     print("Runtime: ", time.process_time() - proctime)
     return
     print("start ossart")
@@ -298,8 +318,8 @@ def save_image(image, filename, origin, spacing):
     μW = 0.019286726
     μA = 0.000021063006
     mask = circle_mask(image.shape)
-    image[mask] = 0
-    image = image[20:-20,20:-20,20:-20]
+    #image[mask] = 0.0
+    image = np.array(image[20:-20,20:-20,20:-20], dtype=float)
     #image = 1000.0*((image - μW)/(μW-μA))
     name = 'vectors_' + prefix.split('_', maxsplit=1)[1][:-1] + '.mat'
     if not os.path.isfile(name):
@@ -376,8 +396,8 @@ if __name__ == "__main__":
             #ims, angles = read_dicoms(path)
             #geo = create_geo(ims.shape, size, spacing)
             geo = tigre.geometry_default(high_quality=False)
-            size = size // 10
-            spacing = spacing * 10
+            size = size // 6
+            #spacing = spacing * 10
             geo.nVoxel = np.roll(size+20, 1)           # number of voxels              (vx)
             geo.sVoxel = np.roll((size+20)*spacing, 1)    # total size of the image       (mm)
             geo.dVoxel = np.roll(spacing, 1)
@@ -389,6 +409,9 @@ if __name__ == "__main__":
             save_image(head, prefix+"reco_tigre_head.nrrd", origin, spacing)
             # generate projections
             ims=tigre.Ax(head,geo,angles,'interpolated')
+            save_image(tigre.Ax(np.ones_like(head), geo, angles), prefix+"reco_tigre_sinogram.nrrd", origin, spacing)
+            ims2 = tigre.Atb(tigre.Ax(np.ones_like(head)*0.5, geo, angles), geo, angles)
+            save_image(ims2, prefix+"reco_tigre_sinogram2.nrrd", origin, spacing)
 
             reco(prefix, ims, angles, geo, origin, size, spacing)
         except Exception as e:
