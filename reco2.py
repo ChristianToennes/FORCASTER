@@ -8,6 +8,7 @@ import tigre
 import time
 import i0
 import mlem
+import utils
 
 def conv_time(time):
     h = float(time[:2])*60*60
@@ -98,7 +99,7 @@ def inverse_lut(lut):
             ilut[i] = pos[0]
     return ilut
 
-def read_dicoms(indir):
+def read_dicoms(indir, reg_angles=True):
     print("read dicoms")
     kvs = []
     mas = []
@@ -175,17 +176,20 @@ def read_dicoms(indir):
     water_value = np.array(water_value)
 
     dicom_angles = np.vstack((thetas*np.pi/180.0, phis*np.pi/180.0, np.zeros_like(thetas))).T
-    angles = read_reg_angles(prefix, dicom_angles)
+    if reg_angles:
+        angles = read_reg_angles(prefix, dicom_angles)
 
-    diff = np.abs(dicom_angles[:,0]-angles[:,0])
-    print(dicom_angles[diff>0.1,0], angles[diff>0.1,0], diff[diff>0.1])
+        diff = np.abs(dicom_angles[:,0]-angles[:,0])
+        print(dicom_angles[diff>0.1,0], angles[diff>0.1,0], diff[diff>0.1])
 
-    diff = np.abs(dicom_angles[:,1]-angles[:,1])
-    print(dicom_angles[diff>0.1,1], angles[diff>0.1,1], diff[diff>0.1])
+        diff = np.abs(dicom_angles[:,1]-angles[:,1])
+        print(dicom_angles[diff>0.1,1], angles[diff>0.1,1], diff[diff>0.1])
 
-    diff = np.abs(dicom_angles[:,2]-angles[:,2])
-    print(dicom_angles[diff>0.1,2], angles[diff>0.1,2], diff[diff>0.1])
+        diff = np.abs(dicom_angles[:,2]-angles[:,2])
+        print(dicom_angles[diff>0.1,2], angles[diff>0.1,2], diff[diff>0.1])
 
+    else:
+        angles = dicom_angles
         
     filt = filter_images(ims, ts, angles, mas)
     ims = ims[filt]
@@ -314,21 +318,23 @@ def circle_mask(size):
     #sitk.WriteImage(sitk.GetImageFromArray(np.array(mask,dtype=int)), "mask.nrrd")
     return mask
 
-def save_image(image, filename, origin, spacing):
+def save_image(image, filename, origin, spacing, switch_axes=True):
     μW = 0.019286726
     μA = 0.000021063006
     mask = circle_mask(image.shape)
     #image[mask] = 0.0
-    image = np.array(image[20:-20,20:-20,20:-20], dtype=float)
+    #image = np.array(image[20:-20,20:-20,20:-20], dtype=float)
     #image = 1000.0*((image - μW)/(μW-μA))
     name = 'vectors_' + prefix.split('_', maxsplit=1)[1][:-1] + '.mat'
-    if not os.path.isfile(name):
+    if switch_axes:
         image = sitk.GetImageFromArray(np.swapaxes(image, 1,2)[::-1,::-1])
     else:
-        image = sitk.GetImageFromArray(np.swapaxes(image, 1,2)[::-1,::-1])
-    image.SetOrigin(origin[0])
-    image.SetDirection(origin[1])
-    image.SetSpacing(spacing)
+        image = sitk.GetImageFromArray(image)
+    if origin is not None:
+        image.SetOrigin(origin[0])
+        image.SetDirection(origin[1])
+    if spacing is not None:
+        image.SetSpacing(spacing)
     sitk.WriteImage(image, os.path.join("recos", filename))
 
 def read_cbct_info(path):
@@ -366,7 +372,7 @@ def read_cbct_info(path):
     origin = image.GetOrigin()
     direction = image.GetDirection()
     spacing = np.array(image.GetSpacing())
-    return (origin, direction), size, spacing
+    return (origin, direction), size, spacing, image
 
 if __name__ == "__main__":
     data = [
@@ -387,33 +393,49 @@ if __name__ == "__main__":
     #('fake_imbu_cbct_', r".\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
     ]
 
-    origin, size, spacing = read_cbct_info(r".\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+    origin, size, spacing, image = read_cbct_info(r".\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
 
     for prefix, path in data:
         print(prefix, path)
         proctime = time.process_time()
         try:
-            #ims, angles = read_dicoms(path)
-            #geo = create_geo(ims.shape, size, spacing)
-            geo = tigre.geometry_default(high_quality=False)
-            size = size // 6
+            ims, angles = read_dicoms(path, reg_angles=False)
+            geo = create_geo(ims.shape, size-20, spacing)
+            #geo = tigre.geometry_default(high_quality=False)
+            #size = size // 6
+            #size = np.array([100, 90, 60])
+            #geo.nDetector = np.array([128, 128])
+            #geo.sDetector = geo.nDetector*geo.dDetector
+            #spacing = [1.0,1.0,1.0]
+            #origin = None
             #spacing = spacing * 10
-            geo.nVoxel = np.roll(size+20, 1)           # number of voxels              (vx)
-            geo.sVoxel = np.roll((size+20)*spacing, 1)    # total size of the image       (mm)
-            geo.dVoxel = np.roll(spacing, 1)
+            #geo.nVoxel = np.roll(size+20, 1)           # number of voxels              (vx)
+            #geo.sVoxel = np.roll((size+20)*spacing, 1)    # total size of the image       (mm)
+            #geo.dVoxel = np.roll(spacing, 1)
             # define angles
-            angles=np.linspace(0,2*np.pi,dtype=np.float32)
+            #angles=np.linspace(0,2*np.pi,200,dtype=np.float32)
+            #angles3=np.vstack((angles, 0.2*( np.sin(angles)*np.pi - np.pi*0.5 ), np.zeros_like(angles))).T
+            #angles3=np.vstack((np.zeros_like(angles), np.zeros_like(angles), angles)).T
+            #angles3=np.vstack((angles, angles, angles)).T
+            angles3 = angles[0::50]
+            print(angles3)
             # load head phantom data
             from tigre.demos.Test_data import data_loader
-            head=data_loader.load_head_phantom(number_of_voxels=geo.nVoxel)
-            save_image(head, prefix+"reco_tigre_head.nrrd", origin, spacing)
+            #head=data_loader.load_head_phantom(number_of_voxels=geo.nVoxel)
+            head = ims[0::50]
+            save_image(head, prefix+"reco_tigre_head.nrrd", None, None)
+            head = np.array(sitk.GetArrayFromImage(image), dtype=np.float32)
             # generate projections
-            ims=tigre.Ax(head,geo,angles,'interpolated')
-            save_image(tigre.Ax(np.ones_like(head), geo, angles), prefix+"reco_tigre_sinogram.nrrd", origin, spacing)
-            ims2 = tigre.Atb(tigre.Ax(np.ones_like(head)*0.5, geo, angles), geo, angles)
-            save_image(ims2, prefix+"reco_tigre_sinogram2.nrrd", origin, spacing)
+            ims=tigre.Ax(head,geo,angles3,'interpolated')
+            save_image(ims, prefix+"reco_tigre_sinogram.nrrd", None, None)
+            dSD = 1198
+            dSI = 785
+            astra_geo = utils.create_astra_geo(angles3, (0.154*1920/ims.shape[1]/spacing[0], 0.154*2480/ims.shape[2]/spacing[0]), ims.shape[1:], dSI/spacing[0], (dSD-dSI)/spacing[0])
+            ims2 = utils.Ax_astra(geo.nVoxel, astra_geo)(head)
+            save_image(ims2, prefix+"reco_astra_sinogram.nrrd", None, None)
 
-            reco(prefix, ims, angles, geo, origin, size, spacing)
+            print(ims.shape, ims2.shape)
+            #reco(prefix, ims, angles, geo, origin, size, spacing)
         except Exception as e:
             print(str(e))
             raise
