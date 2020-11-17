@@ -1,8 +1,10 @@
+from numpy.lib import utils
 import tigre
 import astra
 import numpy as np
 import time
 import scipy.ndimage
+import utils
 
 def gen_cliques(N):
 
@@ -299,22 +301,27 @@ def mlem3(proj, geo, angles, iters, initial=None): # stayman 2013
     
     return μ
 
-def CCA(proj, geo, angles, iters): # fessler 1995
+def CCA(proj, out_shape, geo, angles, iters, use_astra=True): # fessler 1995
 
     b = 100
     y = b*np.exp(-proj)
-    μ = tigre.algorithms.fdk(proj, geo, angles)
+    if use_astra:
+        μ = utils.FDK_astra(out_shape, geo)(proj, free_memory=False)
+    else:
+        μ = tigre.algorithms.fdk(proj, geo, angles)
     μ = np.ones(geo.nVoxel, dtype=np.float32)
     r = 0.1
     ω = 0.6
     β = 5
 
-    c = tigre.Atb(tigre.Ax(np.ones_like(μ), geo, angles), geo, angles)
-    c2 = tigre.At2b(tigre.Ax(np.ones_like(μ), geo, angles), geo, angles)
-
-    Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
-    Σi_a_ij = lambda x: tigre.Atb(x, geo, angles) / c
-    Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles) / c2
+    if use_astra:
+        Σj_a_ij = utils.Ax_astra(out_shape, geo)
+        Σi_a_ij = utils.Atb_astra(out_shape, geo)
+        Σi_a_ij2 = utils.At2b_astra(out_shape, geo)
+    else:
+        Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
+        Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
+        Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles)
 
     for i in range(iters):
         l = Σj_a_ij( μ )
@@ -338,16 +345,18 @@ def CCA(proj, geo, angles, iters): # fessler 1995
 
     return μ
 
-def ML_OSTR(proj, geo, angles, iters, b=100):
+def ML_OSTR(proj, out_shape, geo, angles, iters, b=100, use_astra=True):
     
     y = b*np.exp(-proj)
     μ = np.ones(geo.nVoxel, dtype=np.float32)
     r = 0.1
 
-    c = tigre.Atb(tigre.Ax(np.ones_like(μ), geo, angles), geo, angles)
-
-    Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
-    Σi_a_ij = lambda x: tigre.Atb(x, geo, angles) / c
+    if use_astra:
+        Σj_a_ij = utils.Ax_astra(out_shape, geo)
+        Σi_a_ij = utils.Atb_astra(out_shape, geo)
+    else:
+        Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
+        Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
 
     d = Σi_a_ij( Σj_a_ij(np.ones_like(μ)) * (y-r)**2 / y)
     M = 1 # subsets
@@ -365,9 +374,13 @@ def ML_OSTR(proj, geo, angles, iters, b=100):
     
     return μ
 
-def PL_OSTR(proj, geo, angles, iters):
+def PL_OSTR(proj, out_shape, geo, angles, iters, use_astra=True):
 
-    μ = tigre.algorithms.fdk(proj, geo, angles) # initial guess
+    if use_astra:
+        μ = utils.FDK_astra(out_shape, geo)(proj, free_memory=True)
+    else:
+        μ = tigre.algorithms.fdk(proj, geo, angles) # initial guess
+    
     μ = np.ones(geo.nVoxel, dtype=np.float32)
 
     b = 100 # i0
@@ -377,10 +390,12 @@ def PL_OSTR(proj, geo, angles, iters):
 
     M = 1 # subsets
 
-    c = tigre.Atb(tigre.Ax(np.ones_like(μ), geo, angles), geo, angles)
-
-    Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
-    Σi_a_ij = lambda x: tigre.Atb(x, geo, angles) / c
+    if use_astra:
+        Σj_a_ij = utils.Ax_astra(out_shape, geo)
+        Σi_a_ij = utils.Atb_astra(out_shape, geo)
+    else:
+        Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
+        Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
 
     d = Σi_a_ij( Σj_a_ij(np.ones_like(μ)) * (y-r)**2 / y)
 
@@ -398,6 +413,5 @@ def PL_OSTR(proj, geo, angles, iters):
 
             μ = μ - nom / den
             μ[μ<0] = 0
-
 
     return μ
