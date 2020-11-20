@@ -12,11 +12,13 @@ def Ax_astra(out_shape, proj_geom):
     iterations = 1
     freed = False
     def free():
+        nonlocal freed
         astra.data3d.delete(proj_id)
         astra.data3d.delete(vol_id)
         astra.algorithm.delete(alg_id)
         freed = True
     def run_Ax(x, free_memory=False):
+        nonlocal freed
         if freed:
             print("data structures and algorithm already deleted")
             return
@@ -39,11 +41,13 @@ def Atb_astra(out_shape, proj_geom):
     iterations = 1
     freed = False
     def free():
+        nonlocal freed
         astra.data3d.delete(proj_id)
         astra.data3d.delete(rec_id)
         astra.algorithm.delete(alg_id)
         freed = True
     def run_Atb(x, free_memory=False):
+        nonlocal freed
         if freed:
             print("data structures and algorithm already deleted")
             return
@@ -62,15 +66,18 @@ def At2b_astra(out_shape, proj_geom):
     cfg = astra.astra_dict('BP3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
+    cfg['option'] = {"SquaredWeights": True}
     alg_id = astra.algorithm.create(cfg)
     iterations = 1
     freed = False
     def free():
+        nonlocal freed
         astra.data3d.delete(proj_id)
         astra.data3d.delete(rec_id)
         astra.algorithm.delete(alg_id)
         freed = True
     def run_At2b(x, free_memory=False):
+        nonlocal freed
         if freed:
             print("data structures and algorithm already deleted")
             return
@@ -94,17 +101,19 @@ def FDK_astra(out_shape, proj_geom):
     iterations = 1
     freed = False
     def free():
+        nonlocal freed
         astra.data3d.delete(proj_id)
         astra.data3d.delete(rec_id)
         astra.algorithm.delete(alg_id)
         freed = True
     def run_FDK(x, free_memory=False):
+        nonlocal freed
         if freed:
             print("data structures and algorithm already deleted")
             return
         astra.data3d.store(proj_id, np.swapaxes(x, 0,1))
         astra.algorithm.run(alg_id, iterations)
-        result = np.array(np.swapaxes(astra.data3d.get(rec_id), 0,2), dtype=float)
+        result = np.swapaxes(astra.data3d.get(rec_id), 0,2)
         if free_memory:
             free()
         return result
@@ -117,15 +126,17 @@ def CGLS_astra(out_shape, proj_geom):
     cfg = astra.astra_dict('CGLS3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['option'] = {"VoxelSuperSampling": 1}
+    cfg['option'] = {"VoxelSuperSampling": 3}
     alg_id = astra.algorithm.create(cfg)
     freed = False
     def free():
+        nonlocal freed
         astra.data3d.delete(proj_id)
         astra.data3d.delete(rec_id)
         astra.algorithm.delete(alg_id)
         freed = True
     def run_CGLS(x, iterations, free_memory=False):
+        nonlocal freed
         if freed:
             print("data structures and algorithm already deleted")
             return
@@ -145,15 +156,17 @@ def SIRT_astra(out_shape, proj_geom):
     cfg = astra.astra_dict('SIRT3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['option'] = {"VoxelSuperSampling": 1, "MinConstraint": 0}
+    cfg['option'] = {"VoxelSuperSampling": 3, "MinConstraint": 0}
     alg_id = astra.algorithm.create(cfg)
     freed = False
     def free():
+        nonlocal freed
         astra.data3d.delete(proj_id)
         astra.data3d.delete(rec_id)
         astra.algorithm.delete(alg_id)
         freed = True
     def run_SIRT(x, iterations, free_memory=False):
+        nonlocal freed
         if freed:
             print("data structures and algorithm already deleted")
             return
@@ -166,62 +179,76 @@ def SIRT_astra(out_shape, proj_geom):
     return run_SIRT
 
 def ASD_POCS_astra(out_shape, proj_geom): # sidky 2008
-
     β = 1
     β_red = 0.995
     ng = 20
     α = 0.2
     r_max = 0.95
     α_red = 0.95
-    f = np.ones(out_shape, dtype=np.float32)
     ε = 0.1
     first_iter = True
-    proj_id = astra.data3d.create('-proj3d', proj_geom)
+    vol_geom = astra.create_vol_geom(out_shape[0], out_shape[1], out_shape[2])
+    proj_id = astra.create_projector('cuda3d',proj_geom, vol_geom)
     M = astra.OpTomo(proj_id)
-
+    f_0 = np.ones(out_shape, dtype=np.float32)
+    f_0 = np.moveaxis(f_0, 2, 0)
+    f_shape = f_0.shape
     freed = False
     def free():
+        nonlocal freed
         astra.data3d.delete(proj_id)
         freed = True    
-    def grad_minTV(f):
-        dftv = np.zeros_like(f)
+    def grad_minTV(f_in):
+        dftv = np.zeros_like(f_in)
         ε = 0.0001
-        df = np.moveaxis(np.array([f[1:,:,:] - f[:-1,:,:], f[:,1:,:] - f[:,:-1,:], f[:,:,1:] - f[:,:,:-1]]), 0, -1)
+        df1 = f_in[1:,1:,1:] - f_in[:-1,1:,1:]
+        df2 = f_in[1:,1:,1:] - f_in[1:,:-1,1:]
+        df3 = f_in[1:,1:,1:] - f_in[1:,1:,:-1]
+        df = np.array([df1, df2, df3])
+        df = np.moveaxis(df, 0, -1)
         df2 = df*df
-        dftv = np.sum(df[:-1,:-1,:-1], axis=-1) / (np.sqrt(np.sum(df2[:-1,:-1,:-1], axis=-1))+ε) \
+
+        dftv[1:-1,1:-1,1:-1] = np.sum(df[:-1,:-1,:-1], axis=-1) / (np.sqrt(np.sum(df2[:-1,:-1,:-1], axis=-1))+ε) \
             -df[1:,:-1,:-1,0] / (np.sqrt(np.sum(df2[1:,:-1,:-1], axis=-1))+ε) \
             -df[:-1,1:,:-1,1] / (np.sqrt(np.sum(df2[:-1,1:,:-1], axis=-1))+ε) \
             -df[:-1,:-1,1:,2] / (np.sqrt(np.sum(df2[:-1,:-1,1:], axis=-1))+ε)
         return dftv
     def run_ASD_POCS(x, iterations, free_memory=False):
+        nonlocal f_0, freed, first_iter, β
         if freed:
             print("data structures and algorithm already deleted")
             return
-        f_res = f
-        g̃_0 = x
-        for iter_n in range(iterations):
+        f_res = f_0
+        f = f_0
+        g̃_0 = np.moveaxis(x, 0,1)
+        for _iter_n in range(iterations):
             f_0 = f
-            f = f + β*M*((g̃_0-M*f) / (M.dot(M)))# ART
+            nom = g̃_0-M.FP(f)
+            denom = M.dot(M.T)
+            denom = (denom*np.ones(denom.shape[0], dtype=nom.dtype)).reshape(nom.shape) + 0.0001
+            f = f + β*M.BP(nom / denom) # ART
+
             f[f<0] = 0
-            f_res = f
+            f_res = f.reshape(f_shape)
             g̃ = M*f
-            dd = np.linalg.norm(g̃ - g̃_0, 2)
-            dp = np.linalg.norm(f - f_0, 2)
+            dd = np.linalg.norm(g̃ - g̃_0.flatten(), 2)
+            dp = np.linalg.norm(f.flatten() - f_0.flatten(), 2)
             if first_iter:
                 first_iter = False
                 dtvg = α*dp
             f_0 = f
-            for i in range(ng):
-                df = grad_minTV(f)
-                df̂ = df / np.linalg.norm(df)
+            for _i in range(ng):
+                df = grad_minTV(f.reshape(f_shape))
+                df̂ = df / np.linalg.norm(df.flatten())
                 f = f - dtvg * df̂
-            dg = np.linalg.norm(f-f_0, 2)
+            dg = np.linalg.norm((f-f_0).flatten(), 2)
             if dg > r_max*dp and dd > ε:
                 dtvg = dtvg * α_red
             β = β*β_red
 
         if free_memory:
             free()
+        f_res = np.swapaxes(f_res, 0,2)
         return f_res
     return run_ASD_POCS
 
@@ -251,7 +278,7 @@ def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin
         #vectors[i,12] = detector_spacing[1]
 
         γ, β, α = angles[i]
-        γ = -γ - np.pi*0.5
+        #γ = -γ - np.pi*0.5
         #β = β + np.pi*0.5
         #β = -β
         α = α + np.pi
