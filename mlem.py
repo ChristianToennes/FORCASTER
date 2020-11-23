@@ -8,114 +8,7 @@ import utils
 import ctypes
 import multiprocessing
 import functools
-
-def gen_cliques(N):
-
-    w_ort = 1
-    w_dia = 2**(-1/2)
-
-    for k in np.ndindex(*N):
-        if k[0] > 0:
-            if k[1] > 0:
-                if k[2] > 0:
-                    yield (k, (k[0]-1, k[1]-1, k[2]-1), w_dia)
-                yield (k, (k[0]-1, k[1]-1, k[2]), w_dia)
-                if k[2] < (N[2]-1):
-                    yield (k, (k[0]-1, k[1]-1, k[2]+1), w_dia)
-            
-            if k[2] > 0:
-                yield (k, (k[0]-1, k[1], k[2]-1), w_dia)
-            yield (k, (k[0]-1, k[1], k[2]), w_ort)
-            if k[2] < (N[2]-1):
-                yield (k, (k[0]-1, k[1], k[2]+1), w_dia)
-
-            if k[1] < (N[1]-1):
-                if k[2] > 0:
-                    yield (k, (k[0]-1, k[1]+1, k[2]-1), w_dia)
-                yield (k, (k[0]-1, k[1]+1, k[2]), w_dia)
-                if k[2] < (N[2]-1):
-                    yield (k, (k[0]-1, k[1]+1, k[2]+1), w_dia)
-        
-        if k[1] > 0:
-            if k[2] > 0:
-                yield (k, (k[0], k[1]-1, k[2]-1), w_dia)
-            yield (k, (k[0], k[1]-1, k[2]), w_ort)
-            if k[2] < (N[2]-1):
-                yield (k, (k[0], k[1]-1, k[2]+1), w_dia)
-        
-        if k[2] > 0:
-            yield (k, (k[0], k[1], k[2]-1), w_ort)
-        
-        if k[2] < (N[2]-1):
-            yield (k, (k[0], k[1], k[2]+1), w_ort)
-
-        if k[1] < (N[1]-1):
-            if k[2] > 0:
-                yield (k, (k[0], k[1]+1, k[2]-1), w_dia)
-            yield (k, (k[0], k[1]+1, k[2]), w_ort)
-            if k[2] < (N[2]-1):
-                yield (k, (k[0], k[1]+1, k[2]+1), w_dia)
-
-
-        if k[0] < (N[0]-1):
-            if k[1] > 0:
-                if k[2] > 0:
-                    yield (k, (k[0]+1, k[1]-1, k[2]-1), w_dia)
-                yield (k, (k[0]+1, k[1]-1, k[2]), w_dia)
-                if k[2] < (N[2]-1):
-                    yield (k, (k[0]+1, k[1]-1, k[2]+1), w_dia)
-            
-            if k[2] > 0:
-                yield (k, (k[0]+1, k[1], k[2]-1), w_dia)
-            yield (k, (k[0]+1, k[1], k[2]), w_ort)
-            if k[2] < (N[2]-1):
-                yield (k, (k[0]+1, k[1], k[2]+1), w_dia)
-
-            if k[1] < (N[1]-1):
-                if k[2] > 0:
-                    yield (k, (k[0]+1, k[1]+1, k[2]-1), w_dia)
-                yield (k, (k[0]+1, k[1]+1, k[2]), w_dia)
-                if k[2] < (N[2]-1):
-                    yield (k, (k[0]+1, k[1]+1, k[2]+1), w_dia)
-
-
-def R(fs, q=2,λ=0.2):
-    w_sum = 0
-
-    k = np.zeros((3,3,3))
-    k[:,:,1] = -2**(-0.5)
-    k[:,1,:] = -2**(-0.5)
-    k[1,:,:] = -2**(-0.5)
-    k[:,1,1] = -1
-    k[1,:,1] = -1
-    k[1,1,:] = -1
-    k[1,1,1] = 0
-    k[1,1,1] = np.sum(np.abs(k))
-    #k[1,1,1] = 6+12*2**(-1/2)
-
-    #k = k / np.sum(k)
-
-    #print(k)
-
-    if q == 2:
-        w_sum = scipy.ndimage.convolve(fs, k, mode='constant')
-    else:
-        for k,j,w in gen_cliques(fs.shape):
-            w_sum += w*np.abs(fs[k]-fs[j])**(q-1)*np.sign(fs[k]-fs[j])
-    return λ**q * q * w_sum
-
-
-W = np.zeros((3,3,3), dtype=float)
-for i in range(W.shape[0]):
-    for j in range(W.shape[1]):
-        for k in range(W.shape[2]):
-            if i != 1 or j != 1 or k != 1:
-                W[i, j, k] = 1.0 / np.sqrt((1-i)*(1-i) + (1-j)*(1-j) + (1-k)*(1-k))
-
-W = W.flatten()
-
-def μm(μ, f):
-    return scipy.ndimage.generic_filter(μ, filt, size=3)
+import math
 
 δ = 0.001
 ψ = lambda x: x**2/2 if x <= δ else δ*np.abs(x)-0.5*δ**2
@@ -126,15 +19,19 @@ from PotentialFilter import potential_filter as c_ψ
 from PotentialFilter import potential_dx_filter as c_δψ
 from PotentialFilter import potential_dxdx_filter as c_δδψ
 from PotentialFilter import potential_dx_t_filter as c_δψ_t
+from PotentialFilter import square_filter as c_sq
+from PotentialFilter import square_dx_filter as c_δsq
+from PotentialFilter import square_dxdx_filter as c_δδsq
+from PotentialFilter import mod_p_norm_filter as c_p_norm
+from PotentialFilter import mod_p_norm_dx_filter as c_δp_norm
+from PotentialFilter import mod_p_norm_dxdx_filter as c_δδp_norm
+
 
 def c_μm(μ, f, δ=0.0005):
     user_data = ctypes.c_double(δ)
     ptr = ctypes.cast(ctypes.pointer(user_data), ctypes.c_void_p)
     callback = scipy.LowLevelCallable(f(), ptr)
     return scipy.ndimage.generic_filter(μ, callback, size=3)
-
-def filt(data,f):
-    return np.sum(w*f(data[13]-d) for d,w in zip(data,W))
 
 def mlem0(proj, geo, angles, iters, initial=None): # aootaphao 2008
     if initial is None:
@@ -298,7 +195,7 @@ def p_norm(x, p, δ=1):
     return np.sum(x[δarea])*math.pow(2*δ, -p)*math.pow(δ*δ*2, p-1) + \
            np.sum( np.abs(x[~δarea] - δ*(1-0.5*p) * np.sign(x[~δarea]) ) ** p ) /p
 
-def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, βp=10**3, use_astra=True): # stayman 2013
+def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, βp=10**2, use_astra=True): # stayman 2013
 
     if initial is None:
         if use_astra:
@@ -325,10 +222,14 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
     else:
         Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
         Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
-        Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles)
+        #Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles)
 
-    c = (y-r)**2 / y
+    c = (1-y*r/((b+r)*(b+r)))*b
+    ε = 0.00001
+    c[c<ε] = ε
+    d = Σi_a_ij2(c)
     error = []
+    proctime = time.perf_counter()
     for n in range(iters):
         #for r in range(1, R):
         #    H[r] = BFGS()
@@ -345,16 +246,16 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
         up = (
             Σi_a_ij(ḣ) \
             #- βr * Ψr * δfr * (Ψr*μ)  \
-            - βp* Ψp * c_μm(μ, c_δψ)
+            - βp* Ψp * c_μm(μ, c_δp_norm)
         ) / (
-            Σi_a_ij2( c * l) \
+            d \
             #+ βr * Ψr**2 * ωfr * (ψr*μ) \
-            + βp * Ψp**2 * c_μm(μ, c_δψ_t)
+            + βp * Ψp**2 * c_μm(μ, c_δδp_norm)
         )
         μ = μ + up
         μ[μ<0] = 0
-        error.append(np.mean(np.abs(real_image-μ)))
-        if n%1000 == 0:
+        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
+        if n%100 == 0:
             if real_image is None:
                 print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
@@ -364,7 +265,7 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
     yield μ
     yield error
 
-def CCA(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**3, use_astra=True): # fessler 1995
+def CCA(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, use_astra=True): # fessler 1995
     y = b*np.exp(-proj)
     
     if initial is None:
@@ -385,37 +286,93 @@ def CCA(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10
     else:
         Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
         Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
-        Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles)
+        #Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles)
 
     error = []
+    proctime = time.perf_counter()
     for i in range(iters):
         l = Σj_a_ij( μ )
         ȳ = b*np.exp(-l) + r
         #L̇ = Σi_a_ij( (1-y/ȳ) * b * np.exp(-l) )
-        part = ȳ - r - y + r*y/ȳ
-        L̇ = Σi_a_ij( part )
+        #part = ȳ - r - y + r*y/ȳ
+        L̇ = Σi_a_ij( (1-y/ȳ)*b*np.exp(-l))
 
-        #L̈ = - Σi_a_ij2( (1-y*r/(ȳ*ȳ)) * b * np.exp(-l) )
-        L̈ = -Σi_a_ij2( part + y*r*r/(ȳ*ȳ) )
+        L̈ = Σi_a_ij2( (1-y*r/(ȳ*ȳ)) * b * np.exp(-l) )
+        #L̈ = Σi_a_ij2( part + y*r*r/(ȳ*ȳ) )
 
-        Ṗ = c_μm(μ, c_δψ)
-        P̈ = c_μm(μ, c_δδψ)
+        Ṗ = c_μm(μ, c_δsq)
+        P̈ = c_μm(μ, c_δδsq)
 
         nom = (L̇ - β * Ṗ)
-        den = (-L̈ + β * P̈)
+        den = (L̈ + β * P̈)
 
         #print(i, np.mean(nom), np.mean(den), np.median(nom), np.median(den), np.mean(nom/den), np.median(nom/den))
         #print(i, np.mean(μ), np.median(μ), np.mean(nom/den), np.median(nom/den) )
         up = ω*nom/den
         μ = μ + up
         μ[μ<0] = 0
-        error.append(np.mean(np.abs(real_image-μ)))
+        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
         if i%100 == 0:
             if real_image is None:
                 print(i, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
                 print(i, np.sum(up), np.mean(np.abs(real_image-μ)))
             yield μ[:]
+    yield μ
+    yield error
+
+def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**3, use_astra=True): # erdogan 1998
+
+    if use_astra:
+        Σj_a_ij = utils.Ax_astra(out_shape, geo)
+        Σi_a_ij = utils.Atb_astra(out_shape, geo)
+        Σi_a_ij2 = utils.At2b_astra(out_shape, geo)
+    else:
+        Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
+        Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
+        #Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles)
+
+    r = 0.1
+    y = b*np.exp(-proj)
+    μ = np.ones(out_shape)*0.1
+
+    c = (1-y*r/((b+r)*(b+r)))*b
+    ε = 0.00001
+    c[c<ε] = ε
+    d = Σi_a_ij2(c)
+
+    error = []
+    proctime = time.perf_counter()
+    l̂ = Σj_a_ij(μ)
+    for n in range(iters):
+
+        ḣ = (y/(b*np.exp(-l̂)+r)-1)*b*np.exp(-l̂)
+        #q̇ = ḣ(l̂) + c*(l̂-l)
+        #q̇ = (y/(b*np.exp(-l̂)+r)-1)*b*np.exp(-l̂)
+        q̇ = ḣ[:]
+        Q̇ = Σi_a_ij(q̇)
+        Ṙ = c_μm(μ, c_δsq)
+        p̂ = c_μm(μ, c_δδsq)
+
+        μ_old = μ[:]
+        for _ in range(5):
+            μ = μ - (Q̇ + d*(μ-μ_old) + β*Ṙ) / (d+β*p̂)
+        μ[μ<0] = 0
+
+        den = Σi_a_ij(c*(μ-μ_old))
+        den_0 = den != 0
+        q̇[den_0] = q̇[den_0] / den[den_0]
+        l̂ = l̂+(q̇-ḣ)/c
+
+        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
+        if n%100 == 0:
+            up = μ-μ_old
+            if real_image is None:
+                print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
+            else:
+                print(n, np.sum(up), np.mean(np.abs(real_image-μ)))
+            yield μ[:]
+
     yield μ
     yield error
 
@@ -437,14 +394,13 @@ def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
     r = 0.1
 
     if use_astra:
-        c = utils.Ax_astra(out_shape, geo)(np.ones_like(μ))
         Σj_a_ij = utils.Ax_astra(out_shape, geo)
         Σi_a_ij = utils.Atb_astra(out_shape, geo)
     else:
         Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
         Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
 
-    l̂ = Σj_a_ij(μ)
+    #l̂ = Σj_a_ij(μ)
     #print("l", np.mean(l̂), np.median(l̂), np.max(l̂), np.min(l̂))
 
     d = Σi_a_ij( Σj_a_ij(np.ones_like(μ)) * (y-r)**2 / y)
@@ -452,6 +408,7 @@ def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
     #d[d==0] = 0.000001
     M = 1 # subsets
     error = []
+    proctime = time.perf_counter()
     for it in range(iters):
         l̂ = Σj_a_ij(μ)
         ŷ = b*np.exp(-l̂)
@@ -464,7 +421,7 @@ def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
         up[d_0]=0
         μ = μ - up
         μ[μ<=0] = 0.000001
-        error.append(np.mean(np.abs(real_image-μ)))
+        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
         if it%100 == 0:
             if real_image is None:
                 print(it, np.mean(up), np.std(up), np.median(up), np.sum(up))
@@ -474,7 +431,7 @@ def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
     yield μ
     yield error
 
-def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**3, use_astra=True): # erdogan 1999
+def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, use_astra=True): # erdogan 1999
 
     if initial is None:
         if use_astra:
@@ -498,15 +455,16 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
 
     d = Σi_a_ij( Σj_a_ij(np.ones_like(μ)) * (y-r)**2 / y)
     error = []
+    proctime = time.perf_counter()
     for n in range(iters):
-        for m in range(M):
+        for _m in range(M):
             l̂ = Σj_a_ij(μ)
             ŷ = b*np.exp(-l̂)
-            ḣ = (y / ( ŷ + r ))*ŷ
+            ḣ = (y / ( ŷ + r )-1)*ŷ
             L̇ = M * Σi_a_ij(ḣ)
 
-            nom = (L̇ + β * c_μm(μ, c_δψ) )
-            den = (d + 2*β* c_μm(μ, c_δψ_t) )
+            nom = (L̇ + β * c_μm(μ, c_δsq) )
+            den = (d + 2*β* c_μm(μ, c_δδsq) )
             den[den==0] = 0.00001
             #if iter%10 == 0:
             #print(n, np.mean(nom), np.mean(den), np.median(nom), np.median(den), np.mean(nom/den), np.median(nom/den))
@@ -514,7 +472,7 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
             up = nom/den
             μ = μ - up
             μ[μ<0] = 0
-            error.append(np.mean(np.abs(real_image-μ)))
+            error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
             if n%100 == 0:
                 if real_image is None:
                     print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
@@ -524,30 +482,6 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
 
     yield μ
     yield error
-
-
-def update_step(arg):
-    y, μ, β, b, out_shape, geo = arg
-    Σj_a_ij = utils.Ax_astra(out_shape, geo)
-    Σi_a_ij = utils.Atb_astra(out_shape, geo)
-    
-    l = Σj_a_ij(μ)
-    Ṗ = β*c_μm(μ, c_δψ)
-    P̈ = μ*β*c_μm(μ, c_δδψ)
-    #print(n, np.mean(Ṗ), np.mean(P̈), np.median(Ṗ), np.median(P̈))
-
-    ŷ = b*np.exp(-l)
-    nom = Σi_a_ij(ŷ-y)
-    den = Σi_a_ij(l*ŷ)
-
-    den = den + P̈
-    f = ((nom - Ṗ)/(den))
-    f[den==0] = 0
-    #print(n, np.mean(nom), np.mean(den), np.median(nom), np.median(den))
-    #print(n, np.mean(μ), np.std(μ), np.median(μ), np.mean(μ*f), np.std(μ*f), np.median(μ*f))
-    #den[den==0] = 0.00001
-    up = μ*f
-    return up
 
 def PL_C(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**3, use_astra=True): # aootaphao 2008
 
@@ -582,8 +516,8 @@ def PL_C(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=1
         #ups = pool.imap_unordered(update_step, [(y[i::subsets], μ, β, b, out_shape, geos[i]) for i in range(subsets)] )
         #up = functools.reduce(lambda x,y: x+y, ups) / subsets
         l = Σj_a_ij(μ)
-        Ṗ = β*c_μm(μ, c_δψ)
-        P̈ = μ*β*c_μm(μ, c_δδψ)
+        Ṗ = β*c_μm(μ, c_δsq)
+        P̈ = μ*β*c_μm(μ, c_δδsq)
         #print(n, np.mean(Ṗ), np.mean(P̈), np.median(Ṗ), np.median(P̈))
 
         ŷ = b*np.exp(-l)

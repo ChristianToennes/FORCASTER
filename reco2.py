@@ -334,52 +334,72 @@ def reco_astra(prefix, real_image, ims, angles, geo, origin, size, spacing):
 
     #initial = image
     initial = np.ones_like(image)*0.1
-    print("start PL_C")
-    niter = 200
-    proctime = time.perf_counter()
-    for i,image in enumerate(mlem.PL_C(ims,out_shape,geo,angles,niter, initial, real_image, β=10)):
-        if type(image) is list:
-            save_plot(image, prefix, "pl_c")
-        else:
-            print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
-            save_image(image, prefix+"reco_"+str(i)+"_pl_c.nrrd", origin, spacing, False, False)
-    return
-    print("start ML_OSTR")
-    niter = 1000
-    proctime = time.perf_counter()
-    for i,image in enumerate(mlem.ML_OSTR(ims,out_shape,geo,angles,niter,initial, real_image)):
-        if image is list:
-            save_plot(image, prefix, "ml_ostr")
-        else:
-            print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
-            save_image(image, prefix+"reco_"+str(i)+"_ml_ostr.nrrd", origin, spacing, False, False)
-    print("start PL_OSTR")
-    niter = 1000
-    proctime = time.perf_counter()
-    for i,image in enumerate(mlem.PL_OSTR(ims,out_shape,geo,angles,niter,initial, real_image, β=10**2)):
-        if image is list:
-            save_plot(image, prefix, "pl_ostr")
-        else:
-            print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
-            save_image(image, prefix+"reco_"+str(i)+"_pl_ostr.nrrd", origin, spacing, False, False)
-    print("start CCA")
-    niter = 1000
-    proctime = time.perf_counter()
-    for i,image in enumerate(mlem.CCA(ims,out_shape,geo,angles,niter,initial, real_image, β=10**2)):
-        if image is list:
-            save_plot(image, prefix, "cca")
-        else:
-            print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
-            save_image(image, prefix+"reco_"+str(i)+"_cca.nrrd", origin, spacing, False, False)
-    print("start PIPLE")
-    niter = 1000
-    proctime = time.perf_counter()
-    for i,image in enumerate(mlem.PIPLE(ims,out_shape,geo,angles,niter,initial, real_image, βp=10**2)):
-        if image is list:
-            save_plot(image, prefix, "piple")
-        else:
-            print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
-            save_image(image, prefix+"reco_"+str(i)+"_piple.nrrd", origin, spacing, False, False)
+    if True:
+        print("start PL_C")
+        astra.clear()
+        niter = 500
+        proctime = time.perf_counter()
+        for i,image in enumerate(mlem.PL_C(ims,out_shape,geo,angles,niter, initial, real_image, β=10)):
+            if type(image) is list:
+                save_plot(image, prefix, "pl_c")
+            else:
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                save_image(image, prefix+"reco_pl_c_"+str(i)+".nrrd", origin, spacing, False, False)
+    if True:
+        print("start ML_OSTR")
+        astra.clear()
+        niter = 500
+        proctime = time.perf_counter()
+        for i,image in enumerate(mlem.ML_OSTR(ims,out_shape,geo,angles,niter,initial, real_image)):
+            if type(image) is list:
+                save_plot(image, prefix, "ml_ostr")
+            else:
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                save_image(image, prefix+"reco_ml_ostr_"+str(i)+".nrrd", origin, spacing, False, False)
+    if True:
+        print("start PL_OSTR")
+        astra.clear()
+        niter = 500
+        proctime = time.perf_counter()
+        for i,image in enumerate(mlem.PL_OSTR(ims,out_shape,geo,angles,niter,initial, real_image, β=10**2)):
+            if type(image) is list:
+                save_plot(image, prefix, "pl_ostr")
+            else:
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                save_image(image, prefix+"reco_pl_ostr_"+str(i)+".nrrd", origin, spacing, False, False)
+    if True:
+        print("start CCA")
+        astra.clear()
+        niter = 500
+        proctime = time.perf_counter()
+        for i,image in enumerate(mlem.CCA(ims,out_shape,geo,angles,niter,initial, real_image, β=10**2)):
+            if type(image) is list:
+                save_plot(image, prefix, "cca")
+            else:
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                save_image(image, prefix+"reco_cca_"+str(i)+".nrrd", origin, spacing, False, False)
+    if True:
+        print("start PIPLE")
+        astra.clear()
+        niter = 500
+        proctime = time.perf_counter()
+        for i,image in enumerate(mlem.PIPLE(ims,out_shape,geo,angles,niter,initial, real_image, βp=10**2)):
+            if type(image) is list:
+                save_plot(image, prefix, "piple")
+            else:
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                save_image(image, prefix+"reco_piple_"+str(i)+".nrrd", origin, spacing, False, False)
+    if True:
+        print("start PL_PSCD")
+        astra.clear()
+        niter = 500
+        proctime = time.perf_counter()
+        for i,image in enumerate(mlem.PL_PSCD(ims,out_shape,geo,angles,niter,initial, real_image, β=10**2)):
+            if type(image) is list:
+                save_plot(image, prefix, "pl_pcsd")
+            else:
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                save_image(image, prefix+"reco_pl_pcsd_"+str(i)+".nrrd", origin, spacing, False, False)
     #print("start tilley2017")
     #niter = 15
     #proctime = time.perf_counter()
@@ -432,10 +452,12 @@ def circle_mask(size):
 def save_plot(data, prefix, title):
     data = np.array(data)
     plt.figure()
-    plt.plot(data[:, 1], data[:, 0])
+    plt.plot(data[:, 0], data[:, 1])
     plt.title(title)
     plt.tight_layout()
     plt.savefig(os.path.join("recos", prefix + "plot_" + title + ".png"))
+    with open(os.path.join("recos", prefix + "plot_" + title + ".csv"), "w") as f:
+        f.writelines([str(t)+";"+str(v)+"\n" for t,v in data])
 
 def save_image(image, filename, origin, spacing, switch_axes=False, hu_transform=True, crop=False):
     image = np.array(image[:], dtype=float)
