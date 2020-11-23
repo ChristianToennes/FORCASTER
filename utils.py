@@ -21,7 +21,7 @@ def Ax_astra(out_shape, proj_geom):
         nonlocal freed
         if freed:
             print("data structures and algorithm already deleted")
-            return
+            return 0
         astra.data3d.store(vol_id, np.swapaxes(x, 0,2))
         astra.algorithm.run(alg_id, iterations)
         result = np.swapaxes(astra.data3d.get(proj_id), 0,1)
@@ -50,7 +50,7 @@ def Atb_astra(out_shape, proj_geom):
         nonlocal freed
         if freed:
             print("data structures and algorithm already deleted")
-            return
+            return 0
         astra.data3d.store(proj_id, np.swapaxes(x, 0,1))
         astra.algorithm.run(alg_id, iterations)
         result = np.swapaxes(astra.data3d.get(rec_id), 0,2)
@@ -80,7 +80,7 @@ def At2b_astra(out_shape, proj_geom):
         nonlocal freed
         if freed:
             print("data structures and algorithm already deleted")
-            return
+            return 0
         astra.data3d.store(proj_id, np.swapaxes(x, 0,1))
         astra.algorithm.run(alg_id, iterations)
         result = np.swapaxes(astra.data3d.get(rec_id), 0,2)
