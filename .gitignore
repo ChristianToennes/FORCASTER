@@ -3,3 +3,4 @@ output/
 recos/
 *.nrrd
 __pycache__/
+build/
