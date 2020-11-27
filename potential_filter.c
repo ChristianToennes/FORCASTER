@@ -28,7 +28,7 @@ static int potential_filter(
     //*return_value = 0;
     double sum = 0;
     double x;
-    double δ = *(double *)user_data;
+    double δ = ((double *)user_data)[0];
     double fac = δ*δ*0.5;
     for(int i=0;i<filter_size;i++) {
         x = d-buffer[i];
@@ -59,7 +59,7 @@ static int potential_dx_filter(
     //*return_value = 0;
     double sum = 0;
     double x;
-    double δ = *(double *)user_data;
+    double δ = ((double *)user_data)[0];
     for(int i=0;i<filter_size;i++) {
         x = d-buffer[i];
         if(x<δ) {
@@ -89,7 +89,7 @@ static int potential_dx_t_filter(
     //*return_value = 0;
     double sum = 0;
     double x;
-    double δ = *(double *)user_data;
+    double δ = ((double *)user_data)[0];
     for(int i=0;i<filter_size;i++) {
         x = d-buffer[i];
         if(x<δ) {
@@ -117,7 +117,7 @@ static int potential_dxdx_filter(
 ) {
     double d=buffer[13];
     double sum = 0;
-    double δ = *(double *)user_data;
+    double δ = ((double *)user_data)[0];
     for(int i=0;i<filter_size;i++) {
         if((d-buffer[i])<δ) {
             sum += w[i];

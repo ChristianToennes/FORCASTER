@@ -27,9 +27,9 @@ from PotentialFilter import mod_p_norm_dx_filter as c_δp_norm
 from PotentialFilter import mod_p_norm_dxdx_filter as c_δδp_norm
 
 
-def c_μm(μ, f, δ=0.0005):
-    user_data = ctypes.c_double(δ)
-    ptr = ctypes.cast(ctypes.pointer(user_data), ctypes.c_void_p)
+def c_μm(μ, f, δ=0.0005, p=1):
+    user_data = ctypes.c_double * 2    
+    ptr = ctypes.cast(ctypes.pointer(user_data(δ, p)), ctypes.c_void_p)
     callback = scipy.LowLevelCallable(f(), ptr)
     return scipy.ndimage.generic_filter(μ, callback, size=3)
 
@@ -182,7 +182,7 @@ def mlem2(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
                 if real_image is None:
                     print(n, np.mean(Δμ), np.std(Δμ), np.median(Δμ), np.sum(Δμ))
                 else:
-                    print(n, np.sum(Δμ), np.mean(np.abs(real_image-μ)))
+                    print(n, np.sum(Δμ), np.sum(np.abs(real_image-μ)))
 
 
         #print("iteration finished: ", time.process_time()-proctime, "s change:", np.mean(Δμ))
@@ -195,7 +195,7 @@ def p_norm(x, p, δ=1):
     return np.sum(x[δarea])*math.pow(2*δ, -p)*math.pow(δ*δ*2, p-1) + \
            np.sum( np.abs(x[~δarea] - δ*(1-0.5*p) * np.sign(x[~δarea]) ) ** p ) /p
 
-def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, βp=10**2, use_astra=True): # stayman 2013
+def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, βp=10**4, use_astra=True): # stayman 2013
 
     if initial is None:
         if use_astra:
@@ -211,6 +211,7 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
     Ψp = 1 # rigid transformation
     Ψr = 1 # rigid transformation
     βr = 1
+    p = 1.5 # p-norm
 
     y = b*np.exp(-proj) + r
     N = y.shape
@@ -228,6 +229,7 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
     ε = 0.00001
     c[c<ε] = ε
     d = Σi_a_ij2(c)
+    #print(np.mean(d), np.median(d), np.min(d), np.max(d))
     error = []
     proctime = time.perf_counter()
     for n in range(iters):
@@ -242,25 +244,33 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
         l = Σj_a_ij(μ)
         #ḣ = (y / ( b*np.exp(-l̂) + r ) - 1)*b*np.exp(-l̂)
         ḣ = b*np.exp(-l)-y
+        #print(np.mean(ḣ), np.median(ḣ), np.min(ḣ), np.max(ḣ))
+        #p_norm = c_μm(μ, c_δp_norm, p=p)
+        #print(np.mean(p_norm), np.median(p_norm), np.min(p_norm), np.max(p_norm))
+        #dp_norm = c_μm(μ, c_δδp_norm, p=p)
+        #print(np.mean(dp_norm), np.median(dp_norm), np.min(dp_norm), np.max(dp_norm))
 
         up = (
             Σi_a_ij(ḣ) \
             #- βr * Ψr * δfr * (Ψr*μ)  \
-            - βp* Ψp * c_μm(μ, c_δp_norm)
+            - βp* Ψp * c_μm(μ, c_δp_norm, p)
         ) / (
             d \
             #+ βr * Ψr**2 * ωfr * (ψr*μ) \
-            + βp * Ψp**2 * c_μm(μ, c_δδp_norm)
+            + βp * Ψp**2 * c_μm(μ, c_δδp_norm, p)
         )
         μ = μ + up
         μ[μ<0] = 0
-        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
+        
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
         if n%100 == 0:
             if real_image is None:
                 print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
-                print(n, np.sum(up), np.mean(np.abs(real_image-μ)))
+                print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
+        if n == iters-2:
+            yield μ
         #print(n, np.mean(μ), np.std(μ), np.median(μ), np.min(μ), np.max(μ))
     yield μ
     yield error
@@ -311,17 +321,18 @@ def CCA(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10
         up = ω*nom/den
         μ = μ + up
         μ[μ<0] = 0
-        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+        
         if i%100 == 0:
             if real_image is None:
                 print(i, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
-                print(i, np.sum(up), np.mean(np.abs(real_image-μ)))
+                print(i, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
     yield μ
     yield error
 
-def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**3, use_astra=True): # erdogan 1998
+def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, use_astra=True): # erdogan 1998
 
     if use_astra:
         Σj_a_ij = utils.Ax_astra(out_shape, geo)
@@ -343,9 +354,9 @@ def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
 
     error = []
     proctime = time.perf_counter()
-    l̂ = Σj_a_ij(μ)
     for n in range(iters):
 
+        l̂ = Σj_a_ij(μ)
         ḣ = (y/(b*np.exp(-l̂)+r)-1)*b*np.exp(-l̂)
         #q̇ = ḣ(l̂) + c*(l̂-l)
         #q̇ = (y/(b*np.exp(-l̂)+r)-1)*b*np.exp(-l̂)
@@ -359,24 +370,29 @@ def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
             μ = μ - (Q̇ + d*(μ-μ_old) + β*Ṙ) / (d+β*p̂)
         μ[μ<0] = 0
 
-        den = Σi_a_ij(c*(μ-μ_old))
-        den_0 = den != 0
-        q̇[den_0] = q̇[den_0] / den[den_0]
-        l̂ = l̂+(q̇-ḣ)/c
+        #den = Σj_a_ij(μ-μ_old)*c
+        #den_0 = den != 0
+        #q̇[den_0] = q̇[den_0] / den[den_0]
+        #l̂ = l̂+(q̇-ḣ)/c
 
-        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
+        if n%10==0:
+            β = β*0.1
+
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
         if n%100 == 0:
             up = μ-μ_old
             if real_image is None:
                 print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
-                print(n, np.sum(up), np.mean(np.abs(real_image-μ)))
+                print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
+        if n == iters-2:
+            yield μ
 
     yield μ
     yield error
 
-def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**3, use_astra=True): # erdogan 1999
+def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, use_astra=True): # erdogan 1999
     #print("proj", np.mean(proj), np.median(proj), np.max(proj), np.min(proj))
     #print("e^proj", np.mean(np.exp(-proj)), np.median(np.exp(-proj)), np.max(np.exp(-proj)), np.min(np.exp(-proj)))
     
@@ -421,12 +437,12 @@ def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
         up[d_0]=0
         μ = μ - up
         μ[μ<=0] = 0.000001
-        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
         if it%100 == 0:
             if real_image is None:
                 print(it, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
-                print(it, np.sum(up), np.mean(np.abs(real_image-μ)))
+                print(it, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
     yield μ
     yield error
@@ -472,12 +488,12 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
             up = nom/den
             μ = μ - up
             μ[μ<0] = 0
-            error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
+            error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
             if n%100 == 0:
                 if real_image is None:
                     print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
                 else:
-                    print(n, np.sum(up), np.mean(np.abs(real_image-μ)))
+                    print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
                 yield μ[:]
 
     yield μ
@@ -533,13 +549,13 @@ def PL_C(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=1
         up = μ*f
         μ = μ + up
         μ[μ<=0] = 0.00001
-        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-μ))))
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
         #print(error[-1])
         if n%100 == 0:
             if real_image is None:
                 print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
-                print(n, np.sum(up), np.mean(np.abs(real_image-μ)))
+                print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
     
     yield μ
@@ -580,6 +596,6 @@ def PWLS(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=1
             if real_image is None:
                 print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
-                print(n, np.sum(up), np.mean(np.abs(real_image-I)))
+                print(n, np.sum(up), np.sum(np.abs(real_image-I)))
 
     return I
