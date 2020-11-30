@@ -252,6 +252,30 @@ def ASD_POCS_astra(out_shape, proj_geom): # sidky 2008
         return f_res
     return run_ASD_POCS
 
+def tv_norm(x):
+    y_diff = x - np.roll(x, -1, axis=0)
+    x_diff = x - np.roll(x, -1, axis=1)
+    z_diff = x - np.roll(x, -1, axis=2)
+    grad_norm2 = x_diff**2 + y_diff**2 + z_diff**2
+    norm = np.sum(np.sqrt(grad_norm2))
+    return norm
+
+
+def δtv_norm(x):
+    y_diff = x - np.roll(x, -1, axis=0)
+    x_diff = x - np.roll(x, -1, axis=1)
+    z_diff = x - np.roll(x, -1, axis=2)
+    grad_norm2 = x_diff**2 + y_diff**2 + z_diff**2 + 1e-12
+    dgrad_norm = 0.5 / np.sqrt(grad_norm2)
+    dx_diff = 2 * x_diff * dgrad_norm
+    dy_diff = 2 * y_diff * dgrad_norm
+    dz_diff = 2 * z_diff * dgrad_norm
+    grad = dx_diff + dy_diff + dz_diff
+    grad[:, 1:, :] -= dx_diff[:, :-1, :]
+    grad[1:, :, :] -= dy_diff[:-1, :, :]
+    grad[:, :, 1:] -= dz_diff[:, :, :-1]
+    return grad
+
 def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin, dist_origin_detector):
     vectors = np.zeros((len(angles), 12))
 

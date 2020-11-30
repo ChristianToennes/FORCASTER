@@ -10,6 +10,7 @@ import time
 import i0
 import mlem
 import utils
+import piccs
 
 def conv_time(time):
     h = float(time[:2])*60*60
@@ -440,6 +441,17 @@ def reco_astra(prefix, real_image, ims, angles, geo, origin, size, spacing):
     #image = utils.ASD_POCS_astra(out_shape, geo)(ims, niter, free_memory=True)
     #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
     #save_image(image, prefix+"reco_tigre_asd_pocs.nrrd", origin, spacing, True, False)
+    if True:
+        print("start PICCS")
+        astra.clear()
+        niter = 100
+        proctime = time.perf_counter()
+        for i,image in enumerate(piccs.piccs(ims,out_shape,geo,angles,niter,initial,real_image)):
+            if type(image) is list:
+                save_plot(image, prefix, "piccs")
+            else:
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                save_image(image, prefix+"reco_piccs_"+str(i)+".nrrd", origin, spacing, False, False)
 
 def circle_mask(size):
     _xx, yy, zz = np.mgrid[:size[0], :size[1], :size[2]]
