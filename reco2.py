@@ -318,112 +318,118 @@ def reco(prefix, ims, angles, geo, origin, size, spacing):
     save_image(image, prefix+"reco_tigre_asd_pocs.nrrd", origin, spacing, True)
     print("Runtime: ", time.perf_counter() - proctime)
 
-def reco_astra(prefix, real_image, ims, angles, geo, origin, size, spacing):
+def reco_astra(prefix, real_image, ims, angles, geo, origin, size, spacing, tigre_geo = None):
 
     out_shape = np.roll(size, 1)
     print("proj:", np.mean(ims), np.median(ims), np.max(ims), np.min(ims))
     print("start backprojection")
     proctime = time.perf_counter()
     image = utils.Atb_astra(out_shape, geo)(ims, free_memory=True)
-    print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
-    #save_image(image, prefix+"reco_astra_Atb.nrrd", origin, spacing, False, False)
+    print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
+    save_image(image, prefix+"reco_astra_Atb.nrrd", origin, spacing, False, False)
     print("start fdk")
     proctime = time.perf_counter()
-    #image = utils.FDK_astra(out_shape, geo)(ims, free_memory=True)
-    print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
-    #save_image(image, prefix+"reco_astra_fdk.nrrd", origin, spacing, False, False)
+    image = utils.FDK_astra(out_shape, geo)(ims, free_memory=True)
+    print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
+    save_image(image, prefix+"reco_astra_fdk.nrrd", origin, spacing, False, False)
+    print("start tigre fdk")
+    proctime = time.perf_counter()
+    image = np.moveaxis(np.swapaxes(tigre.algorithms.fdk(ims, tigre_geo, angles), 1,2)[::-1,::-1], -1, 0)
+    print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
+    save_image(image, prefix+"reco_tigre_fdk.nrrd", origin, spacing, False, False)
 
-    #initial = image
-    initial = np.ones_like(image)*0.1
+    initial = image
+    #initial = np.ones_like(image)*0.1
+    niter = 500
     if True:
         print("start PL_C")
         astra.clear()
-        niter = 500
+        #niter = 2000
         proctime = time.perf_counter()
         for i,image in enumerate(mlem.PL_C(ims,out_shape,geo,angles,niter, initial, real_image, β=10)):
             if type(image) is list:
                 save_plot(image, prefix, "pl_c")
             else:
-                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
                 save_image(image, prefix+"reco_pl_c_"+str(i)+".nrrd", origin, spacing, False, False)
     if True:
         print("start ML_OSTR")
         astra.clear()
-        niter = 500
+        #niter = 2000
         proctime = time.perf_counter()
         for i,image in enumerate(mlem.ML_OSTR(ims,out_shape,geo,angles,niter,initial, real_image)):
             if type(image) is list:
                 save_plot(image, prefix, "ml_ostr")
             else:
-                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
                 save_image(image, prefix+"reco_ml_ostr_"+str(i)+".nrrd", origin, spacing, False, False)
     if True:
         print("start PL_OSTR")
         astra.clear()
-        niter = 500
+        #niter = 2000
         proctime = time.perf_counter()
         for i,image in enumerate(mlem.PL_OSTR(ims,out_shape,geo,angles,niter,initial, real_image, β=10**2)):
             if type(image) is list:
                 save_plot(image, prefix, "pl_ostr")
             else:
-                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
                 save_image(image, prefix+"reco_pl_ostr_"+str(i)+".nrrd", origin, spacing, False, False)
     if True:
         print("start CCA")
         astra.clear()
-        niter = 500
+        #niter = 2000
         proctime = time.perf_counter()
         for i,image in enumerate(mlem.CCA(ims,out_shape,geo,angles,niter,initial, real_image, β=10**2)):
             if type(image) is list:
                 save_plot(image, prefix, "cca")
             else:
-                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
                 save_image(image, prefix+"reco_cca_"+str(i)+".nrrd", origin, spacing, False, False)
     if True:
         print("start PIPLE")
         astra.clear()
-        niter = 500
+        #niter = 2000
         proctime = time.perf_counter()
-        for i,image in enumerate(mlem.PIPLE(ims,out_shape,geo,angles,niter,initial, real_image, βp=10**2)):
+        for i,image in enumerate(mlem.PIPLE(ims,out_shape,geo,angles,niter,initial, real_image)):
             if type(image) is list:
                 save_plot(image, prefix, "piple")
             else:
-                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
                 save_image(image, prefix+"reco_piple_"+str(i)+".nrrd", origin, spacing, False, False)
     if True:
         print("start PL_PSCD")
         astra.clear()
-        niter = 500
+        #niter = 2000
         proctime = time.perf_counter()
-        for i,image in enumerate(mlem.PL_PSCD(ims,out_shape,geo,angles,niter,initial, real_image, β=10**2)):
+        for i,image in enumerate(mlem.PL_PSCD(ims,out_shape,geo,angles,niter,initial, real_image)):
             if type(image) is list:
                 save_plot(image, prefix, "pl_pcsd")
             else:
-                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+                print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
                 save_image(image, prefix+"reco_pl_pcsd_"+str(i)+".nrrd", origin, spacing, False, False)
     #print("start tilley2017")
     #niter = 15
     #proctime = time.perf_counter()
     #image = mlem.mlem2(ims,out_shape,geo,angles,niter,initial)
-    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
     #save_image(image, prefix+"reco_tigre_tilley.nrrd", origin, spacing, False, False)
     #print("start ossart")
     #niter = 30
     #proctime = time.perf_counter()
     #image = tigre.algorithms.ossart(ims,geo,angles,niter,blocksize=20)
-    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
     #save_image(image, prefix+"reco_tigre_ossart.nrrd", origin, spacing)
     #print("start sirt")
     #niter = 30
     #proctime = time.perf_counter()
     #image = utils.SIRT_astra(out_shape, geo)(ims, niter, free_memory=True)
-    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
     #save_image(image, prefix+"reco_astra_sirt.nrrd", origin, spacing, True, False)
     #print("start cgls")
     #niter = 15
     #proctime = time.perf_counter()
     #image = utils.CGLS_astra(out_shape, geo)(ims, niter, free_memory=True)
-    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
     #save_image(image, prefix+"reco_astra_cgls.nrrd", origin, spacing, True, False)
     #print("start fista")
     #niter = 70
@@ -432,14 +438,14 @@ def reco_astra(prefix, real_image, ims, angles, geo, origin, size, spacing):
     #image = sitk.GetImageFromArray(fistaout)
     #image.SetOrigin(origin[0])
     #image.SetDirection(origin[1])
-    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
     #sitk.WriteImage(image, prefix+"reco_tigre_fista.nrrd", origin, spacing)
     #print("start asd pocs")▲
     #niter = 10
     #proctime = time.perf_counter()
     #out_shape[1] += 20
     #image = utils.ASD_POCS_astra(out_shape, geo)(ims, niter, free_memory=True)
-    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.mean(np.abs(real_image-image)))
+    #print("Runtime: ", time.perf_counter() - proctime, "Error:", np.sum(np.abs(real_image-image)))
     #save_image(image, prefix+"reco_tigre_asd_pocs.nrrd", origin, spacing, True, False)
     if True:
         print("start PICCS")
@@ -488,7 +494,7 @@ def save_image(image, filename, origin, spacing, switch_axes=False, hu_transform
         #image = image / np.max(image)
         #image = image*100 - 50
         #image[image>5] = 5
-        image = image*100
+        #image = image*100
         if crop:
             image = image[20:-20,20:-20,20:-20]
     #name = 'vectors_' + prefix.split('_', maxsplit=1)[1][:-1] + '.mat'
@@ -498,7 +504,7 @@ def save_image(image, filename, origin, spacing, switch_axes=False, hu_transform
         image = sitk.GetImageFromArray(image)
     if origin is not None:
         image.SetOrigin(origin[0])
-        image.SetDirection(origin[1])
+        image.SetDirection([np.round(o) for o in origin[1]])
     if spacing is not None:
         image.SetSpacing(spacing)
     sitk.WriteImage(image, os.path.join("recos", filename))
@@ -580,8 +586,8 @@ if __name__ == "__main__":
             #geo.dVoxel = np.roll(spacing, 1)
             # define angles
             angles=np.linspace(0,2*np.pi,200,dtype=np.float32)
-            angles=np.vstack((angles, 0.2*( np.sin(angles)*np.pi - np.pi*0.5 ), np.zeros_like(angles))).T
-            #angles3=np.vstack((np.zeros_like(angles), np.zeros_like(angles), angles)).T
+            #angles=np.vstack((angles, 0.2*( np.sin(angles)*np.pi - np.pi*0.5 ), np.zeros_like(angles))).T
+            angles=np.vstack((angles, np.zeros_like(angles), np.zeros_like(angles))).T
             #angles3=np.vstack((angles, angles, angles)).T
             angles3 = angles
             angles3[:,0] = -angles[:,0]-np.pi*0.5
@@ -623,7 +629,7 @@ if __name__ == "__main__":
             #save_image(ims3, prefix+"reco_astra_bp.nrrd", origin, spacing, False)
 
             #reco(prefix, ims, angles, geo, origin, size, spacing)
-            reco_astra(prefix, head, ims2, angles, astra_geo, origin, out_shape, spacing)
+            reco_astra(prefix, head, ims2, angles, astra_geo, origin, out_shape, spacing, tigre_geo=geo)
         except Exception as e:
             print(str(e))
             raise
