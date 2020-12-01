@@ -24,31 +24,63 @@
 # -----------------------------------------------------------------------
 
 import astra
+import tomopy
+import tigre
 import numpy as np
 import scipy.io
 import utils
 import SimpleITK as sitk
 import os.path
+import time
 
-vol_geom = astra.create_vol_geom(256, 256, 1)
+tigre_iter = 50
+astra_iter = 500
+image_out_mult = 100
 
-angles = np.linspace(0, 2*np.pi, 360,False)
-proj_geom_p = astra.create_proj_geom('parallel3d', 1.0, 1.0, 128, 192, angles)
-proj_geom_c = astra.create_proj_geom('cone', 1.0, 1.0, 128, 192, angles, 1000, 700)
-angles3=np.vstack((angles, np.zeros_like(angles), np.zeros_like(angles))).T
+astra_algo = 'SIRT3D_CUDA'
+tigre_algo = tigre.algorithms.sirt
+
+cube = np.array([scipy.io.loadmat('phantom.mat')['phantom256']], dtype=np.float32)
+sitk.WriteImage(sitk.GetImageFromArray(cube*image_out_mult), os.path.join("recos", "target.nrrd"))
+image_shape = np.array(cube.shape)
+image_spacing = np.array([1,1,1])
+detector_shape = np.array([256, 256])
+detector_spacing = np.array([1,1])
+dist_source_origin = 2000
+dist_detector_origin = 200
+
+vol_geom = astra.create_vol_geom(image_shape[1], image_shape[2], image_shape[0])
+
+angles = np.linspace(0, 2*np.pi, 360, False)
+angles_zero = np.zeros_like(angles)
+angles_one = np.ones_like(angles)
+proj_geom_p = astra.create_proj_geom('parallel3d', detector_spacing[0], detector_spacing[1], detector_shape[0], detector_shape[1], angles-angles_one*0.5*np.pi)
+proj_geom_c = astra.create_proj_geom('cone', detector_spacing[0], detector_spacing[1], detector_shape[0], detector_shape[1], angles-angles_one*0.5*np.pi, dist_source_origin, dist_detector_origin)
 #angles3=np.vstack((np.zeros_like(angles), angles, np.zeros_like(angles))).T
 #angles3=np.vstack((np.zeros_like(angles), np.zeros_like(angles), angles)).T
-proj_geom_v = utils.create_astra_geo(angles3, (1,1), (128, 192), 1000, 700)
+angles_astra=np.vstack((angles, angles_zero, angles_zero)).T
+proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin)
 
-# Create a simple hollow cube phantom
-cube = np.zeros((128,128,128))
-cube[17:113,17:113,17:113] = 1
-cube[33:97,33:97,33:97] = 0
+angles_tigre = np.vstack((angles, np.ones_like(angles)*np.pi*0.5, np.zeros_like(angles))).T
+geo_p = tigre.geometry(mode='parallel',nVoxel = image_shape, default=True)
+geo_p.nDetector = detector_shape
+geo_p.dDetector = detector_spacing
+geo_p.sDetector = geo_p.dDetector * geo_p.nDetector
+geo_p.DSD = dist_detector_origin + dist_source_origin
+geo_p.DSO = dist_source_origin
+geo_p.dVoxel = image_spacing
+geo_p.sVoxel = geo_p.nVoxel * geo_p.dVoxel
 
-cube = np.array([scipy.io.loadmat('phantom.mat')['phantom256']])
+geo_c = tigre.geometry(mode='cone',nVoxel = image_shape, default=True)
+geo_c.nDetector = detector_shape
+geo_c.dDetector = detector_spacing
+geo_c.sDetector = geo_c.dDetector * geo_c.nDetector
+geo_c.DSD = dist_detector_origin + dist_source_origin
+geo_c.DSO = dist_source_origin
+geo_c.dVoxel = image_spacing
+geo_c.sVoxel = geo_c.nVoxel * geo_c.dVoxel
 
-# Create projection data from this
-
+perftime = time.perf_counter()
 volume_id = astra.data3d.create('-vol', vol_geom, cube)
 proj_id = astra.data3d.create('-sino', proj_geom_p, 0)
 algString = 'FP3D_CUDA'
@@ -60,19 +92,22 @@ astra.algorithm.run(alg_id)
 astra.algorithm.delete(alg_id)
 astra.data3d.delete(volume_id)
 proj_data = astra.data3d.get(proj_id)
-sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "sino_parallel.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_sino_parallel.nrrd"))
 rec_id = astra.data3d.create('-vol', vol_geom)
-cfg = astra.astra_dict('SIRT3D_CUDA')
+cfg = astra.astra_dict(astra_algo)
 cfg['ReconstructionDataId'] = rec_id
 cfg['ProjectionDataId'] = proj_id
 alg_id = astra.algorithm.create(cfg)
-astra.algorithm.run(alg_id, 150)
+astra.algorithm.run(alg_id, astra_iter)
 rec = astra.data3d.get(rec_id)
-sitk.WriteImage(sitk.GetImageFromArray(rec), os.path.join("recos", "fdk_parallel.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "astra_sirt_parallel.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "astra_error_parallel.nrrd"))
 astra.algorithm.delete(alg_id)
 astra.data3d.delete(rec_id)
 astra.data3d.delete(proj_id)
+print("Astra Parallel: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
 
+perftime = time.perf_counter()
 volume_id = astra.data3d.create('-vol', vol_geom, cube)
 proj_id = astra.data3d.create('-sino', proj_geom_c, 0)
 algString = 'FP3D_CUDA'
@@ -84,19 +119,24 @@ astra.algorithm.run(alg_id)
 astra.algorithm.delete(alg_id)
 astra.data3d.delete(volume_id)
 proj_data = astra.data3d.get(proj_id)
-sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "sino_cone.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_sino_cone.nrrd"))
 rec_id = astra.data3d.create('-vol', vol_geom)
-cfg = astra.astra_dict('SIRT3D_CUDA')
+cfg = astra.astra_dict(astra_algo)
 cfg['ReconstructionDataId'] = rec_id
 cfg['ProjectionDataId'] = proj_id
 alg_id = astra.algorithm.create(cfg)
-astra.algorithm.run(alg_id, 150)
+astra.algorithm.run(alg_id, astra_iter)
 rec = astra.data3d.get(rec_id)
-sitk.WriteImage(sitk.GetImageFromArray(rec), os.path.join("recos", "fdk_cone.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "astra_sirt_cone.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "astra_error_cone.nrrd"))
 astra.algorithm.delete(alg_id)
 astra.data3d.delete(rec_id)
 astra.data3d.delete(proj_id)
+print("Astra Cone: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
 
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
+proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin)
 volume_id = astra.data3d.create('-vol', vol_geom, cube)
 proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
 algString = 'FP3D_CUDA'
@@ -108,40 +148,197 @@ astra.algorithm.run(alg_id)
 astra.algorithm.delete(alg_id)
 astra.data3d.delete(volume_id)
 proj_data = astra.data3d.get(proj_id)
-
-sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "sino_vec.nrrd"))
-
-# Display a single projection image
-import pylab
-#pylab.gray()
-#pylab.figure(1)
-#pylab.imshow(proj_data[:,20,:])
-#print(proj_data.shape)
-
-# Create a data object for the reconstruction
+sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_sino_vec.nrrd"))
 rec_id = astra.data3d.create('-vol', vol_geom)
-# Set up the parameters for a reconstruction algorithm using the GPU
-cfg = astra.astra_dict('SIRT3D_CUDA')
+cfg = astra.astra_dict(astra_algo)
 cfg['ReconstructionDataId'] = rec_id
 cfg['ProjectionDataId'] = proj_id
-# Create the algorithm object from the configuration structure
 alg_id = astra.algorithm.create(cfg)
-# Run 150 iterations of the algorithm
-# Note that this requires about 750MB of GPU memory, and has a runtime
-# in the order of 10 seconds.
-astra.algorithm.run(alg_id, 150)
-
-# Get the result
+astra.algorithm.run(alg_id, astra_iter)
 rec = astra.data3d.get(rec_id)
-sitk.WriteImage(sitk.GetImageFromArray(rec), os.path.join("recos", "fdk_vec.nrrd"))
-#pylab.figure(2)
-#pylab.imshow(rec[0,:,:])
-#pylab.show()
-#print(rec.shape)
-
-#print(cube.shape, angles.shape, proj_geom_p['DetectorRowCount'], proj_geom_p['DetectorColCount'], proj_data.shape, rec.shape)
-# Clean up. Note that GPU memory is tied up in the algorithm object,
-# and main RAM in the data objects.
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "astra_sirt_vec.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "astra_error_vec.nrrd"))
 astra.algorithm.delete(alg_id)
 astra.data3d.delete(rec_id)
 astra.data3d.delete(proj_id)
+print("Astra Vec: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles, angles_zero, angles_zero)).T
+proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin)
+volume_id = astra.data3d.create('-vol', vol_geom, cube)
+proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
+algString = 'FP3D_CUDA'
+cfg = astra.astra_dict(algString)
+cfg['ProjectionDataId'] = proj_id
+cfg['VolumeDataId'] = volume_id
+alg_id = astra.algorithm.create(cfg)
+astra.algorithm.run(alg_id)
+astra.algorithm.delete(alg_id)
+astra.data3d.delete(volume_id)
+proj_data = astra.data3d.get(proj_id)
+sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_sino_vec_1.nrrd"))
+rec_id = astra.data3d.create('-vol', vol_geom)
+cfg = astra.astra_dict(astra_algo)
+cfg['ReconstructionDataId'] = rec_id
+cfg['ProjectionDataId'] = proj_id
+alg_id = astra.algorithm.create(cfg)
+astra.algorithm.run(alg_id, astra_iter)
+rec = astra.data3d.get(rec_id)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "astra_sirt_vec_1.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "astra_error_vec_1.nrrd"))
+astra.algorithm.delete(alg_id)
+astra.data3d.delete(rec_id)
+astra.data3d.delete(proj_id)
+print("Astra Vec: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles_zero, angles, angles_zero)).T
+proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin)
+volume_id = astra.data3d.create('-vol', vol_geom, cube)
+proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
+algString = 'FP3D_CUDA'
+cfg = astra.astra_dict(algString)
+cfg['ProjectionDataId'] = proj_id
+cfg['VolumeDataId'] = volume_id
+alg_id = astra.algorithm.create(cfg)
+astra.algorithm.run(alg_id)
+astra.algorithm.delete(alg_id)
+astra.data3d.delete(volume_id)
+proj_data = astra.data3d.get(proj_id)
+sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_sino_vec_2.nrrd"))
+rec_id = astra.data3d.create('-vol', vol_geom)
+cfg = astra.astra_dict(astra_algo)
+cfg['ReconstructionDataId'] = rec_id
+cfg['ProjectionDataId'] = proj_id
+alg_id = astra.algorithm.create(cfg)
+astra.algorithm.run(alg_id, astra_iter)
+rec = astra.data3d.get(rec_id)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "astra_sirt_vec_2.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "astra_error_vec_2.nrrd"))
+astra.algorithm.delete(alg_id)
+astra.data3d.delete(rec_id)
+astra.data3d.delete(proj_id)
+print("Astra Vec: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles_zero, angles_zero, angles)).T
+proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin)
+volume_id = astra.data3d.create('-vol', vol_geom, cube)
+proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
+algString = 'FP3D_CUDA'
+cfg = astra.astra_dict(algString)
+cfg['ProjectionDataId'] = proj_id
+cfg['VolumeDataId'] = volume_id
+alg_id = astra.algorithm.create(cfg)
+astra.algorithm.run(alg_id)
+astra.algorithm.delete(alg_id)
+astra.data3d.delete(volume_id)
+proj_data = astra.data3d.get(proj_id)
+sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_sino_vec_3.nrrd"))
+rec_id = astra.data3d.create('-vol', vol_geom)
+cfg = astra.astra_dict(astra_algo)
+cfg['ReconstructionDataId'] = rec_id
+cfg['ProjectionDataId'] = proj_id
+alg_id = astra.algorithm.create(cfg)
+astra.algorithm.run(alg_id, astra_iter)
+rec = astra.data3d.get(rec_id)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "astra_sirt_vec_3.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "astra_error_vec_3.nrrd"))
+astra.algorithm.delete(alg_id)
+astra.data3d.delete(rec_id)
+astra.data3d.delete(proj_id)
+print("Astra Vec: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles, angles, angles)).T
+proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin)
+volume_id = astra.data3d.create('-vol', vol_geom, cube)
+proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
+algString = 'FP3D_CUDA'
+cfg = astra.astra_dict(algString)
+cfg['ProjectionDataId'] = proj_id
+cfg['VolumeDataId'] = volume_id
+alg_id = astra.algorithm.create(cfg)
+astra.algorithm.run(alg_id)
+astra.algorithm.delete(alg_id)
+astra.data3d.delete(volume_id)
+proj_data = astra.data3d.get(proj_id)
+sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_sino_vec_4.nrrd"))
+rec_id = astra.data3d.create('-vol', vol_geom)
+cfg = astra.astra_dict(astra_algo)
+cfg['ReconstructionDataId'] = rec_id
+cfg['ProjectionDataId'] = proj_id
+alg_id = astra.algorithm.create(cfg)
+astra.algorithm.run(alg_id, astra_iter)
+rec = astra.data3d.get(rec_id)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "astra_sirt_vec_4.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "astra_error_4.nrrd"))
+astra.algorithm.delete(alg_id)
+astra.data3d.delete(rec_id)
+astra.data3d.delete(proj_id)
+print("Astra Vec: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+
+angles_tigre_add = np.vstack((angles_one*np.pi*1, -1*angles_one*np.pi*0.5, 1*angles_one*np.pi)).T
+angles_tigre_mult = np.vstack((angles_one, angles_one, -1*angles_one)).T
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
+angles_tigre = angles_astra*angles_tigre_mult+angles_tigre_add
+proj_data = tigre.Ax(cube, geo_p, angles_tigre, 'interpolated')
+sitk.WriteImage(sitk.GetImageFromArray(np.moveaxis(proj_data, 0,1)), os.path.join("recos", "tigre_sino_parallel.nrrd"))
+rec = tigre_algo(proj_data, geo_p, angles_tigre, niter=tigre_iter)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "tigre_sirt_parallel.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "tigre_error_parallel.nrrd"))
+print("Tigre Parallel: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
+angles_tigre = angles_astra*angles_tigre_mult+angles_tigre_add
+proj_data = tigre.Ax(cube, geo_c, angles_tigre, 'interpolated')
+sitk.WriteImage(sitk.GetImageFromArray(np.moveaxis(proj_data, 0,1)), os.path.join("recos", "tigre_sino_cone.nrrd"))
+rec = tigre_algo(proj_data, geo_c, angles_tigre, niter=tigre_iter)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "tigre_sirt_cone.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "tigre_error_cone.nrrd"))
+print("Tigre cone: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles, angles_zero, angles_zero)).T
+angles_tigre = angles_astra*angles_tigre_mult+angles_tigre_add
+proj_data = tigre.Ax(cube, geo_c, angles_tigre, 'interpolated')
+sitk.WriteImage(sitk.GetImageFromArray(np.moveaxis(proj_data, 0,1)), os.path.join("recos", "tigre_sino_cone_1.nrrd"))
+rec = tigre_algo(proj_data, geo_c, angles_tigre, niter=tigre_iter)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "tigre_sirt_cone_1.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "tigre_error_cone_1.nrrd"))
+print("Tigre cone: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles_zero, angles, angles_zero)).T
+angles_tigre = angles_astra*angles_tigre_mult+angles_tigre_add
+proj_data = tigre.Ax(cube, geo_c, angles_tigre, 'interpolated')
+sitk.WriteImage(sitk.GetImageFromArray(np.moveaxis(proj_data, 0,1)), os.path.join("recos", "tigre_sino_cone_2.nrrd"))
+rec = tigre_algo(proj_data, geo_c, angles_tigre, niter=tigre_iter)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "tigre_sirt_cone_2.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "tigre_error_cone_2.nrrd"))
+print("Tigre cone: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles_zero, angles_zero, angles)).T
+angles_tigre = angles_astra*angles_tigre_mult+angles_tigre_add
+proj_data = tigre.Ax(cube, geo_c, angles_tigre, 'interpolated')
+sitk.WriteImage(sitk.GetImageFromArray(np.moveaxis(proj_data, 0,1)), os.path.join("recos", "tigre_sino_cone_3.nrrd"))
+rec = tigre_algo(proj_data, geo_c, angles_tigre, niter=tigre_iter)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "tigre_sirt_cone_3.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "tigre_error_cone_3.nrrd"))
+print("Tigre cone: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
+
+perftime = time.perf_counter()
+angles_astra=np.vstack((angles, angles, angles)).T
+angles_tigre = angles_astra*angles_tigre_mult+angles_tigre_add
+proj_data = tigre.Ax(cube, geo_c, angles_tigre, 'interpolated')
+sitk.WriteImage(sitk.GetImageFromArray(np.moveaxis(proj_data, 0,1)), os.path.join("recos", "tigre_sino_cone_4.nrrd"))
+rec = tigre_algo(proj_data, geo_c, angles_tigre, niter=tigre_iter)
+sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", "tigre_sirt_cone_4.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", "tigre_error_cone_4.nrrd"))
+print("Tigre cone: ", time.perf_counter()-perftime, np.sum(np.mean(cube-rec)))
