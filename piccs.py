@@ -89,7 +89,7 @@ def piccs(proj, out_shape, geo, angles, iters, prior_image, real_image=None, use
             fRHS = f0 + c1*eta*rho
             #print(eta, fLHS, fRHS, np.abs(fLHS-fRHS))
 
-        print(eta, np.mean(eta*stepDir), np.median(eta*stepDir))
+        #print(eta, np.mean(eta*stepDir), np.median(eta*stepDir))
         I = I + eta*stepDir
         #I = reshape(colI,M,N)
         #f1 = fUC(I,prior_image, angles,y,λ,α)
@@ -98,9 +98,9 @@ def piccs(proj, out_shape, geo, angles, iters, prior_image, real_image=None, use
         f1 = fPICCS / tv_norm_prior + 0.5*λ * (l-y).flatten().dot((l-y).flatten()) / norm_prior_y
         avgVariation = np.abs(f1-f0) + variation
         variation = np.abs(f1-f0)
-        print(n, variation, avgVariation)
+        #print(n, variation, avgVariation)
 
-        error.append((time.perf_counter()-proctime, np.mean(np.abs(real_image-I))) )
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-I))) )
         yield I
 
     yield I

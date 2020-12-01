@@ -3,7 +3,7 @@ import astra
 
 def Ax_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
-    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[0], out_shape[2])
+    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     vol_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict('FP3D_CUDA')
     cfg['ProjectionDataId'] = proj_id
@@ -22,9 +22,9 @@ def Ax_astra(out_shape, proj_geom):
         if freed:
             print("data structures and algorithm already deleted")
             return 0
-        astra.data3d.store(vol_id, np.swapaxes(x, 0,2))
+        astra.data3d.store(vol_id, x)
         astra.algorithm.run(alg_id, iterations)
-        result = np.swapaxes(astra.data3d.get(proj_id), 0,1)
+        result = astra.data3d.get(proj_id)
         if free_memory:
             free()
         return result
@@ -32,7 +32,7 @@ def Ax_astra(out_shape, proj_geom):
 
 def Atb_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
-    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[0], out_shape[2])
+    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     rec_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict('BP3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
@@ -51,9 +51,9 @@ def Atb_astra(out_shape, proj_geom):
         if freed:
             print("data structures and algorithm already deleted")
             return 0
-        astra.data3d.store(proj_id, np.swapaxes(x, 0,1))
+        astra.data3d.store(proj_id, x)
         astra.algorithm.run(alg_id, iterations)
-        result = np.swapaxes(astra.data3d.get(rec_id), 0,2)
+        result = astra.data3d.get(rec_id)
         if free_memory:
             free()
         return result
@@ -61,7 +61,7 @@ def Atb_astra(out_shape, proj_geom):
 
 def At2b_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
-    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[0], out_shape[2])
+    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     rec_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict('BP3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
@@ -81,9 +81,9 @@ def At2b_astra(out_shape, proj_geom):
         if freed:
             print("data structures and algorithm already deleted")
             return 0
-        astra.data3d.store(proj_id, np.swapaxes(x, 0,1))
+        astra.data3d.store(proj_id, x)
         astra.algorithm.run(alg_id, iterations)
-        result = np.swapaxes(astra.data3d.get(rec_id), 0,2)
+        result = astra.data3d.get(rec_id)
         if free_memory:
             free()
         return result
@@ -91,7 +91,7 @@ def At2b_astra(out_shape, proj_geom):
 
 def FDK_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
-    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[0], out_shape[2])
+    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     rec_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict('FDK_CUDA')
     cfg['ReconstructionDataId'] = rec_id
@@ -111,9 +111,11 @@ def FDK_astra(out_shape, proj_geom):
         if freed:
             print("data structures and algorithm already deleted")
             return
-        astra.data3d.store(proj_id, np.swapaxes(x, 0,1))
+        print(np.mean(x), np.min(x), np.max(x))
+        astra.data3d.store(proj_id, x)
         astra.algorithm.run(alg_id, iterations)
-        result = np.swapaxes(astra.data3d.get(rec_id), 0,2)
+        result = astra.data3d.get(rec_id)
+        print(np.mean(result), np.min(result), np.max(result))
         if free_memory:
             free()
         return result
@@ -121,7 +123,7 @@ def FDK_astra(out_shape, proj_geom):
 
 def CGLS_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
-    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[0], out_shape[2])
+    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     rec_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict('CGLS3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
@@ -140,9 +142,12 @@ def CGLS_astra(out_shape, proj_geom):
         if freed:
             print("data structures and algorithm already deleted")
             return
-        astra.data3d.store(proj_id, np.swapaxes(x, 0,1))
+        print(np.mean(x), np.min(x), np.max(x))
+        astra.data3d.store(proj_id, x)
         astra.algorithm.run(alg_id, iterations)
-        result = np.swapaxes(astra.data3d.get(rec_id), 0,2)
+        result = astra.data3d.get(rec_id)
+        result[result==np.nan] = 0
+        print(np.mean(result), np.min(result), np.max(result))
         if free_memory:
             free()
         return result
@@ -151,12 +156,12 @@ def CGLS_astra(out_shape, proj_geom):
 
 def SIRT_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
-    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[0], out_shape[2])
+    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     rec_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict('SIRT3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['option'] = {"VoxelSuperSampling": 3, "MinConstraint": 0}
+    cfg['option'] = {"VoxelSuperSampling": 3}
     alg_id = astra.algorithm.create(cfg)
     freed = False
     def free():
@@ -170,9 +175,11 @@ def SIRT_astra(out_shape, proj_geom):
         if freed:
             print("data structures and algorithm already deleted")
             return
-        astra.data3d.store(proj_id, np.swapaxes(x, 0,1))
+        print(np.mean(x), np.min(x), np.max(x))
+        astra.data3d.store(proj_id, x)
         astra.algorithm.run(alg_id, iterations)
-        result = np.swapaxes(astra.data3d.get(rec_id), 0,2)
+        result = astra.data3d.get(rec_id)
+        print(np.mean(result), np.min(result), np.max(result))
         if free_memory:
             free()
         return result
@@ -187,11 +194,11 @@ def ASD_POCS_astra(out_shape, proj_geom): # sidky 2008
     α_red = 0.95
     ε = 0.1
     first_iter = True
-    vol_geom = astra.create_vol_geom(out_shape[0], out_shape[1], out_shape[2])
+    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     proj_id = astra.create_projector('cuda3d',proj_geom, vol_geom)
     M = astra.OpTomo(proj_id)
     f_0 = np.ones(out_shape, dtype=np.float32)
-    f_0 = np.moveaxis(f_0, 2, 0)
+    #f_0 = np.moveaxis(f_0, 2, 0)
     f_shape = f_0.shape
     freed = False
     def free():
@@ -220,7 +227,7 @@ def ASD_POCS_astra(out_shape, proj_geom): # sidky 2008
             return
         f_res = f_0
         f = f_0
-        g̃_0 = np.moveaxis(x, 0,1)
+        g̃_0 = x[:]
         for _iter_n in range(iterations):
             f_0 = f
             nom = g̃_0-M.FP(f)
@@ -248,7 +255,7 @@ def ASD_POCS_astra(out_shape, proj_geom): # sidky 2008
 
         if free_memory:
             free()
-        f_res = np.swapaxes(f_res, 0,2)
+        f_res = f_res
         return f_res
     return run_ASD_POCS
 
@@ -301,13 +308,12 @@ def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin
         #vectors[i,11] = 0
         #vectors[i,12] = detector_spacing[1]
 
-        γ, β, α = angles[i]
-        #γ = -γ - np.pi*0.5
+        α, β, γ = angles[i]
         #β = β + np.pi*0.5
-        #β = -β
-        α = α + np.pi
-        cα, cβ, cγ = np.cos(-α), np.cos(-β), np.cos(-γ)
-        sα, sβ, sγ = np.sin(-α), np.sin(-β), np.sin(-γ)
+        #α = α - np.pi*0.5
+        
+        cα, cβ, cγ = np.cos(α), np.cos(-β), np.cos(-γ)
+        sα, sβ, sγ = np.sin(α), np.sin(-β), np.sin(-γ)
 
         Rz = lambda x: np.array([ [np.cos(x), -np.sin(x), 0], [np.sin(x), np.cos(x), 0], [0, 0, 1] ])
         Ry = lambda x: np.array([ [np.cos(x), 0, np.sin(x)], [0, 1, 0], [-np.sin(x), 0, np.cos(x)] ])

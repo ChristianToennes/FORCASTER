@@ -178,7 +178,7 @@ def mlem2(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
             Δμ = (L+dφ) / (D + ddφ)
             μ = μ - Δμ
             μ[μ<0] = 0
-            if n%100 == 0:
+            if n%10 == 0:
                 if real_image is None:
                     print(n, np.mean(Δμ), np.std(Δμ), np.median(Δμ), np.sum(Δμ))
                 else:
@@ -263,7 +263,7 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
         μ[μ<0] = 0
         
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
-        if n%100 == 0:
+        if True or n%10 == 0:
             if real_image is None:
                 print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
@@ -323,7 +323,7 @@ def CCA(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10
         μ[μ<0] = 0
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
         
-        if i%100 == 0:
+        if i%10 == 0:
             if real_image is None:
                 print(i, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
@@ -345,7 +345,7 @@ def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
 
     r = 0.1
     y = b*np.exp(-proj)
-    μ = np.ones(out_shape)*0.1
+    μ = np.array(initial[:])
 
     c = (1-y*r/((b+r)*(b+r)))*b
     ε = 0.00001
@@ -379,7 +379,7 @@ def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
             β = β*0.1
 
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
-        if n%100 == 0:
+        if n%10 == 0:
             up = μ-μ_old
             if real_image is None:
                 print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
@@ -438,7 +438,7 @@ def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
         μ = μ - up
         μ[μ<=0] = 0.000001
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
-        if it%100 == 0:
+        if it%10 == 0:
             if real_image is None:
                 print(it, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
@@ -489,7 +489,7 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
             μ = μ - up
             μ[μ<0] = 0
             error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
-            if n%100 == 0:
+            if n%10 == 0:
                 if real_image is None:
                     print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
                 else:
@@ -551,7 +551,7 @@ def PL_C(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=1
         μ[μ<=0] = 0.00001
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
         #print(error[-1])
-        if n%100 == 0:
+        if n%10 == 0:
             if real_image is None:
                 print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
             else:
