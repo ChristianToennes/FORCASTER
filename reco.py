@@ -67,8 +67,8 @@ image_zoom = im_size / image_shape[0]
 image_zoom = 1/astra_spacing[0]
 
 def WriteAstraImage(im, path): 
-    sim = sitk.GetImageFromArray(im*image_out_mult*astra_spacing[0])
-    sim.SetSpacing(astra_spacing)
+    sim = sitk.GetImageFromArray(im*image_out_mult*np.mean(astra_zoom))
+    sim.SetSpacing(astra_spacing[[1,2,0]])
     sitk.WriteImage(sim, path)
 
 def WriteTigreImage(im, path): 
