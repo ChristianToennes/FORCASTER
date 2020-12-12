@@ -25,6 +25,9 @@ from PotentialFilter import square_dxdx_filter as c_δδsq
 from PotentialFilter import mod_p_norm_filter as c_p_norm
 from PotentialFilter import mod_p_norm_dx_filter as c_δp_norm
 from PotentialFilter import mod_p_norm_dxdx_filter as c_δδp_norm
+from PotentialFilter import edge_preserving_filter as c_ψ_edge
+from PotentialFilter import edge_preserving_dx_filter as c_δψ_edge
+from PotentialFilter import edge_preserving_dx_t_filter as c_δψ_t_edge
 
 
 def c_μm(μ, f, δ=0.0005, p=1):
@@ -302,12 +305,12 @@ def CCA(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10
     proctime = time.perf_counter()
     for i in range(iters):
         l = Σj_a_ij( μ )
-        ȳ = b*np.exp(-l) + r
+        ȳ = b*np.exp(-l)
         #L̇ = Σi_a_ij( (1-y/ȳ) * b * np.exp(-l) )
         #part = ȳ - r - y + r*y/ȳ
-        L̇ = Σi_a_ij( (1-y/ȳ)*b*np.exp(-l))
+        L̇ = Σi_a_ij( (1-y/(ȳ+r))*ȳ)
 
-        L̈ = Σi_a_ij2( (1-y*r/(ȳ*ȳ)) * b * np.exp(-l) )
+        L̈ = - Σi_a_ij2( (1-y*r/( (ȳ+r)*(ȳ+r) )) * ȳ )
         #L̈ = Σi_a_ij2( part + y*r*r/(ȳ*ȳ) )
 
         Ṗ = c_μm(μ, c_δsq)
@@ -469,7 +472,8 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
         Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
         Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
 
-    d = Σi_a_ij( Σj_a_ij(np.ones_like(μ)) * (y-r)**2 / y)
+    γ = Σj_a_ij(np.ones_like(μ))
+    d = Σi_a_ij( γ * (y-r)**2 / y)
     error = []
     proctime = time.perf_counter()
     for n in range(iters):
@@ -477,10 +481,10 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
             l̂ = Σj_a_ij(μ)
             ŷ = b*np.exp(-l̂)
             ḣ = (y / ( ŷ + r )-1)*ŷ
-            L̇ = M * Σi_a_ij(ḣ)
 
-            nom = (L̇ + β * c_μm(μ, c_δsq) )
-            den = (d + 2*β* c_μm(μ, c_δδsq) )
+            L̇ = M * Σi_a_ij(ḣ)
+            nom = (L̇ + β * c_μm(μ, c_δψ_edge) )
+            den = (d + 2*β* c_μm(μ, c_δψ_t_edge) )
             den[den==0] = 0.00001
             #if iter%10 == 0:
             #print(n, np.mean(nom), np.mean(den), np.median(nom), np.median(den), np.mean(nom/den), np.median(nom/den))
