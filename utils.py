@@ -1,5 +1,6 @@
 import numpy as np
 import astra
+from numpy.lib.type_check import imag
 
 def Ax_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
@@ -283,7 +284,7 @@ def δtv_norm(x):
     grad[:, :, 1:] -= dz_diff[:, :, :-1]
     return grad
 
-def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin, dist_origin_detector):
+def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing):
     vectors = np.zeros((len(angles), 12))
 
     for i in range(len(angles)):
@@ -327,10 +328,10 @@ def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin
 
         #R = Rx(γ).dot(Ry(β).dot(Rz(α)) ) 
 
-        srcX, srcY, srcZ = R.dot([0,0,-dist_source_origin])
-        dX, dY, dZ = R.dot([0,0,dist_origin_detector])
-        vX, vY, vZ = R.dot([detector_spacing[0], 0, 0])
-        uX, uY, uZ = R.dot([0,detector_spacing[1], 0])
+        srcX, srcY, srcZ = R.dot([0,0,-dist_source_origin*image_spacing])
+        dX, dY, dZ = R.dot([0,0,dist_origin_detector*image_spacing])
+        vX, vY, vZ = R.dot([detector_spacing[0]*image_spacing, 0, 0])
+        uX, uY, uZ = R.dot([0,detector_spacing[1]*image_spacing, 0])
 
         vectors[i] = srcX, srcY, srcZ, dX, dY, dZ, uX, uY, uZ, vX, vY, vZ
 
