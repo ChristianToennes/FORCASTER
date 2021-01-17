@@ -198,7 +198,73 @@ def p_norm(x, p, δ=1):
     return np.sum(x[δarea])*math.pow(2*δ, -p)*math.pow(δ*δ*2, p-1) + \
            np.sum( np.abs(x[~δarea] - δ*(1-0.5*p) * np.sign(x[~δarea]) ) ** p ) /p
 
-def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, βp=10**4, use_astra=True): # stayman 2013
+def print_stats(i, x):
+    print(i, np.mean(x), np.std(x), np.median(x), np.sum(x))
+
+def logLikelihood(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**3, p=1, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True):
+    y = b*np.exp(-proj)
+    
+    r= 0
+    if initial is None:
+        if use_astra:
+            initial = utils.FDK_astra(out_shape, geo)(proj, free_memory=True)
+        else:
+            initial = tigre.algorithms.fdk(proj, geo, angles) # initial guess
+
+    μ = np.array(initial[:])
+
+    if use_astra:
+        Σj_a_ij = utils.Ax_astra(out_shape, geo)
+        Σi_a_ij = utils.Atb_astra(out_shape, geo)
+        Σi_a_ij2 = utils.At2b_astra(out_shape, geo)
+        Σj_a_ij2 = utils.Ax2_astra(out_shape, geo)
+    else:
+        Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
+        Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
+        Σi_a_ij2 = lambda x: tigre.Atb(x, geo, angles)
+        Σj_a_ij2 = lambda x: tigre.Ax(x, geo, angles)
+
+
+    error = []
+    obj_func = []
+    proctime = time.perf_counter()
+    #γ = Σj_a_ij(np.ones_like(μ))
+    #if(np.count_nonzero(γ==0)>0): raise Exception("Some Detector pixels are always empty")
+
+    l = Σj_a_ij(μ)
+    ŷ = b*np.exp(-l)
+    L = Σi_a_ij((y*(np.log(b)-l)-ŷ))
+    R = 0.5*c_μm(μ, c_sq)
+    error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+    f = -L+β*R
+    obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+    yield μ[:]
+
+    for i in range(iters):
+        l = Σj_a_ij(μ)
+        ŷ = b*np.exp(-l)
+        L = Σi_a_ij(y*(np.log(b)-l)-ŷ)
+        R = 0.5*c_μm(μ, c_sq)
+        Ṙ = c_μm(μ, δψ, p)
+        R̈ = c_μm(μ, δδψ, p)
+        L̇ = Σi_a_ij( y-ŷ )
+        L̈ = -Σi_a_ij2(ŷ)
+        δf = -L̇ + β*Ṙ
+        δδf = -L̈ + β*R̈
+        #δf[δδf==0] = 0
+        δδf[δδf==0] = 1
+        μ = μ + 0.6 * (δf / δδf)
+        μ[μ<0] = 0
+        #μ[~np.bitwise_and(μ>0, μ<np.inf)] = 0
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+        f = -L+β*R
+        obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+        if i%10 == 0:
+            yield μ[:]
+    yield μ
+    yield (error, obj_func, μ)
+
+def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, βp=10**3, βr=10**3, p=1, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True): # stayman 2013
 
     if initial is None:
         if use_astra:
