@@ -4,3 +4,4 @@ recos/
 *.nrrd
 __pycache__/
 build/
+literature/

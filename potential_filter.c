@@ -312,6 +312,53 @@ static int mod_p_norm_dx_filter(
         x = d - buffer[i];
         if (x < δ)
         {
+            sum += x*w[i] * a * x;
+        }
+        else
+        {
+            if (x < 0)
+            {
+                x_b = x - b;
+            }
+            else
+            {
+                x_b = x + b;
+            }
+            if (x_b < 0)
+            {
+                sum += x * w[i] * x_b * pow(-x_b, p - 2);
+            }
+            else
+            {
+                sum += x * w[i] * x_b * pow(x_b, p - 2);
+            }
+        }
+    }
+    *return_value = sum;
+    // return 1 to indicate success (CPython convention)
+    return 1;
+}
+
+// δψ = lambda x: 2^(1-p)*δ^-p*(δ*δ*p)^(p-1) * x if x <= δ else (0.5*d(p-2)s+x)|0.5*d(p-2)s+x|^p-2
+static int mod_p_norm_dx_t_filter(
+    double *buffer,
+    intptr_t filter_size,
+    double *return_value,
+    void *user_data)
+{
+    double d = buffer[13];
+    //*return_value = 0;
+    double sum = 0;
+    double x, x_b;
+    double δ = ((double *)user_data)[0];
+    double p = ((double *)user_data)[1];
+    double a = pow(2, 1 - p) * pow(δ, -p) * pow(δ * δ * p, p - 1.0);
+    double b = 0.5 * δ * (p - 2);
+    for (int i = 0; i < filter_size; i++)
+    {
+        x = d - buffer[i];
+        if (x < δ)
+        {
             sum += w[i] * a * x;
         }
         else
@@ -548,6 +595,13 @@ py_get_mod_p_norm_dx_filter(PyObject *obj, PyObject *args)
     return PyCapsule_New(mod_p_norm_dx_filter, filter_signature, NULL);
 }
 static PyObject *
+py_get_mod_p_norm_dx_t_filter(PyObject *obj, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return NULL;
+    return PyCapsule_New(mod_p_norm_dx_t_filter, filter_signature, NULL);
+}
+static PyObject *
 py_get_mod_p_norm_dxdx_filter(PyObject *obj, PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))
@@ -586,6 +640,7 @@ static PyMethodDef ExampleMethods[] = {
     {"square_dxdx_filter", (PyCFunction)py_get_square_dxdx_filter, METH_VARARGS, ""},
     {"mod_p_norm_filter", (PyCFunction)py_get_mod_p_norm_filter, METH_VARARGS, ""},
     {"mod_p_norm_dx_filter", (PyCFunction)py_get_mod_p_norm_dx_filter, METH_VARARGS, ""},
+    {"mod_p_norm_dx_t_filter", (PyCFunction)py_get_mod_p_norm_dx_t_filter, METH_VARARGS, ""},
     {"mod_p_norm_dxdx_filter", (PyCFunction)py_get_mod_p_norm_dxdx_filter, METH_VARARGS, ""},
     {"edge_preserving_filter", (PyCFunction)py_get_edge_preserving_filter, METH_VARARGS, ""},
     {"edge_preserving_dx_filter", (PyCFunction)py_get_edge_preserving_dx_filter, METH_VARARGS, ""},
