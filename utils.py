@@ -322,57 +322,233 @@ def δtv_norm(x):
     grad[:, :, 1:] -= dz_diff[:, :, :-1]
     return grad
 
+def create_default_astra_geo():
+    angles = np.linspace(0, 2*np.pi, 360, False)
+    angles_one = np.ones_like(angles)
+    angles_astra = np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
+    detector_shape = np.array([128, 128])
+    detector_spacing = np.array([1,1])
+    dist_source_origin = 2000
+    dist_detector_origin = 200
+    astra_zoom = 1
+    return create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+
+
 def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing):
     vectors = np.zeros((len(angles), 12))
 
     for i in range(len(angles)):
-        
-        ## source
-        #vectors[i,1] = np.sin(angles[i][0]) * dist_source_origin
-        #vectors[i,2] = -np.cos(angles[i][0]) * dist_source_origin
-        #vectors[i,3] = 0
-
-        ## center of detector
-        #vectors[i,4] = -np.sin(angles[i][0]) * dist_origin_detector
-        #vectors[i,5] = np.cos(angles[i][0]) * dist_origin_detector
-        #vectors[i,6] = 0
-
-        # vector from detector pixel (0,0) to (0,1)
-        #vectors[i,7] = np.cos(angles[i][0]) * detector_spacing[0]
-        #vectors[i,8] = np.sin(angles[i][0] ) * detector_spacing[0]
-        #vectors[i,9] = 0
-
-        ## vector from detector pixel (0,0) to (1,0)
-        #vectors[i,10] = 0
-        #vectors[i,11] = 0
-        #vectors[i,12] = detector_spacing[1]
-
         α, β, γ = angles[i]
-        #β = β + np.pi*0.5
-        #α = α - np.pi*0.5
-        
         cα, cβ, cγ = np.cos(α), np.cos(-β), np.cos(-γ)
         sα, sβ, sγ = np.sin(α), np.sin(-β), np.sin(-γ)
-
-        Rz = lambda x: np.array([ [np.cos(x), -np.sin(x), 0], [np.sin(x), np.cos(x), 0], [0, 0, 1] ])
-        Ry = lambda x: np.array([ [np.cos(x), 0, np.sin(x)], [0, 1, 0], [-np.sin(x), 0, np.cos(x)] ])
-        Rx = lambda x: np.array([ [1, 0, 0], [0, np.cos(x), -np.sin(x)], [0, np.sin(x), np.cos(x)] ])
-
         R = np.array([
             [cα*cβ, cα*sβ*sγ-sα*cγ, cα*sβ*cγ+sα*sγ],
             [sα*cβ, sα*sβ*sγ+cα*cγ, sα*sβ*cγ-cα*sγ],
             [-sβ, cβ*sγ, cβ*cγ]
         ])
-
-        #R = Rx(γ).dot(Ry(β).dot(Rz(α)) ) 
-
         srcX, srcY, srcZ = R.dot([0,0,-dist_source_origin*image_spacing])
         dX, dY, dZ = R.dot([0,0,dist_origin_detector*image_spacing])
         vX, vY, vZ = R.dot([detector_spacing[0]*image_spacing, 0, 0])
         uX, uY, uZ = R.dot([0,detector_spacing[1]*image_spacing, 0])
-
         vectors[i] = srcX, srcY, srcZ, dX, dY, dZ, uX, uY, uZ, vX, vY, vZ
+
+    #print(np.linalg.norm([vX, vY, vZ]), np.linalg.norm([uX, uY, uZ]), np.linalg.norm([dX, dY, dZ]), np.linalg.norm([srcX, srcY, srcZ]), dist_source_origin, dist_origin_detector)
 
     # Parameters: #rows, #columns, vectors
     proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors)
     return proj_geom
+
+def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing):
+    #vectors = np.zeros((len(coord_systems), 12))
+    vectors = np.zeros((len(coord_systems), 12))
+    prims = []
+    secs = []
+
+    cs = np.array(coord_systems.flatten())
+
+    for i in range(len(coord_systems)):
+
+        #if i > 358 and i < 361 or i==0 or i==len(coord_systems)-1:
+        #    print(coord_systems[i])
+
+        x_axis = np.array(coord_systems[i, :,0])
+        y_axis = np.array(coord_systems[i, :,1])
+        z_axis = np.array(coord_systems[i, :,2])
+        iso = (coord_systems[i, :,3]-coord_systems[0,:,3])
+        #iso = coord_systems[i, :,3]
+
+        #print(np.linalg.norm(x_axis),np.linalg.norm(y_axis),np.linalg.norm(z_axis))
+
+        x_axis /= np.linalg.norm(x_axis)
+        x_axis *= detector_spacing[0]*image_spacing
+        y_axis /= np.linalg.norm(y_axis)
+        y_axis *= detector_spacing[1]*image_spacing
+
+
+        #if np.abs(coord_systems[i,2,0])<0.00001:
+        if coord_systems[i,1,2]>0 and coord_systems[i,2,1]>0:
+        #if i>359:
+            z = np.array(z_axis)
+            z_axis[0] = -z[0]
+            z_axis[1] = -z[1]
+            z_axis[2] = -z[2]
+
+            x = np.array(x_axis)
+            y = np.array(y_axis)
+            x_axis[0]=x[0]
+            x_axis[1]=x[1]
+            x_axis[2]=x[2]
+            y_axis[0]=y[0]
+            y_axis[1]=y[1]
+            y_axis[2]=y[2]
+
+        vX, vY, vZ = x_axis
+
+        uX, uY, uZ = y_axis
+
+        prims.append(np.arctan2(z_axis[1], z_axis[2])-0.5*np.pi)
+        
+        z_axis /= np.linalg.norm(z_axis)
+
+        if coord_systems[i,1,2]>0 and coord_systems[i,2,1]>0:
+            v_detector = z_axis * dist_origin_detector[i]*image_spacing + iso*image_spacing
+            v_source = -z_axis * dist_source_origin[i]*image_spacing + iso*image_spacing
+        else:
+            v_detector = z_axis * dist_origin_detector[i]*image_spacing + iso*image_spacing
+            v_source = -z_axis * dist_source_origin[i]*image_spacing + iso*image_spacing
+
+        srcX, srcY, srcZ = v_source
+        dX, dY, dZ = v_detector
+
+        vectors[i] = srcX, srcY, srcZ, dX, dY, dZ, uX, uY, uZ, vX, vY, vZ
+
+    #print(np.linalg.norm([vX, vY, vZ]), np.linalg.norm([uX, uY, uZ]), np.linalg.norm([dX, dY, dZ]), np.linalg.norm([srcX, srcY, srcZ]), dist_source_origin, dist_origin_detector[-1], iso)
+    # Parameters: #rows, #columns, vectors
+    filt = np.ones(vectors.shape[0], dtype=bool)
+    #print(coord_systems[-55:-45])
+    #filt[53:55] = 0
+    filt[-50:] = False
+    filt[0:3] = False
+    proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors[filt])
+    return proj_geom, prims, filt
+
+test_data = "044802004201113212fa0002f96ffbfeff4c04fe06fa00ae0431039600980000000000008000000000ffff0402040002010080008000800080008000800080008000800c000080008000800080008000800080ffffffffff0200800400ffff5aff1000cd0300000101060900000202020276008aff5aff10000000ff0cd3ffee0000800080000000807f0988009d0400800080008011030080add20000f62a32000000000014baffff01000000c40900000600000059d2ffff070000009d2a000008000000eaffffff09000000000000002a000000f8ffffff2b0000002c0000002c000000fdffffff36000000dfffffff370000000be3ffff38000000e1220000390000001419f3ff3a0000001bfcffff3b000000b87d0c00e80300002d0200003e000000000000003f00000000000000d007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a02c673f43e3a4bad0f2dbbe420991c4662011bc5cf57fbf568c80bc68250fbc15e7dbbe2241933cbf2367bf007b89440000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f01fe7f3fce02b73a52a9fb3b778bafc45988b7baedff7f3f7a71063af48554c13ea3fbbb1e4209ba0ffe7f3f5de675443ea3fb3b1e42093a0ffe7fbf778bafc401fe7f3fce02b73a52a9fb3bf48554c15988b73aedff7fbf7a7106ba5de67544c3f5a8be8f4294c27b94b242ec1d04c61f851fc148d1ff45000000000000000000"
+
+def unpack_sh_stparm(data, f = "12h5h6ch8hcc5h2h6c5h2h4chc3c4h3cc17hh50i12f12f12f12f6fh7c"):
+    import struct
+
+    #"12h5h6ch8hcc5h2h6c5h2h4chc3c4h3cc17hh50i12f12f12f12f6fh7c"
+
+    length = struct.calcsize(f)
+    data_list = struct.unpack(f, data[-length:])
+
+    data_dict = {}
+    i=0
+    data_dict["CRAN_A"] = data_list[i]; i+=1
+    data_dict["RAO_A"] = data_list[i]; i+=1
+    data_dict["X_A"] = data_list[i]; i+=1
+    data_dict["Y_A"] = data_list[i]; i+=1
+    data_dict["Z_A"] = data_list[i]; i+=1
+    data_dict["ANGUL_A"] = data_list[i]; i+=1
+    data_dict["ORBITAL_A"] = data_list[i]; i+=1
+    data_dict["SID_A"] = data_list[i]; i+=1
+    data_dict["SOD_A"] = data_list[i]; i+=1
+    data_dict["TOD"] = data_list[i]; i+=1
+    data_dict["MAGN_A"] = data_list[i]; i+=1
+    data_dict["MFTV_A"] = data_list[i]; i+=1
+    data_dict["ROTAT_A"] = data_list[i]; i+=1
+    data_dict["ROTAT2_A"] = data_list[i]; i+=1
+    data_dict["ROTAT3_A"] = data_list[i]; i+=1
+    data_dict["MSOF_A"] = data_list[i]; i+=1
+    data_dict["COLLTV_A"] = data_list[i]; i+=1
+    data_dict["INV_IMG_DEFAULT_A"] = data_list[i]; i+=1
+    data_dict["MFIELD_POSSIBLE_A"] = data_list[i]; i+=1
+    data_dict["INV_IMG_DISPLAY_A"] = data_list[i]; i+=1
+    data_dict["IMG_ROT_A"] = data_list[i]; i+=1
+    data_dict["PLANE_A_PARK"] = data_list[i]; i+=1
+    data_dict["GRID_STATUS_A"] = data_list[i]; i+=1
+    
+    data_dict["CRAN_B"] = data_list[i]; i+=1
+    data_dict["RAO_B"] = data_list[i]; i+=1
+    data_dict["X_B"] = data_list[i]; i+=1
+    data_dict["Y_B"] = data_list[i]; i+=1
+    data_dict["Z_B"] = data_list[i]; i+=1
+    data_dict["ANGUL_B"] = data_list[i]; i+=1
+    data_dict["ORBITAL_B"] = data_list[i]; i+=1
+    data_dict["SID_B"] = data_list[i]; i+=1
+    data_dict["SOD_B"] = data_list[i]; i+=1
+    data_dict["TBL_TOP"] = data_list[i]; i+=1
+    i+=1 # DUMMY1
+    data_dict["MAGN_B"] = data_list[i]; i+=1
+    data_dict["MFTV_B"] = data_list[i]; i+=1
+    data_dict["ROTAT_B"] = data_list[i]; i+=1
+    data_dict["ROTAT2_B"] = data_list[i]; i+=1
+    data_dict["ROTAT3_B"] = data_list[i]; i+=1
+    data_dict["MSOF_B"] = data_list[i]; i+=1
+    data_dict["COLLTV_B"] = data_list[i]; i+=1
+    data_dict["INV_IMG_DEFAULT_B"] = data_list[i]; i+=1
+    data_dict["MFIELD_POSSIBLE_B"] = data_list[i]; i+=1
+    data_dict["PLANE_A_PARK"] = data_list[i]; i+=1
+    data_dict["INV_IMG_DISPLAY_B"] = data_list[i]; i+=1
+    data_dict["IMG_ROT_B"] = data_list[i]; i+=1
+    data_dict["DIS_ALL_TBL_VALUES"] = data_list[i]; i+=1
+    data_dict["SYS_TILT"] = data_list[i]; i+=1
+    data_dict["TBL_TILT"] = data_list[i]; i+=1
+    data_dict["TBL_ROT"] = data_list[i]; i+=1
+    data_dict["TBL_X"] = data_list[i]; i+=1
+    data_dict["TBL_Y"] = data_list[i]; i+=1
+    data_dict["TBL_Z"] = data_list[i]; i+=1
+    data_dict["TBL_CRADLE"] = data_list[i]; i+=1
+    data_dict["PAT_POS"] = data_list[i]; i+=1
+    data_dict["STPAR_ACT"] = data_list[i]; i+=1
+    data_dict["SYS_TYPE"] = data_list[i]; i+=1
+    data_dict["TBL_TYPE"] = data_list[i]; i+=1
+    data_dict["POSNO"] = data_list[i]; i+=1
+    data_dict["MOVE_A"] = data_list[i]; i+=1
+    data_dict["MOVE_B"] = data_list[i]; i+=1
+    data_dict["MOVE_TBL"] = data_list[i]; i+=1
+    data_dict["DISMODE"] = data_list[i]; i+=1
+    data_dict["IO_HEIGHT"] = data_list[i]; i+=1
+    data_dict["TBL_VERT"] = data_list[i]; i+=1
+    data_dict["TBL_LONG"] = data_list[i]; i+=1
+    data_dict["TBL_LAT"] = data_list[i]; i+=1
+    data_dict["STAND_SPECIAL"] = data_list[i]; i+=1
+    data_dict["ROOM_SELECTION"] = data_list[i]; i+=1
+    data_dict["GRID_STATUS_B"] = data_list[i]; i+=1
+    data_dict["VERSION_SHSTPAR"] = data_list[i]; i+=1
+    data_dict["CAREPOS_X_A"] = data_list[i]; i+=1
+    data_dict["CAREPOS_Y_A"] = data_list[i]; i+=1
+    data_dict["CAREPOS_X_B"] = data_list[i]; i+=1
+    data_dict["CAREPOS_Y_B"] = data_list[i]; i+=1
+    data_dict["CAMERAROT_A"] = data_list[i]; i+=1
+    data_dict["CAMERAROT_B"] = data_list[i]; i+=1
+    data_dict["IT_LONG_A"] = data_list[i]; i+=1
+    data_dict["IT_LAT_A"] = data_list[i]; i+=1
+    data_dict["IT_HEIGHT_A"] = data_list[i]; i+=1
+    data_dict["IT_LONG_B"] = data_list[i]; i+=1
+    data_dict["IT_LAT_B"] = data_list[i]; i+=1
+    data_dict["IT_HEIGHT_B"] = data_list[i]; i+=1
+    data_dict["SISOD_A"] = data_list[i]; i+=1
+    data_dict["SISOD_B"] = data_list[i]; i+=1
+    data_dict["ISO_WORLD_X_A"] = data_list[i]; i+=1
+    data_dict["ISO_WORLD_Y_A"] = data_list[i]; i+=1
+    data_dict["ISO_WORLD_Z_A"] = data_list[i]; i+=1
+    data_dict["NO_ELEM_STAND_PRIV"] = data_list[i]; i+=1
+    data_dict["STAND_PRIV"] = data_list[i:i+50]; i+=50
+    data_dict["COORD_SYS_C_ARM"] = data_list[i:i+12]; i+=12
+    data_dict["COORD_SYS_C_ARM_B"] = data_list[i:i+12]; i+=12
+    data_dict["COORD_SYS_TABLE"] = data_list[i:i+12]; i+=12
+    data_dict["COORD_SYS_PATIENT"] = data_list[i:i+12]; i+=12
+    data_dict["ROBOT_AXES"] = data_list[i:i+6]; i+=6
+    data_dict["TOKEN"] = data_list[i]; i+=1
+    data_dict["AP_ID_REQUESTER"] = data_list[i]; i+=1
+    data_dict["CONFIRM_POSITION"] = data_list[i]; i+=1
+
+    #print(data_dict["COORD_SYS_C_ARM"])
+    #print(data_dict["COORD_SYS_TABLE"])
+    #print(data_dict["COORD_SYS_PATIENT"])
+    #print(data_dict["MAGN_A"], data_dict["MFTV_A"], data_dict["MSOF_A"], data_dict["COLLTV_A"])
+
+    #print(data_dict["SID_A"], data_dict["SOD_A"], data_dict["SISOD_A"])
+
+    return data_dict
