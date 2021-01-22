@@ -24,6 +24,7 @@ from PotentialFilter import square_dx_filter as c_δsq
 from PotentialFilter import square_dxdx_filter as c_δδsq
 from PotentialFilter import mod_p_norm_filter as c_p_norm
 from PotentialFilter import mod_p_norm_dx_filter as c_δp_norm
+from PotentialFilter import mod_p_norm_dx_t_filter as c_δp_t_norm
 from PotentialFilter import mod_p_norm_dxdx_filter as c_δδp_norm
 from PotentialFilter import edge_preserving_filter as c_ψ_edge
 from PotentialFilter import edge_preserving_dx_filter as c_δψ_edge
@@ -275,12 +276,7 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
     μ = np.array(initial[:])
     #λ = 0 # registration parameters (3 angles, 3 translations)
     #H = σI
-    r = 0.1
-
-    Ψp = 1 # rigid transformation
-    Ψr = 1 # rigid transformation
-    βr = 1
-    p = 1.5 # p-norm
+    r = 0.0
 
     y = b*np.exp(-proj) + r
     N = y.shape
@@ -295,12 +291,22 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
         #Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles)
 
     c = (1-y*r/((b+r)*(b+r)))*b
-    ε = 0.00001
+    ε = 0
     c[c<ε] = ε
     d = Σi_a_ij2(c)
     #print(np.mean(d), np.median(d), np.min(d), np.max(d))
     error = []
+    obj_func = []
     proctime = time.perf_counter()
+
+    l = Σj_a_ij(μ)
+    ŷ = b*np.exp(-l)
+    L = Σi_a_ij((y*(np.log(b)-l)-ŷ))
+    R = 0.5*c_μm(μ, c_sq)
+    error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+    f = -L+βr*R
+    obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+    yield μ[:]
     for n in range(iters):
         #for r in range(1, R):
         #    H[r] = BFGS()
@@ -311,52 +317,75 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=
         #H[0] = H[-1]
 
         l = Σj_a_ij(μ)
-        #ḣ = (y / ( b*np.exp(-l̂) + r ) - 1)*b*np.exp(-l̂)
         ḣ = b*np.exp(-l)-y
+        #nz_l = l>0
+        #h0 = (y[nz_l]*np.log(b)-b)
+        #p1 = b*np.exp(-l[nz_l])
+        #p1[p1==0] = 0.00000001
+        #hl = (y[nz_l]*np.log(p1)-b*np.exp(-l[nz_l]))
+        #c = np.zeros_like(l)
+        #c[nz_l] = 2*(h0 - hl + ḣ[nz_l]*l[nz_l]) / (l[nz_l]**2)
+        #ḧ = b
+        #c[~nz_l] = ḧ
+        #c[c<0] = 0
+        #d = Σi_a_ij2(c)
+        
+        #ḣ = (y / ( b*np.exp(-l̂) + r ) - 1)*b*np.exp(-l̂)
         #print(np.mean(ḣ), np.median(ḣ), np.min(ḣ), np.max(ḣ))
         #p_norm = c_μm(μ, c_δp_norm, p=p)
         #print(np.mean(p_norm), np.median(p_norm), np.min(p_norm), np.max(p_norm))
         #dp_norm = c_μm(μ, c_δδp_norm, p=p)
         #print(np.mean(dp_norm), np.median(dp_norm), np.min(dp_norm), np.max(dp_norm))
 
+        denom = d + βr * c_μm(μ, δδψ, p)
         up = (
             Σi_a_ij(ḣ) \
-            #- βr * Ψr * δfr * (Ψr*μ)  \
-            - βp* Ψp * c_μm(μ, c_δp_norm, p)
+            #- βp * δfr * (Ψr*μ)  \
+            - βr * c_μm(μ, δψ, p)
         ) / (
-            d \
-            #+ βr * Ψr**2 * ωfr * (ψr*μ) \
-            + βp * Ψp**2 * c_μm(μ, c_δδp_norm, p)
+            denom
         )
+        up[denom==0] = 0
         μ = μ + up
         μ[μ<0] = 0
         
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
-        if True or n%10 == 0:
-            if real_image is None:
-                print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
-            else:
-                print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
+        L = Σi_a_ij(y*(np.log(b)-l)-ŷ)
+        R = 0.5*c_μm(μ, c_sq)
+        f = -L+βr*R
+        obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+        if n%10 == 0:
+            #if real_image is None:
+            #    print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
+            #else:
+            #    print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
-        if n == iters-2:
+        elif n == iters-2:
             yield μ
         #print(n, np.mean(μ), np.std(μ), np.median(μ), np.min(μ), np.max(μ))
     yield μ
-    yield error
+    yield (error, obj_func, μ)
 
-def CCA(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, use_astra=True): # fessler 1995
-    y = b*np.exp(-proj)
+def CCA(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, p=1, δψ=c_δp_norm, δδψ=c_δp_t_norm, M=-1, use_astra=True): # fessler 1995
+    y = np.ma.masked_array(b*np.exp(-proj), mask=np.ma.nomask)
     
     if initial is None:
         if use_astra:
             initial = utils.FDK_astra(out_shape, geo)(proj, free_memory=True)
         else:
             initial = tigre.algorithms.fdk(proj, geo, angles) # initial guess
-    
+        
     μ = np.array(initial[:])
 
     r = 0.1
     ω = 0.6
+
+    if M==-1:
+        M = len(angles)
+    
+    if M!=0:
+        m_size = math.ceil(len(proj)/M)
+        print(M, m_size, len(proj)/M)
 
     if use_astra:
         Σj_a_ij = utils.Ax_astra(out_shape, geo)
@@ -368,40 +397,78 @@ def CCA(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10
         #Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles)
 
     error = []
+    obj_func = []
     proctime = time.perf_counter()
+    error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+
+    l = Σj_a_ij(μ)
+    ŷ = b*np.exp(-l)
+    L = Σi_a_ij((y*(np.log(b)-l)-ŷ))
+    R = 0.5*c_μm(μ, c_sq)
+    f = -L+β*R
+    obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+    yield μ[:]
+    all_vectors = geo['Vectors']
     for i in range(iters):
-        l = Σj_a_ij( μ )
-        ȳ = b*np.exp(-l)
-        #L̇ = Σi_a_ij( (1-y/ȳ) * b * np.exp(-l) )
-        #part = ȳ - r - y + r*y/ȳ
-        L̇ = Σi_a_ij( (1-y/(ȳ+r))*ȳ)
-
-        L̈ = - Σi_a_ij2( (1-y*r/( (ȳ+r)*(ȳ+r) )) * ȳ )
-        #L̈ = Σi_a_ij2( part + y*r*r/(ȳ*ȳ) )
-
-        Ṗ = c_μm(μ, c_δsq)
-        P̈ = c_μm(μ, c_δδsq)
-
-        nom = (L̇ - β * Ṗ)
-        den = (L̈ + β * P̈)
-
-        #print(i, np.mean(nom), np.mean(den), np.median(nom), np.median(den), np.mean(nom/den), np.median(nom/den))
-        #print(i, np.mean(μ), np.median(μ), np.mean(nom/den), np.median(nom/den) )
-        up = ω*nom/den
-        μ = μ + up
-        μ[μ<0] = 0
-        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
-        
-        if i%10 == 0:
-            if real_image is None:
-                print(i, np.mean(up), np.std(up), np.median(up), np.sum(up))
+        for m in range(0, M):
+            if(M > 1):
+                geo['Vectors'] = all_vectors[m:m+1]
+                Σj_a_ij = utils.Ax_astra(out_shape, geo)
+                Σi_a_ij = utils.Atb_astra(out_shape, geo)
+                Σi_a_ij2 = utils.At2b_astra(out_shape, geo)
+                s = slice(m*m_size, (m+1)*m_size, 1)
+                y_s = y[:,s]
             else:
-                print(i, np.sum(up), np.sum(np.abs(real_image-μ)))
+                y_s = y
+
+            l = Σj_a_ij( μ )
+
+            ȳ = b*np.exp(-l)
+            L = Σi_a_ij(y_s*(np.log(b)-l)-ȳ)
+            R = 0.5*c_μm(μ, c_sq)
+            #L̇ = Σi_a_ij( (1-y/ȳ) * b * np.exp(-l) )
+            #part = ȳ - r - y + r*y/ȳ
+            L̇ = Σi_a_ij( (1-y_s/(ȳ+r))*ȳ)
+
+            L̈ = Σi_a_ij2( (1-y_s*r/( (ȳ+r)*(ȳ+r) )) * ȳ )
+            #L̈ = Σi_a_ij2( part + y*r*r/(ȳ*ȳ) )
+
+            Ṗ = c_μm(μ, δψ, p)
+            P̈ = c_μm(μ, δδψ, p)
+
+            nom = (L̇ - β * Ṗ)
+            den = (L̈ + β * P̈)
+
+            #print_stats(i, l)
+            #print_stats(i, ȳ)
+            #print_stats(i, L̇)
+            #print_stats(i, L̈)
+            #print_stats(i, Ṗ)
+            #print_stats(i, P̈)
+            up = ω*nom/den
+            μ = μ + up
+            μ[μ<0] = 0
+            
+            if(M > 1):
+                Σi_a_ij.free()
+                Σi_a_ij2.free()
+                Σj_a_ij.free()
+
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+        f = -L+β*R
+        obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+
+
+        if i%10 == 0:
+            #if real_image is None:
+            #    print(i, np.mean(up), np.std(up), np.median(up), np.sum(up))
+            #else:
+            #    print(i, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
     yield μ
-    yield error
+    yield (error, obj_func, μ)
 
-def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, use_astra=True): # erdogan 1998
+def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, p=1, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True): # erdogan 1998
 
     if use_astra:
         Σj_a_ij = utils.Ax_astra(out_shape, geo)
@@ -422,23 +489,37 @@ def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
     d = Σi_a_ij2(c)
 
     error = []
+    obj_func = []
     proctime = time.perf_counter()
+
+    l = Σj_a_ij(μ)
+    ŷ = b*np.exp(-l)
+    L = Σi_a_ij((y*(np.log(b)-l)-ŷ))
+    R = 0.5*c_μm(μ, c_sq)
+    error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+    f = -L+β*R
+    obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+    yield μ[:]
     for n in range(iters):
 
         l̂ = Σj_a_ij(μ)
         ḣ = (y/(b*np.exp(-l̂)+r)-1)*b*np.exp(-l̂)
         #q̇ = ḣ(l̂) + c*(l̂-l)
         #q̇ = (y/(b*np.exp(-l̂)+r)-1)*b*np.exp(-l̂)
-        q̇ = ḣ[:]
-        Q̇ = Σi_a_ij(q̇)
-        Ṙ = c_μm(μ, c_δsq)
-        p̂ = c_μm(μ, c_δδsq)
+        q̇ = ḣ
+        Ṙ = c_μm(μ, δψ, p)
+        p̂ = c_μm(μ, δδψ, p)
 
+        Q̇ = Σi_a_ij(q̇)
         μ_old = μ[:]
         for _ in range(5):
             μ = μ - (Q̇ + d*(μ-μ_old) + β*Ṙ) / (d+β*p̂)
-        μ[μ<0] = 0
-
+            μ[μ<0] = 0
+        #μ[μ<0] = 0
+        #inp = np.zeros_like(μ)
+        #inp[j] = 1
+        #row = Σj_a_ij(inp)
+        #q̇ = q̇ + row*c
         #den = Σj_a_ij(μ-μ_old)*c
         #den_0 = den != 0
         #q̇[den_0] = q̇[den_0] / den[den_0]
@@ -448,20 +529,24 @@ def PL_PSCD(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
             β = β*0.1
 
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+        L = Σi_a_ij(y*(np.log(b)-l)-ŷ)
+        R = 0.5*c_μm(μ, c_sq)
+        f = -L+β*R
+        obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
         if n%10 == 0:
-            up = μ-μ_old
-            if real_image is None:
-                print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
-            else:
-                print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
+            #up = μ-μ_old
+            #if real_image is None:
+            #    print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
+            #else:
+            #    print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
-        if n == iters-2:
-            yield μ
+        #if n == iters-2:
+        #    yield μ
 
     yield μ
-    yield error
+    yield (error, obj_func, μ)
 
-def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, use_astra=True): # erdogan 1999
+def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**2, β=10**2, use_astra=True): # erdogan 1999
     #print("proj", np.mean(proj), np.median(proj), np.max(proj), np.min(proj))
     #print("e^proj", np.mean(np.exp(-proj)), np.median(np.exp(-proj)), np.max(np.exp(-proj)), np.min(np.exp(-proj)))
     
@@ -493,7 +578,17 @@ def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
     #d[d==0] = 0.000001
     M = 1 # subsets
     error = []
+    obj_func = []
     proctime = time.perf_counter()
+
+    l = Σj_a_ij(μ)
+    ŷ = b*np.exp(-l)
+    L = Σi_a_ij((y*(np.log(b)-l)-ŷ))
+    R = 0.5*c_μm(μ, c_sq)
+    error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+    f = -L+β*R
+    obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+    yield μ[:]
     for it in range(iters):
         l̂ = Σj_a_ij(μ)
         ŷ = b*np.exp(-l̂)
@@ -507,16 +602,20 @@ def ML_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
         μ = μ - up
         μ[μ<=0] = 0.000001
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+        L = Σi_a_ij(y*(np.log(b)-l)-ŷ)
+        R = 0.5*c_μm(μ, c_sq)
+        f = -L+β*R
+        obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
         if it%10 == 0:
-            if real_image is None:
-                print(it, np.mean(up), np.std(up), np.median(up), np.sum(up))
-            else:
-                print(it, np.sum(up), np.sum(np.abs(real_image-μ)))
+            #if real_image is None:
+            #    print(it, np.mean(up), np.std(up), np.median(up), np.sum(up))
+            #else:
+            #    print(it, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
     yield μ
-    yield error
+    yield (error, obj_func, μ)
 
-def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**2, use_astra=True): # erdogan 1999
+def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**2, β=10**2, p=1, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True): # erdogan 1999
 
     if initial is None:
         if use_astra:
@@ -541,7 +640,17 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
     γ = Σj_a_ij(np.ones_like(μ))
     d = Σi_a_ij( γ * (y-r)**2 / y)
     error = []
+    obj_func = []
     proctime = time.perf_counter()
+
+    l = Σj_a_ij(μ)
+    ŷ = b*np.exp(-l)
+    L = Σi_a_ij((y*(np.log(b)-l)-ŷ))
+    R = 0.5*c_μm(μ, c_sq)
+    error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+    f = -L+β*R
+    obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+    yield μ[:]
     for n in range(iters):
         for _m in range(M):
             l̂ = Σj_a_ij(μ)
@@ -549,8 +658,8 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
             ḣ = (y / ( ŷ + r )-1)*ŷ
 
             L̇ = M * Σi_a_ij(ḣ)
-            nom = (L̇ + β * c_μm(μ, c_δψ_edge) )
-            den = (d + 2*β* c_μm(μ, c_δψ_t_edge) )
+            nom = (L̇ + β * c_μm(μ, δψ, p) )
+            den = (d + 2*β* c_μm(μ, δδψ, p) )
             den[den==0] = 0.00001
             #if iter%10 == 0:
             #print(n, np.mean(nom), np.mean(den), np.median(nom), np.median(den), np.mean(nom/den), np.median(nom/den))
@@ -559,17 +668,21 @@ def PL_OSTR(proj, out_shape, geo, angles, iters, initial=None, real_image=None, 
             μ = μ - up
             μ[μ<0] = 0
             error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+            L = Σi_a_ij(y*(np.log(b)-l)-ŷ)
+            R = 0.5*c_μm(μ, c_sq)
+            f = -L+β*R
+            obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
             if n%10 == 0:
-                if real_image is None:
-                    print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
-                else:
-                    print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
+                #if real_image is None:
+                #    print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
+                #else:
+                #    print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
                 yield μ[:]
 
     yield μ
-    yield error
+    yield (error, obj_func, μ)
 
-def PL_C(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**3, use_astra=True): # aootaphao 2008
+def PL_C(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**2, β=10**3, p=1, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True): # aootaphao 2008
 
     if initial is None:
         if use_astra:
@@ -588,22 +701,25 @@ def PL_C(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=1
         Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
         Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
 
-    #c = Σj_a_ij(μ)
-    #print("Σaij", np.mean(c), np.std(c), np.median(c), np.min(c), np.max(c))
     error = []
-
-    #pool_size = 1
-    #subsets = 1
-    #pool = multiprocessing.Pool(pool_size)
-    #geos = [astra.create_proj_geom('cone_vec', geo["DetectorRowCount"], geo["DetectorColCount"], geo["Vectors"][i::subsets]) for i in range(subsets)]
+    obj_func = []
     proctime = time.perf_counter()
+
+    l = Σj_a_ij(μ)
+    ŷ = b*np.exp(-l)
+    L = Σi_a_ij((y*(np.log(b)-l)-ŷ))
+    R = 0.5*c_μm(μ, c_sq)
+    error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
+    f = -L+β*R
+    obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
+    yield μ[:]
     for n in range(iters):
         #l = Σj_a_ij(μ)
         #ups = pool.imap_unordered(update_step, [(y[i::subsets], μ, β, b, out_shape, geos[i]) for i in range(subsets)] )
         #up = functools.reduce(lambda x,y: x+y, ups) / subsets
         l = Σj_a_ij(μ)
-        Ṗ = β*c_μm(μ, c_δsq)
-        P̈ = μ*β*c_μm(μ, c_δδsq)
+        Ṗ = β*c_μm(μ, δψ, p)
+        P̈ = μ*β*c_μm(μ, δδψ, p)
         #print(n, np.mean(Ṗ), np.mean(P̈), np.median(Ṗ), np.median(P̈))
 
         ŷ = b*np.exp(-l)
@@ -617,19 +733,528 @@ def PL_C(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=1
         #print(n, np.mean(μ), np.std(μ), np.median(μ), np.mean(μ*f), np.std(μ*f), np.median(μ*f))
         #den[den==0] = 0.00001
         up = μ*f
-        μ = μ + up
+        μ = μ - up
         μ[μ<=0] = 0.00001
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
-        #print(error[-1])
+        L = Σi_a_ij(y*(np.log(b)-l)-ŷ)
+        R = 0.5*c_μm(μ, c_sq)
+        f = -L+β*R
+        obj_func.append((time.perf_counter()-proctime, np.sum(f[~np.bitwise_and(f>0, f<np.inf)])))
         if n%10 == 0:
-            if real_image is None:
-                print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
-            else:
-                print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
+            #if real_image is None:
+            #    print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
+            #else:
+            #    print(n, np.sum(up), np.sum(np.abs(real_image-μ)))
             yield μ[:]
     
     yield μ
-    yield error
+    yield (error, obj_func, μ)
+
+def dercurve_wls(data, li, curvtype=None, iblock=None, nblock=None):
+    yi = data[0]
+    wi = data[1]
+    #if iblock is not None:
+        #ia = iblock:nblock:size(yi,2);
+        #yi = yi[:,ia]
+        #if len(wi) > 1:
+        #    wi = wi(:,ia);
+
+    deriv = wi * (li - yi);
+
+    if len(wi) == 1:
+        curv = np.ones_like(deriv)
+    else:
+        curv = wi
+    return deriv, curv
+
+def dercurve_trl(data, li, curvtype = 'oc', iblock=None, nblock=None): 
+    yi = data[0]
+    bi = data[1]
+    ri = data[2]
+
+    #if iblock is not None:
+    #    ia = iblock:nblock:size(yi,2);
+    #    yi = yi[:,ia]
+    #    if len(bi) > 1:
+    #        bi = bi[:,ia]
+    #    
+    #    if len(ri) > 1:
+    #        ri = ri[:,ia]    
+
+    #% transmission Poisson likelihood function
+    ei = np.exp(-li)
+    mi = bi * ei + ri
+    deriv = (1 - yi / mi) * (-bi * ei)
+
+    #curv = trl_curvature(yi, bi, ri, li, curvtype)
+        
+    #% trl_h_dh()
+    #% transmission Poisson likelihood function
+    #function [h, dh] = trl_h_dh
+    h = lambda y,b,r,l: y * np.log(b*np.exp(-l)+r) - (b*np.exp(-l)+r)
+    dh = lambda y,b,r,l: (1 - y / (b*np.exp(-l)+r)) * b*np.exp(-l)
+
+    #% Compute optimal surrogate parabola curvatures
+    #% for Poisson transmission model based on Erdogan's formula.
+    if curvtype=='oc':
+
+        #% compute curvature at l=0
+        ni_max = np.zeros_like(yi)
+        if np.isscalar(bi): #% scalar bi (must be positive!)
+            ni_max = bi * (1 - yi * ri / (bi + ri)**2)
+        else:
+            i0 = bi > 0;
+            if np.isscalar(ri):
+                rii = 1;
+            else:
+                rii = ri[i0];
+            ni_max[i0] = bi[i0] * (1 - yi[i0] * rii / (bi[i0] + rii)**2)
+
+        ni_max[ni_max<0] = 0
+        ni = ni_max
+
+        if False:
+            il0 = li <= 0;
+        else: #% trick in C program due to numerical precision issues
+            il0 = li < 0.1;
+
+        tmp = h(yi,bi,ri,li) - h(yi,bi,ri,0) - li * dh(yi,bi,ri,li)
+        i = ~il0
+        tmp[tmp<0] = 0
+        ni[i] = 2 / li[i]**2 * tmp[i]
+
+        #if (ni > ni_max).any():
+        #%	plot([ni_max(:) ni(:) ni(:)>ni_max(:)])
+        #    warning 'large ni'
+        #end
+
+
+    #% Precomputed approximating parabola curvatures
+    #% for Poisson transmission model.
+    #% The minimum returned curvature will be zero.
+    #% This is compatible with trpl/trp_init_der02_sino() in aspire.
+    elif curvtype=='pc':
+
+        #% ni = (yi-ri)^2 / yi, if yi > ri >= 0 and bi > 0
+        ii = (yi > ri) & (ri >= 0) & (bi > 0) #% good rays
+        ni = np.zeros_like(yi)
+        ni[ii] = (yi[ii] - ri[ii])**2 / yi[ii]
+
+    #% newton curvatures (current 2nd derivative)
+    elif curvtype=='nc':
+        bel = bi * np.exp(-li)
+        yb = bel + ri
+        ni = (1 - ri*yi/yb**2) * bel
+
+    else:
+        raise 'unknown curve type: ' + curvtype
+
+    return deriv, ni
+
+def pl_iot(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**2, β=10**3, p=1, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True, M=1):
+
+    #%function [xs, info] = pl_iot(x, Ab, data, R, [options])
+    #%|
+    #%| Generic penalized-likelihood minimization,
+    #%| for arbitrary negative log-likelihood with convex non-quadratic penalty,
+    #%| via incremental optimization transfer using separable quadratic surrogates.
+    #%|
+    #%| cost(x) = sum_i h(data_i; [Ax]_i) + R(x),
+    #%|
+    #%| in
+    #%|	x	[np 1]		initial estimate
+    #%|	Ab	[nd np]		system matrix (see Gblock)
+    #%|	data	{cell}		whatever data is needed for the likelihood
+    #%|				data{1} must have size "[nb,na]", so for 3D
+    #%|				one must use reshaper(yi, '2d').
+    #%|	R			penalty object (see Robject.m)
+    #%|
+    #%| options
+    #%|	dercurv	{function_handle} function returning derivatives and curvatures
+    #%|				of negative log-likeihood via the call:
+    #%|		[deriv curv] = dercurv(data, Ab{m}*x, curvtype, iblock, nblock)
+    #%|				or choose 'trl' or 'wls' (default)
+    #%|	niter 	#		# total iterations (default: 1+0, pure OS!)
+    #%|	os	#		how many "warmup" OS iterations (default: 1)
+    #%|	riter	#		# of penalty subiterations (default: 3).
+    #%|	curvtype ''		curvature type:
+    #%|					'pc' : precomputed (default)
+    #%|					'oc' : optimal (ensures monotonic)
+    #%|	pixmax	(value)		upper bound on pixel values (default: infinity)
+    #%|	pixmin	(value)		lower bound on pixel values (default: 0)
+    #%|	isave	[]		list of iterations to archive
+    #%|				(default: [] 'last)
+    #%|	gi	[nd]		precomputed Ab * 1 factors.
+    #%|	chat	(value)		verbosity (default: 0)
+    #%|	userfun			user defined function handle (see default below)
+    #%|
+    #%| out
+    #%|	xs	[np nsave]	estimates each (saved) iteration
+    #%|	info	[niter+1 ?]	userfun output.  default is cpu times
+    #%|
+    #%| Copyright 2005-3-8, Jeff Fessler, University of Michigan
+
+
+    if use_astra:
+        Σj_a_ij = utils.Ax_astra(out_shape, geo)
+        Σi_a_ij = utils.Atb_astra(out_shape, geo)
+        Σi_a_ij2 = utils.At2b_astra(out_shape, geo)
+    else:
+        Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
+        Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
+        Σi_a_ij2 = lambda x: tigre.At2b(x, geo, angles)
+
+
+    Ab = Σj_a_ij
+    Atb = Σi_a_ij
+    At2b = Σi_a_ij2
+    x = np.array(initial)
+    nblock = 1
+    error = []
+    obj_func = []
+    proctime = time.perf_counter()
+
+    #% defaults
+    dercurv = 'wls'
+    curvtype = 'pc'
+    riter = 3
+    os = 2
+    niter = iters #% default is pure OS, no IOT
+    pixmin = 0
+    pixmax = np.inf
+    gi = []
+    update_even_if_denom_0 = True
+    chat = False
+
+    data = (proj, b*np.ones_like(proj), np.zeros_like(proj))
+
+    Rdenom = lambda μ: c_μm(μ, δδψ, p)
+    Rcgrad = lambda μ: c_μm(μ, δψ, p)
+
+    #%
+    #% inner_update()
+    #% given SPS for likelihood, update x using regularization subiterations
+    #%
+    def inner_update(x, lnum, ldenom):
+        for _ in range(riter):
+            rdenom = Rdenom(x);
+            num = lnum - Rcgrad(x) + rdenom * x;
+            
+            #% update
+            if update_even_if_denom_0:
+                x = num / (ldenom + rdenom);
+            else:
+                old = x[ldenom == 0]
+                x = num / (ldenom + rdenom);
+                x[ldenom == 0] = old;
+
+            x[~(x>pixmin)] = pixmin	#% lower bound
+            x[~(x<pixmax)] = pixmax	#% upper bound
+        return x
+
+    #% options
+    #arg = vararg_pair(arg, varargin);
+    #arg.isave = iter_saver(arg.isave, arg.niter);
+
+    if dercurv=='wls':
+        dercurv = dercurve_wls
+
+    elif dercurv== 'trl':
+        dercurv = dercurve_trl
+
+    #[nb, na] = proj.shape
+
+    #% g_i = sum_j g_ij.  caution: this requires real g_ij and g_ij >= 0
+    if len(gi)==0:
+        gi = Ab(np.ones_like(x))
+        #gi = max(reale(arg.gi), 0) #% trick: just in case...
+        #gi = reshape(arg.gi, [nb na])
+
+    npixel = x.shape;
+    #% precompute likelihood-term denominator if needed
+    if curvtype == 'pc':
+        [_, curvi] = dercurv(data, 0, 'pc')
+        ldenom = Atb(gi * curvi) #% one denominator shared by all subsets
+        ldenoms = np.zeros((*npixel, nblock));
+    else:
+        #ldenoms = np.zeros_like(np, nblock);
+        ldenoms = np.zeros((*npixel, nblock));
+        ldenom = np.zeros(npixel)
+
+    x[~(x<pixmax)] = pixmax
+    x[~(x>pixmin)] = pixmin
+    
+    #%
+    #% precompute gradient-related state vectors, usually by OS-SPS warmup iterations
+    #%
+    vvm = np.zeros((*npixel,nblock));
+
+    #%
+    #% SPS-OS iterations to "warm up" (often 1 or 2 iterations suffices)
+    #%
+    for it in range(os):
+        for iset in range(nblock):
+            #ticker([mfilename, ': os'], [it, iset], [os, nblock])
+
+            #iblock = starts(iset);
+            iblock = 0
+            #ia = iblock:nblock:na;
+
+            #li = Ab{iblock} * x;	% l=A*x "line integrals"
+            li = Ab(x)
+            #li = reshape(li, nb, length(ia));
+            #[dhi curvi] = feval(arg.dercurv, data, li, arg.curvtype, iblock, nblock);
+            [dhi, curvi] = dercurv(data, li, curvtype, iblock, nblock)
+
+            if curvtype != 'pc':# % on-the-fly curvatures
+                ldenoms[...,iblock] = Atb(gi * curvi);
+                ldenom = nblock * ldenoms[...,iblock];
+                ldenom = Atb(gi * curvi)                
+
+            lnum = ldenom * x - nblock * Atb(dhi)
+
+            if it == os: #% save last gradient-related state vectors
+                vvm = lnum / nblock
+
+            x = inner_update(x, lnum, ldenom);
+        if it%10==0:
+            yield x
+        
+        #info.append(userfun())
+        if chat: print('Range {} {}', min(x), max(x))
+
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-x))))
+        obj_func.append((time.perf_counter()-proctime, 0))
+    
+    #%
+    #% At this point we have initialized vv_m and ldenoms
+    #% and initialized x based on the last subset.
+    #% It is often logical to update x using all subsets now.
+    #% This is "almost free" since no new likelihood gradients are used.
+    #%
+    vv = np.sum(vvm,-1);
+    if curvtype == 'pc':
+        ldenoms = ldenom / nblock;
+    else:
+        ldenom = np.sum(ldenoms,1);
+    x = inner_update(x, vv, ldenom)
+    error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-x))))
+    obj_func.append((time.perf_counter()-proctime, 1))
+    yield x
+    #%
+    #% IOT iterations
+    #%
+    for it in range(os, niter):
+        for iset in range(nblock):
+            #ticker([mfilename ': iot'], [iter iset], [arg.niter nblock])
+
+            #iblock = starts(iset);
+            iblock = 0
+            #ia = iblock:nblock:na;
+
+            #li = Ab{iblock} * x;	% l=A*x "line integrals"
+            li = Ab(x)	#% l=A*x "line integrals"
+            #li = reshape(li, nb, length(ia));
+            [dhi, curvi] = dercurv(data, li, curvtype, iblock, nblock)
+
+            if curvtype != 'pc':
+                ldenom = ldenom - ldenoms[...,iblock]
+                ldenom[...,iblock] = Atb(gi * curvi)
+                ldenom = ldenom + ldenoms[...,iblock]
+
+            vv = vv - vvm[...,iblock];
+            if curvtype=='pc':
+                vvm[...,iblock] = ldenoms * x - Atb(dhi)
+            else:
+                vvm[...,iblock] = ldenoms[...,iblock] * x - Atb(dhi);
+
+            vv = vv + vvm[...,iblock]
+
+            x = inner_update(x, vv, ldenom);
+        
+        if it%10==0:
+            yield x
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-x))))
+        obj_func.append((time.perf_counter()-proctime, 2))
+
+    yield error, obj_func, x
+    
+def pl_pcg_qs_ls(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**2, β=10**3, p='quad_wls', δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True, M=1):
+#%|function [xs, info] = pl_pcg_qs_ls(x, A, data, dercurv, R, varargin)
+#%|
+#%| Unconstrained generic penalized-likelihood minimization,
+#%| for arbitrary negative log-likelihood with convex non-quadratic penalty,
+#%| via preconditioned conjugate gradient algorithm
+#%| with quadratic surrogate based line search.
+#%| cost(x) = -log p(data|x) + R(x)
+#%|
+#%| in
+#%|	x	[np 1]		initial estimate
+#%|	A	[nd np]		system matrix
+#%|	data	{cell}		whatever data is needed for the likelihood
+#%|	dercurv	function_handle function returning derivatives and curvatures
+#%|				of negative log-likeihood via:
+#%|				[deriv curv] = dercurv(data, A*x, curvtype)
+#%|	R			penalty object (see Robject.m)
+#%|
+#%| options (name / value pairs)
+#%|	niter	?		# total iterations
+#%|	isave	[]		list of iterations to archive
+#%|					(default: [] 'last')
+#%|	stepper	?		method for step-size line search
+#%|					default: {'qs', 3}
+#%|	precon	[np np]		preconditioner, matrix | object; default: 1
+#%|	userfun			user defined function handle (see default below)
+#%|	curvtype		type of curvature, default 'pc'
+#%|	restart			restart every so often (default: inf)
+#%|
+#%| out
+#%|	xs	[np,nsave]	estimates each (saved) iteration
+#%|	info	[niter+1 ?]	userfun output. default is: gamma, step, time
+#%|
+#%| Copyright 2004-2-1, Jeff Fessler, University of Michigan
+
+    Σj_a_ij = utils.Ax_astra(out_shape, geo)
+    Σi_a_ij = utils.Atb_astra(out_shape, geo)
+    Σi_a_ij2 = utils.At2b_astra(out_shape, geo)
+    
+
+    Ab = Σj_a_ij
+    Atb = Σi_a_ij
+    At2b = Σi_a_ij2
+    x = np.array(initial)
+    nblock = 1
+    error = []
+    obj_func = []
+    proctime = time.perf_counter()
+
+    stepper = {}
+    step0 = 0 #% for backward compatability, but maybe 1 makes sense sometimes
+    niter = iters
+    precon = 1
+    restart = np.inf #% restart every this many iterations (default: never)
+    curvtype = 'pc'
+
+    #arg = vararg_pair(arg, varargin);
+
+    if len(stepper) == 0:
+        stepper = ['qs', 3] #% quad surr with this # of subiterations
+    #%info = zeros(arg.niter,?); #% trick: do not initialize since size may change
+    #Rdercurv = lambda μ: [c_μm(μ, δψ, p), c_μm(μ, δδψ, p)]
+    pot_quad = lambda C1x: np.ones_like(C1x)
+    def pot_huber(C1x, d = 0.001):
+        w = np.ones_like(C1x)
+        ii = np.abs(C1x) > d
+        w[ii] = d / np.abs(C1x[ii])
+        return w
+
+    pot, dercurv = p.split('_')
+    if pot=="huber": 
+        pot = pot_huber
+    else:
+        pot = pot_quad
+
+    def Rdercurv(C1x):
+        deriv = β * pot(C1x) * C1x
+        curv = β * pot(C1x)
+        return deriv, curv
+
+    if dercurv=='wls':
+        dercurv = dercurve_wls
+    elif dercurv == 'tlr':
+        dercurv = dercurve_trl
+        curvtype = 'oc'
+
+    if np.isscalar(b):
+        data = (proj, b*np.ones_like(proj), np.zeros_like(proj))
+    else:
+        data = (proj, b, np.zeros_like(proj))
+    #% initialize projections
+    Ax = Ab(x)
+    def C1(x):
+        C1x = np.zeros_like(x)
+        C1x[:-1] = x[:-1]-x[1:]
+        C1x[:,:-1] += x[:,:-1]-x[:,1:]
+        C1x[:,:,:-1] += x[:,:,:-1]-x[:,:,1:]
+        C1x /= 3
+        return C1x
+    C1x = C1(x)
+
+    oldinprod = 0
+
+    #% iterate
+    warneddir = False
+    warnedstep = 0
+    for it in range(niter):
+
+        #% gradient of cost function
+        [hderiv, hcurv] = dercurv(data, Ax, curvtype)
+        [pderiv, pcurv] = Rdercurv(x)
+        grad = Atb(hderiv) + C1(pderiv);
+
+        #% preconditioned gradient
+        pregrad = precon * grad;
+
+        #% direction
+        newinprod = grad.flatten().dot(pregrad.flatten())
+        if oldinprod == 0 or it%restart == 0:
+            ddir = -pregrad;
+            gamma = 0;
+        else:
+            #% todo: offer other step-size rules ala hager:06:aso
+            gamma = newinprod / oldinprod; #% Fletcher-Reeves
+            ddir = -pregrad + gamma * ddir;
+
+        oldinprod = newinprod;
+
+        #% check if descent direction
+        if ddir.flatten().dot(grad.flatten()) > 0:
+            if not warneddir: #% todo: warn every time!
+                warneddir = True;
+                print('wrong direction so resetting')
+                print('<ddir,grad>=%g, |ddir|=%g, |grad|=%g', ddir.flatten().dot(grad.flatten()), np.linalg.norm(ddir.flatten()), np.linalg.norm(grad.flatten()))
+
+            #% reset
+            ddir = -pregrad;
+            oldinprod = 0;
+
+        #% step size in search direction
+        Adir = Ab(ddir);
+        C1dir = C1(ddir); #% caution: can be a big array for 3D problems
+
+        #% multiple steps based on quadratic surrogates
+        if stepper[0] == 'qs':
+            nsub = stepper[1]
+            step = step0
+            for i_s in range(nsub):
+                if step != 0:
+                    [hderiv, hcurv] = dercurv(data, Ax + step * Adir, curvtype)
+                    [pderiv, pcurv] = Rdercurv(C1x + step * C1dir)
+                denom = (Adir**2).flatten().dot(hcurv.flatten()) + (C1dir**2).flatten().dot(pcurv.flatten())
+                numer = Adir.flatten().dot(hderiv.flatten()) + C1dir.flatten().dot(pderiv.flatten())
+                if denom == 0:
+                    print('found exact solution???  step=0 now!?')
+                    step = 0;
+                else:
+                    step = step - numer / denom
+
+                if step < 0:
+                    if not warnedstep:
+                        print('downhill step?')
+                        print('iter=%d step=%g', it, step)
+
+        #% update
+        Ax = Ax + step * Adir;
+        C1x = C1x + step * C1dir;
+        x = x + step * ddir;
+
+        if it%20==0:
+            yield x
+        error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-x))))
+        obj_func.append((time.perf_counter()-proctime, 2))
+
+    yield error, obj_func, x
+
 
 
 def PWLS(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**4, β=10**3, use_astra=True): # riviere 2006
