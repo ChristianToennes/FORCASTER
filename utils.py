@@ -1,3 +1,5 @@
+from zipfile import ZIP_LZMA
+from matplotlib import image
 import numpy as np
 import astra
 from numpy.lib.type_check import imag
@@ -358,64 +360,79 @@ def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin
     proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors)
     return proj_geom
 
+def rotMat(θ, u):
+    cT = np.cos(θ/180*np.pi)
+    sT = np.sin(θ/180*np.pi)
+    return np.array([
+                [cT+u[0]*u[0]*(1-cT), u[0]*u[1]*(1-cT)-u[2]*sT, u[0]*u[2]*(1-cT)+u[1]*sT],
+                [u[1]*u[0]*(1-cT)+u[2]*sT, cT+u[1]*u[1]*(1-cT), u[1]*u[2]*(1-cT)-u[0]*sT],
+                [u[2]*u[0]*(1-cT)-u[1]*sT, u[2]*u[1]*(1-cT)+u[0]*sT, cT+u[2]*u[2]*(1-cT)]
+            ])
+
 def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing):
     #vectors = np.zeros((len(coord_systems), 12))
     vectors = np.zeros((len(coord_systems), 12))
     prims = []
     secs = []
 
-    cs = np.array(coord_systems.flatten())
+    p = 0
 
     for i in range(len(coord_systems)):
-
-        #if i > 358 and i < 361 or i==0 or i==len(coord_systems)-1:
-        #    print(coord_systems[i])
-
         x_axis = np.array(coord_systems[i, :,0])
         y_axis = np.array(coord_systems[i, :,1])
         z_axis = np.array(coord_systems[i, :,2])
         iso = (coord_systems[i, :,3]-coord_systems[0,:,3])
-        #iso = coord_systems[i, :,3]
-
-        #print(np.linalg.norm(x_axis),np.linalg.norm(y_axis),np.linalg.norm(z_axis))
-
+      
         x_axis /= np.linalg.norm(x_axis)
-        x_axis *= detector_spacing[0]*image_spacing
         y_axis /= np.linalg.norm(y_axis)
-        y_axis *= detector_spacing[1]*image_spacing
 
-
-        #if np.abs(coord_systems[i,2,0])<0.00001:
-        if coord_systems[i,1,2]>0 and coord_systems[i,2,1]>0:
-        #if i>359:
-            z = np.array(z_axis)
-            z_axis[0] = -z[0]
-            z_axis[1] = -z[1]
-            z_axis[2] = -z[2]
-
-            x = np.array(x_axis)
-            y = np.array(y_axis)
-            x_axis[0]=x[0]
-            x_axis[1]=x[1]
-            x_axis[2]=x[2]
-            y_axis[0]=y[0]
-            y_axis[1]=y[1]
-            y_axis[2]=y[2]
-
-        vX, vY, vZ = x_axis
-
-        uX, uY, uZ = y_axis
-
-        prims.append(np.arctan2(z_axis[1], z_axis[2])-0.5*np.pi)
-        
         z_axis /= np.linalg.norm(z_axis)
 
-        if coord_systems[i,1,2]>0 and coord_systems[i,2,1]>0:
-            v_detector = z_axis * dist_origin_detector[i]*image_spacing + iso*image_spacing
-            v_source = -z_axis * dist_source_origin[i]*image_spacing + iso*image_spacing
+        x = rotMat(90,z_axis).dot(y_axis)
+
+        #print(i, np.round(np.arccos(x_axis.dot([1,0,0]))*180/np.pi), np.arccos(x_axis.dot([0,1,0]))*180/np.pi, np.round(np.arccos(x_axis.dot([0,0,1]))*180/np.pi) )
+        #print(i, np.round(np.arccos(y_axis.dot([1,0,0]))*180/np.pi), np.arccos(y_axis.dot([0,1,0]))*180/np.pi, np.round(np.arccos(y_axis.dot([0,0,1]))*180/np.pi) )
+        #print(i, np.round(np.arccos(z_axis.dot([1,0,0]))*180/np.pi), np.arccos(z_axis.dot([0,1,0]))*180/np.pi, np.round(np.arccos(z_axis.dot([0,0,1]))*180/np.pi) )
+
+        #if np.round(np.arccos(z_axis.dot([0,1,0]))*180/np.pi) <= 9:
+        #    z_axis = rotMat(9, y_axis).dot(z_axis)
+            #x_axis = rotMat(10, z_axis).dot(x_axis)
+            #y_axis = rotMat(10, z_axis).dot(y_axis)
+
+        if np.dot(x,x_axis)>0:
+            if np.round(np.arccos(z_axis.dot([0,1,0]))*180/np.pi) <= 9:
+                z_axis = rotMat(180, y_axis).dot(z_axis)
+                #iso = rotMat(0, z_axis).dot(iso)*5
+                #x_axis = rotMat(180, z_axis).dot(x_axis)
+                #y_axis = rotMat(180, z_axis).dot(y_axis)
+            else:
+                z_axis = rotMat(180, y_axis).dot(z_axis)
+            #x_axis = rotMat(10, z_axis).dot(x_axis)
+            #y_axis = rotMat(10, z_axis).dot(y_axis)
         else:
-            v_detector = z_axis * dist_origin_detector[i]*image_spacing + iso*image_spacing
-            v_source = -z_axis * dist_source_origin[i]*image_spacing + iso*image_spacing
+            if np.round(np.arccos(z_axis.dot([0,1,0]))*180/np.pi) < 8:
+                z_axis = rotMat(0, y_axis).dot(z_axis)
+                #x_axis = rotMat(180, z_axis).dot(x_axis)
+            else:
+                z_axis = rotMat(0, y_axis).dot(z_axis)
+            #x_axis = rotMat(-10, z_axis).dot(x_axis)
+            #y_axis = rotMat(-10, z_axis).dot(y_axis)
+
+        #if i in [472,473,474,22,23,24]:
+        #    print(i, np.round(np.arccos(z_axis.dot([1,0,0]))*180/np.pi), np.arccos(z_axis.dot([0,1,0]))*180/np.pi, np.round(np.arccos(z_axis.dot([0,0,1]))*180/np.pi) )
+        #    print(i, p-np.arccos(z_axis.dot([0,1,0]))*180/np.pi)
+        #p = np.arccos(z_axis.dot([0,1,0]))*180/np.pi
+
+
+        x_axis *= detector_spacing[0]*image_spacing
+        vX, vY, vZ = x_axis
+        y_axis *= detector_spacing[1]*image_spacing
+        uX, uY, uZ = y_axis
+        
+        prims.append(np.arctan2(z_axis[1], z_axis[2])-0.5*np.pi)
+
+        v_detector = z_axis * dist_origin_detector[i]*image_spacing + iso*image_spacing
+        v_source = -z_axis * dist_source_origin[i]*image_spacing + iso*image_spacing
 
         srcX, srcY, srcZ = v_source
         dX, dY, dZ = v_detector
@@ -425,10 +442,12 @@ def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist
     #print(np.linalg.norm([vX, vY, vZ]), np.linalg.norm([uX, uY, uZ]), np.linalg.norm([dX, dY, dZ]), np.linalg.norm([srcX, srcY, srcZ]), dist_source_origin, dist_origin_detector[-1], iso)
     # Parameters: #rows, #columns, vectors
     filt = np.ones(vectors.shape[0], dtype=bool)
-    #print(coord_systems[-55:-45])
+    #print(coord_systems[45:55])
+    np.savetxt("coords.csv", vectors, delimiter=",")
     #filt[53:55] = 0
-    filt[-50:] = False
-    filt[0:3] = False
+    #filt[-50:] = False
+    #filt[:50] = False
+    #filt[0:3] = False
     proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors[filt])
     return proj_geom, prims, filt
 
