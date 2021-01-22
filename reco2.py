@@ -757,10 +757,10 @@ def main():
     #('210111_balt_cbct_', '.\\output\\CKM4Baltimore\\CBCT_SINO')
     ('201207_cbct', '.\\output\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV'),
     ('201207_circ', '.\\output\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD'),
-    ('201207_eight', '.\\output\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD'),
-    ('201207_opti', '.\\output\\Opti Traj\\20201207-163001.022000-P16_DR_HD'),
-    ('201207_sin', '.\\output\\Sin Traj\\20201207-131203.754000-P16_Card_HD'),
-    ('201207_tomo', '.\\output\\Tomo\\20201208-110616.312000-P16_DR_HD'),
+    ('201207_eight', '.\\output\\CKM\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD'),
+    ('201207_opti', '.\\output\\CKM\\Opti Traj\\20201207-163001.022000-P16_DR_HD'),
+    ('201207_sin', '.\\output\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD'),
+    ('201207_tomo', '.\\output\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD'),
     ]
 
     origin, size, spacing, image = read_cbct_info(r".\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
