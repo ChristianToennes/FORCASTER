@@ -105,10 +105,11 @@ def dercurve_trl(data, li, curvtype = 'oc', iblock=None, nblock=None):
 
     return deriv, ni
 
-def reco(raw_projs, geo, real_image, iters, b, β, p, α = 0.1):
+def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_min=1):
 
     μ = np.zeros_like(real_image)
-    y = np.array(raw_projs)
+    #y = b*np.exp(-raw_projs)
+    y = np.array(raw_projs[:])
 
     Aμ = utils.Ax_astra(real_image.shape, geo)
     Aty = utils.Atb_astra(real_image.shape, geo)
@@ -126,7 +127,12 @@ def reco(raw_projs, geo, real_image, iters, b, β, p, α = 0.1):
         w[ii] = d / np.abs(C1x[ii])
         return w
 
-    pot, dercurv_type = p.split('_')
+    pot, dercurv_type, opt_b = p.split('_')
+    opt_b = int(opt_b)
+    #if opt_b == "1":
+    #    opt_b = True
+    #else:
+    #    opt_b = False
     if pot=="huber": 
         pot = pot_huber
     else:
@@ -147,10 +153,18 @@ def reco(raw_projs, geo, real_image, iters, b, β, p, α = 0.1):
         dercurv = dercurve_wls
 
     if np.isscalar(b):
-        b̂ = b*np.ones_like(raw_projs)
+        b = b*np.ones_like(y)
     else:
-        b̂ = np.array(b[:])
-    r = np.zeros_like(raw_projs)
+        b = np.array(b[:])
+
+    #print(np.min(b), np.min(g), np.max(b), np.max(g))
+    #b = b/g[np.newaxis,:,np.newaxis]
+    #print(np.min(b), np.min(g), np.max(b), np.max(g))
+    if opt_b > 0:
+        ĝ = g_max*np.ones(y.shape[1])
+    else:
+        ĝ = np.ones(y.shape[1])
+    r = np.zeros_like(y)
 
     #% initialize projections
     ŷ = Aμ(μ)
@@ -171,7 +185,17 @@ def reco(raw_projs, geo, real_image, iters, b, β, p, α = 0.1):
 
     ddir = newinprod = 0
 
-    y_mean = np.mean(y, axis=(0,2))
+    focus = np.zeros_like(y, dtype=bool)
+    focus[y.shape[0]//2-y.shape[0]//8:y.shape[0]//2+y.shape[0]//8,:,y.shape[2]//2-y.shape[2]//8:y.shape[2]//2+y.shape[2]//8] = 1
+    focus_shape = focus[y.shape[0]//2-y.shape[0]//8:y.shape[0]//2+y.shape[0]//8,:,y.shape[2]//2-y.shape[2]//8:y.shape[2]//2+y.shape[2]//8].shape
+    y_mean = np.mean(y[focus].reshape(focus_shape), axis=(0,2))
+    y_low = np.min(y)
+    y_high = np.max(y)
+    print(y_low, y_high)
+    y_min = np.quantile(y[focus].reshape(focus_shape), 0.1, axis=(0,2))
+    y_max = np.quantile(y[focus].reshape(focus_shape), 0.9, axis=(0,2))
+    y_med = np.median(y[focus].reshape(focus_shape), axis=(0,2))
+    y_std = np.std(y[focus].reshape(focus_shape), axis=(0,2))
 
     for it in range(iters):
         #ŷ = Ax(μ)
@@ -180,13 +204,92 @@ def reco(raw_projs, geo, real_image, iters, b, β, p, α = 0.1):
         #    y[:,p]-ŷ[:,p]
         # update gain
 
-        ŷ_mean = np.mean(ŷ, axis=(0,2))
-        b̂ = (1-α) * b̂ + α * b̂/(y_mean/ŷ_mean)
+        bŷ = (b*np.exp(-ŷ))[focus].reshape(focus_shape)
+        bŷ[bŷ<y_low] = y_low
+        bŷ[bŷ>y_high] = y_high
+        if opt_b==1 and it > 3:
+            ŷ_mean = np.mean(bŷ, axis=(0,2))
+            ŷ_mean[ŷ_mean==0] = np.exp(y_mean[ŷ_mean==0])
+            ŷ_min = np.quantile(bŷ, 0.1, axis=(0,2))
+            ŷ_min[ŷ_min==0] = y_min[ŷ_min==0]
+            ŷ_max = np.quantile(bŷ, 0.9, axis=(0,2))
+            ŷ_max[ŷ_max==0] = y_max[ŷ_max==0]
+            y_ŷ = (y_mean/ŷ_mean + y_min/ŷ_min + y_max/ŷ_max) / 3
+            #y_ŷ[~np.bitwise_and(y_ŷ>0.2, y_ŷ<20)] = g_max
+            y_ŷ[~(y_ŷ<g_max)] = g_max
+            y_ŷ[~(y_ŷ>g_min)] = g_min
+            ĝ = (1-α) * ĝ + α * (y_ŷ)
+            ĝ[~(ĝ<g_max)] = g_max
+            ĝ[~(ĝ>g_min)] = g_min
+
+        if opt_b==2 and it > 3:
+            #bŷ = (b*np.exp(-ŷ))[focus].reshape(focus_shape)
+            ŷ_mean = np.mean(bŷ, axis=(0,2))
+            ŷ_mean[ŷ_mean==0] = np.exp(y_mean[ŷ_mean==0])
+            ŷ_med = np.median(bŷ, axis=(0,2))
+            ŷ_med[ŷ_med==0] = y_med[ŷ_med==0]
+            ŷ_std = np.std(bŷ, axis=(0,2))
+            ŷ_std[ŷ_std==0] = y_std[ŷ_std==0]
+            y_ŷ = (y_mean/ŷ_mean + y_med/ŷ_med + y_std/ŷ_std) / 3
+            #y_ŷ[~np.bitwise_and(y_ŷ>0.2, y_ŷ<20)] = g_max
+            y_ŷ[~(y_ŷ<g_max)] = g_max
+            y_ŷ[~(y_ŷ>g_min)] = g_min
+            ĝ = (1-α) * ĝ + α * (y_ŷ)
+            ĝ[~(ĝ<g_max)] = g_max
+            ĝ[~(ĝ>g_min)] = g_min
+
+        if opt_b==3 and it > 3:
+            #bŷ = (b*np.exp(-ŷ))[focus].reshape(focus_shape)
+            ŷ_mean = np.mean(bŷ, axis=(0,2))
+            ŷ_mean[ŷ_mean==0] = np.exp(y_mean[ŷ_mean==0])
+            ŷ_med = np.median(bŷ, axis=(0,2))
+            ŷ_med[ŷ_med==0] = y_med[ŷ_med==0]
+            #ŷ_std = np.std(bŷ, axis=(0,2))
+            #ŷ_std[ŷ_std==0] = y_std[ŷ_std==0]
+            y_ŷ = (y_mean/ŷ_mean + y_med/ŷ_med) / 2
+            #y_ŷ[~np.bitwise_and(y_ŷ>0.2, y_ŷ<20)] = g_max
+            y_ŷ[~(y_ŷ<g_max)] = g_max
+            y_ŷ[~(y_ŷ>g_min)] = g_min
+            ĝ = (1-α) * ĝ + α * (y_ŷ)
+            ĝ[~(ĝ<g_max)] = g_max
+            ĝ[~(ĝ>g_min)] = g_min
+
+        if opt_b==4 and it > 3:
+            #bŷ = (b*np.exp(-ŷ))[focus].reshape(focus_shape)
+            ŷ_mean = np.mean(bŷ, axis=(0,2))
+            ŷ_mean[ŷ_mean==0] = np.exp(y_mean[ŷ_mean==0])
+            #ŷ_med = np.median(bŷ, axis=(0,2))
+            #ŷ_med[ŷ_med==0] = y_med[ŷ_med==0]
+            ŷ_std = np.std(bŷ, axis=(0,2))
+            ŷ_std[ŷ_std==0] = y_std[ŷ_std==0]
+            y_ŷ = (y_mean/ŷ_mean + y_std/ŷ_std) / 2
+            #y_ŷ[~np.bitwise_and(y_ŷ>0.2, y_ŷ<20)] = g_max
+            y_ŷ[~(y_ŷ<g_max)] = g_max
+            y_ŷ[~(y_ŷ>g_min)] = g_min
+            ĝ = (1-α) * ĝ + α * (y_ŷ)
+            ĝ[~(ĝ<g_max)] = g_max
+            ĝ[~(ĝ>g_min)] = g_min
+
+        if opt_b==5 and it > 3:
+            #bŷ = (b*np.exp(-ŷ))[focus].reshape(focus_shape)
+            ŷ_mean = np.mean(bŷ, axis=(0,2))
+            ŷ_mean[ŷ_mean==0] = np.exp(y_mean[ŷ_mean==0])
+            #ŷ_med = np.median(bŷ, axis=(0,2))
+            #ŷ_med[ŷ_med==0] = y_med[ŷ_med==0]
+            #ŷ_std = np.std(bŷ, axis=(0,2))
+            #ŷ_std[ŷ_std==0] = y_std[ŷ_std==0]
+            y_ŷ = (y_mean/ŷ_mean)
+            #y_ŷ[~np.bitwise_and(y_ŷ>0.2, y_ŷ<20)] = g_max
+            y_ŷ[~(y_ŷ<g_max)] = g_max
+            y_ŷ[~(y_ŷ>g_min)] = g_min
+            ĝ = (1-α) * ĝ + α * (y_ŷ)
+            ĝ[~(ĝ<g_max)] = g_max
+            ĝ[~(ĝ>g_min)] = g_min
 
         # update image
         
         #% gradient of cost function
-        data = (y, b̂, r)
+        data = (-np.log(y/(ĝ[np.newaxis,:,np.newaxis]*b)), ĝ[np.newaxis,:,np.newaxis]*b, r)
         [hderiv, hcurv] = dercurv(data, ŷ, curvtype)
         [pderiv, pcurv] = Rdercurv(μ)
         grad = Aty(hderiv) + C1(pderiv)
@@ -238,6 +341,9 @@ def reco(raw_projs, geo, real_image, iters, b, β, p, α = 0.1):
         if it%20==0:
             yield μ
         error.append((time.perf_counter()-proctime, np.sum(np.abs(real_image-μ))))
-        obj_func.append((time.perf_counter()-proctime, 2))
+        bĝ = ĝ[np.newaxis,:,np.newaxis]*b
+        #ŷ_mean = np.mean(bŷ, axis=(0,2))
+        obj_func.append((time.perf_counter()-proctime, np.sum(np.abs(bĝ-g[np.newaxis,:,np.newaxis])) ))
 
+    yield error, obj_func, μ
 
