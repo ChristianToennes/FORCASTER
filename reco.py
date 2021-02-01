@@ -32,10 +32,10 @@ import utils
 import SimpleITK as sitk
 import os.path
 import time
-
+import test
 
 tigre_iter = 0
-astra_iter = 100
+astra_iter = 0
 stat_iter = 40
 image_out_mult = 100
 
@@ -51,7 +51,7 @@ for _ in range(13):
 cube += [np.zeros_like(phant) for _ in range(10)]
 cube = np.array(cube)
 
-#cube = sitk.GetArrayFromImage(sitk.ReadImage("3D_Shepp_Logan.nrrd"))
+cube = sitk.GetArrayFromImage(sitk.ReadImage("3D_Shepp_Logan.nrrd"))
 #cube = scipy.ndimage.zoom(np.swapaxes(sitk.GetArrayFromImage(sitk.ReadImage("StanfordBunny.nrrd")), 0, 1), 0.5, order=2)
 #print(cube.shape)
 cube_tigre = np.array(cube, dtype=np.float32)
@@ -191,12 +191,9 @@ astra.data3d.delete(rec_id)
 astra.data3d.delete(proj_id)
 print("Astra Cone: ", time.perf_counter()-perftime, np.sum(np.abs(cube_astra-rec)))
 
-def reco_astra(angles_astra, name):
-    if astra_iter == 0: return
-    perftime = time.perf_counter()
-    #angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
-    proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_zoom)
-    volume_id = astra.data3d.create('-vol', vol_geom, cube_astra*cube_mult)
+def proj_astra(angles_astra, volume):
+    proj_geom_v, _filt = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_zoom)
+    volume_id = astra.data3d.create('-vol', vol_geom, volume)
     proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
     algString = 'FP3D_CUDA'
     cfg = astra.astra_dict(algString)
@@ -207,6 +204,15 @@ def reco_astra(angles_astra, name):
     astra.algorithm.delete(alg_id)
     astra.data3d.delete(volume_id)
     proj_data = astra.data3d.get(proj_id)
+    return proj_data
+
+def reco_astra(proj_data, angles_astra, name):
+    if astra_iter == 0: return
+    perftime = time.perf_counter()
+    #angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
+    proj_geom_v, _filt = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_zoom)
+    proj_id = astra.data3d.create('-sino', proj_geom_v, proj_data)
+
     sitk.WriteImage(sitk.GetImageFromArray(proj_data*sino_mult), os.path.join("recos", "astra_"+name+"_sino.nrrd"))
     rec_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict(astra_algo)
@@ -216,7 +222,7 @@ def reco_astra(angles_astra, name):
     astra.algorithm.run(alg_id, astra_iter)
     rec = astra.data3d.get(rec_id)
     WriteAstraImage(rec*rec_mult, os.path.join("recos", "astra_"+name+"_reco.nrrd"))
-    WriteAstraImage(cube_astra-rec*rec_mult, os.path.join("recos", "astra_"+name+"_error.nrrd"))
+    WriteAstraImage(np.abs(cube_astra-rec*rec_mult), os.path.join("recos", "astra_"+name+"_error.nrrd"))
     astra.algorithm.delete(alg_id)
     astra.data3d.delete(rec_id)
     astra.data3d.delete(proj_id)
@@ -224,7 +230,11 @@ def reco_astra(angles_astra, name):
     print("Astra "+name+": ", time.perf_counter()-perftime, np.sum(np.abs(cube_astra-rec)))
     return rec
 
-def reco_tigre(astra_anges, name):
+def reco_astra(angles_astra, name):
+    proj_data = proj_astra(angles_astra, cube_astra*cube_mult)
+    return reco_astra(proj_data, angles_astra, name)
+
+def reco_tigre(angles_astra, name):
     if tigre_iter == 0: return    
     perftime = time.perf_counter()
     #angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
@@ -287,42 +297,39 @@ def save_plot(data, prefix, title):
         f.writelines([str(t)+";"+str(v)+"\n" for t,v in data])
     plt.close()
 
-def reco(algo, name, angles_astra, stat_iter):
+def reco(algo, name, angles_astra, proj_data, stat_iter):
     if stat_iter == 0: return
     perftime = time.perf_counter()
-    proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-    volume_id = astra.data3d.create('-vol', vol_geom, cube_astra)
-    proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
-    algString = 'FP3D_CUDA'
-    cfg = astra.astra_dict(algString)
-    cfg['ProjectionDataId'] = proj_id
-    cfg['VolumeDataId'] = volume_id
-    alg_id = astra.algorithm.create(cfg)
-    astra.algorithm.run(alg_id)
-    astra.algorithm.delete(alg_id)
-    astra.data3d.delete(volume_id)
-    proj_data = astra.data3d.get(proj_id)
+    proj_geom_v, _filt = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
     #sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", name+"_sino.nrrd"))
     for i, rec in enumerate(algo(proj_data, proj_geom_v)):
         if type(rec) is list:
             save_plot(rec, name, name)
         elif type(rec) is tuple:
             save_plot(rec[0], name +"_error_", name)
-            #save_plot(rec[1], name+"_obj_func_", name)
+            save_plot(rec[1], name+"_obj_func_", name)
             WriteAstraImage(rec[2], os.path.join("recos", name+"_reco.nrrd"))
             WriteAstraImage(cube_astra-rec[2], os.path.join("recos", name+"_error.nrrd"))
         else:
             #sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", name+"_" + str(i) + "_reco.nrrd"))
             #sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", name+"_"+str(i)+"_error.nrrd"))
-            #sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", name+"_reco.nrrd"))
-            #sitk.WriteImage(sitk.GetImageFromArray((cube_astra-rec)*image_out_mult), os.path.join("recos", name+"_error.nrrd"))
             print(i, name+": ", time.perf_counter()-perftime, np.sum(np.abs(cube_astra-rec)), np.log(np.sum(np.abs(cube_astra-rec))))
+    proj_data_out = proj_astra(angles_astra, rec[2])
+    sitk.WriteImage(sitk.GetImageFromArray(proj_data_out), os.path.join("recos", name+"_sino.nrrd"))
+    print(name, time.perf_counter()-perftime, np.sum(np.abs(cube_astra-rec[2])), np.log(np.sum(np.abs(cube_astra-rec[2]))))
     astra.clear()
 
 angles_astra = np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
 image_shape = cube_astra.shape
 initial = np.zeros(image_shape)
-astra_iter = 50
+astra_iter = 200
+
+proj_data_clean = proj_astra(angles_astra, cube_astra)
+noise = np.random.poisson(lam=np.quantile(proj_data, 0.3), size=proj_data.shape)
+proj_data = proj_data_clean + noise
+
+#sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "input_sino.nrrd"))
+
 #initial = reco_astra(angles_astra, "initial")
 from PotentialFilter import potential_filter as c_ψ
 from PotentialFilter import potential_dx_filter as c_δψ
@@ -342,100 +349,37 @@ from PotentialFilter import edge_preserving_dx_t_filter as c_δψ_t_edge
 δδψ = c_δδψ
 
 iters = {}
-iters["PIPLE"+str(4)+"-"+str(1)+"_"+str(4)] = 200
-iters["PIPLE"+str(4)+"-"+str(1)+"_"+str(3)] = 200
-iters["PIPLE"+str(4)+"-"+str(1)+"_"+str(2)] = 200
-iters["PIPLE"+str(3)+"-"+str(1)+"_"+str(3)] = 200
-iters["PIPLE"+str(3)+"-"+str(1)+"_"+str(2)] = 200
-iters["PIPLE"+str(3)+"-"+str(1)+"_"+str(1)] = 200
-iters["PIPLE"+str(2)+"-"+str(1)+"_"+str(10)] = 200
-iters["PIPLE"+str(2)+"-"+str(1)+"_"+str(1)] = 200
-iters["PL_OSTR"+str(4)+"-"+str(1)+"_"+str(3)] = 100
-#iters["PL_OSTR"+str(4)+"-"+str(1)+"_"+str(2)] = 100
-iters["PL_OSTR"+str(3)+"-"+str(1)+"_"+str(1)] = 100
-iters["CCA"+str(4)+"-"+str(1)+"_"+str(7)] = 100
-iters["CCA"+str(4)+"-"+str(1)+"_"+str(6)] = 100
-iters["CCA"+str(3)+"-"+str(1)+"_"+str(5)] = 100
-iters["CCA"+str(3)+"-"+str(1)+"_"+str(4)] = 100
-iters["CCA"+str(2)+"-"+str(1)+"_"+str(10)] = 100
-iters["PL_IOT"+str(2)+"-"+str(1)+"_"+str(0)] = 500
-iters["PL_IOT"+str(3)+"-"+str(1)+"_"+str(0)] = 500
-iters["PL_IOT"+str(4)+"-"+str(1)+"_"+str(0)] = 500
-
-
-for p in ["quad_wls"]:
-    #iters["pl_pcg_qs_ls"+str(2)+"-"+str(p)+"_"+str(4)] = 50
-    iters["pl_pcg_qs_ls"+str(2)+"-"+str(p)+"_"+str(5)] = 100
-    #iters["pl_pcg_qs_ls"+str(3)+"-"+str(p)+"_"+str(6)] = 50
-    #iters["pl_pcg_qs_ls"+str(3)+"-"+str(p)+"_"+str(7)] = 50
-    #iters["pl_pcg_qs_ls"+str(4)+"-"+str(p)+"_"+str(7)] = 50
-    #iters["pl_pcg_qs_ls"+str(4)+"-"+str(p)+"_"+str(8)] = 50
-
-#iters["pl_pcg_qs_ls"+str(2)+"-"+str(1)+"_"+str(6)] = 30
-#iters["pl_pcg_qs_ls"+str(2)+"-"+str(1)+"_"+str(3)] = 30
-#iters["pl_pcg_qs_ls"+str(3)+"-"+str(1)+"_"+str(5)] = 30
-#iters["pl_pcg_qs_ls"+str(3)+"-"+str(1)+"_"+str(8)] = 30
-#iters["pl_pcg_qs_ls"+str(4)+"-"+str(1)+"_"+str(6)] = 30
-#iters["pl_pcg_qs_ls"+str(4)+"-"+str(1)+"_"+str(9)] = 30
-
+for p in ["{}_wls_{}".format(p,n) for p in ["quad",] for n in [0,1,2,3,4,5]]:
+    iters["TEST"+str(3)+"-"+str(p)+"_"+str(5)] = 20
+    
 stat_iter = 0
 for e in range(2, 5):
     b = 10**(e)
+    g = np.random.uniform(low=1, high=100, size=len(angles_astra))
     β = 0
-    for p in ["huber_wls","quad_wls"]:
-        #name = "PL_IOT"+str(e)+"-"+str(p)+"_"+str(0)
-        #if name in iters:
-        #    reco(lambda proj, geo: mlem.pl_iot(proj, image_shape, geo, angles_astra, iters[name], initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ, M=1), name, angles_astra)
-        #else:
-        #    reco(lambda proj, geo: mlem.pl_iot(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ, M=1), name, angles_astra)                
-        #reco(lambda proj, geo: mlem.logLikelihood(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), "EM_"+str(e)+"_"+str(p), angles_astra)
-        #reco(lambda proj, geo: mlem.CCA(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ, M=1), "CCA"+str(e)+"_"+str(p), angles_astra)
-        #reco(lambda proj, geo: mlem.ML_OSTR(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β), "ML_OSTR"+str(e))
-        #reco(lambda proj, geo: mlem.PIPLE(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, βr=β, , p=p, δψ=δψ, δδψ=δδψ), "PIPLE"+str(e))
-        #reco(lambda proj, geo: mlem.PL_C(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), "PL_C"+str(e)+"_"+str(p))
-        #reco(lambda proj, geo: mlem.PL_OSTR(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), "PL_OSTR"+str(e)+"_"+str(p), angles_astra)
-        #reco(lambda proj, geo: mlem.PWLS(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), "PWLS")
-        #reco(lambda proj, geo: mlem.PL_PSCD(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), "PSCD"+"_"+str(e))
+    for p in ["{}_wls_{}".format(p,n) for p in ["huber", "quad"] for n in [0,1,2,3,4,5]]:
         for e2 in range(1, 20):
             β = 10**(e2/2)
-            #reco(lambda proj, geo: mlem.logLikelihood(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), "EM_"+str(e)+"-"+str(p)+"_"+str(e2), angles_astra)
-            name = "pl_pcg_qs_ls"+str(e)+"-"+str(p)+"_"+str(e2)
+            name = "TEST"+str(e)+"-"+str(p)+"_"+str(e2)
             if name in iters:
-                reco(lambda proj, geo: mlem.pl_pcg_qs_ls(proj, image_shape, geo, angles_astra, iters[name], initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ, M=1), name, angles_astra, iters[name])
-            else:
-                reco(lambda proj, geo: mlem.pl_pcg_qs_ls(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ, M=1), name, angles_astra, stat_iter)
-            
-            #name = "CCA"+str(e)+"-"+str(p)+"_"+str(e2)
-            #if name in iters:
-            #    reco(lambda proj, geo: mlem.CCA(proj, image_shape, geo, angles_astra, iters[name], initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ, M=1), name, angles_astra)
-            #else:
-            #    reco(lambda proj, geo: mlem.CCA(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ, M=1), name, angles_astra)
-            #reco(lambda proj, geo: mlem.ML_OSTR(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β), "ML_OSTR"+str(e)+"-"+str(e2), angles_astra)
-            #name = "PIPLE"+str(e)+"-"+str(p)+"_"+str(e2)
-            #if name in iters:
-            #    reco(lambda proj, geo: mlem.PIPLE(proj, image_shape, geo, angles_astra, iters[name], initial=initial, real_image=cube_astra, b=b, βr=β, p=p, δψ=δψ, δδψ=δδψ), name, angles_astra)
-            #else:
-            #    reco(lambda proj, geo: mlem.PIPLE(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, βr=β, p=p, δψ=δψ, δδψ=δδψ), name, angles_astra)
-            
-            #reco(lambda proj, geo: mlem.PL_C(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), "PL_C"+str(e)+"-"+str(p)+"_"+str(e2), angles_astra)
-            #name = "PL_OSTR"+str(e)+"-"+str(p)+"_"+str(e2)
-            #if name in iters:
-            #    reco(lambda proj, geo: mlem.PL_OSTR(proj, image_shape, geo, angles_astra, iters[name], initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), name, angles_astra)
-            #else:
-            #    reco(lambda proj, geo: mlem.PL_OSTR(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), name, angles_astra)
-            #reco(lambda proj, geo: mlem.PWLS(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), "PWLS", angles_astra)
-            #reco(lambda proj, geo: mlem.PL_PSCD(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ), "PSCD"+str(e)+"-"+str(p)+"_"+str(e2), angles_astra)
+                projs = g[np.newaxis,:,np.newaxis]*b*np.exp(-proj_data)
+                projs_clean  = g[np.newaxis,:,np.newaxis]*b*np.exp(-proj_data_clean)
 
-angles_astra=np.vstack((angles, np.sin(3*angles)*(30/180*np.pi)+angles_one*0.5*np.pi, angles_one*np.pi)).T
-for e in range(2, 5):
-    b = 10**(e)
-    β = 0
-    for p in ["huber_wls","quad_wls"]:
-        for e2 in range(1, 20):
-            β = 10**(e2/2)
-            name = "pl_pcg_qs_ls"+str(e)+"-"+str(p)+"_"+str(e2)
-            if name in iters:
-                reco(lambda proj, geo: mlem.pl_pcg_qs_ls(proj, image_shape, geo, angles_astra, iters[name], initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ, M=1), name+"_sin", angles_astra, iters[name])
-            else:
-                reco(lambda proj, geo: mlem.pl_pcg_qs_ls(proj, image_shape, geo, angles_astra, stat_iter, initial=initial, real_image=cube_astra, b=b, β=β, p=p, δψ=δψ, δδψ=δδψ, M=1), name+"_sin", angles_astra, stat_iter)
-            
+                t_projs = -np.log(projs/(1.5*np.max(projs)))
+                t_projs_clean = -np.log(projs_clean/(1.5*np.max(projs_clean)))
+
+                sitk.WriteImage(sitk.GetImageFromArray(projs), os.path.join("recos", "input_sino.nrrd"))
+
+                astra_algo = "FDK3D_CUDA"
+                reco_astra(t_projs_clean, angles_astra, astra_algo+"_clean")
+                reco_astra(t_projs, angles_astra, astra_algo+"_noise")
+                astra_algo = "SIRT3D_CUDA"
+                reco_astra(t_projs_clean, angles_astra, astra_algo+"_clean")
+                reco_astra(t_projs, angles_astra, astra_algo+"_noise")
+                astra_iter = 50
+                astra_algo = "CGLS3D_CUDA"
+                reco_astra(t_projs_clean, angles_astra, astra_algo+"_clean")
+                reco_astra(t_projs, angles_astra, astra_algo+"_noise")
+
+                reco(lambda proj, geo: test.reco(proj, geo, cube_astra, iters[name], (1.5*np.max(projs)), g*b, β, p, α = 0.1), name+"_noise", angles_astra, projs, iters[name])
+                reco(lambda proj, geo: test.reco(proj, geo, cube_astra, iters[name], (1.5*np.max(projs_clean)), g*b, β, p, α = 0.1), name+"_clean", angles_astra, projs_clean, iters[name])

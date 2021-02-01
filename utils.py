@@ -356,9 +356,10 @@ def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin
 
     #print(np.linalg.norm([vX, vY, vZ]), np.linalg.norm([uX, uY, uZ]), np.linalg.norm([dX, dY, dZ]), np.linalg.norm([srcX, srcY, srcZ]), dist_source_origin, dist_origin_detector)
 
+    filt = np.ones(vectors.shape[0], dtype=bool)
     # Parameters: #rows, #columns, vectors
     proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors)
-    return proj_geom
+    return proj_geom, filt
 
 def rotMat(θ, u):
     cT = np.cos(θ/180*np.pi)
@@ -409,6 +410,7 @@ def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist
                 z_axis = rotMat(180, y_axis).dot(z_axis)
             #x_axis = rotMat(10, z_axis).dot(x_axis)
             #y_axis = rotMat(10, z_axis).dot(y_axis)
+            #x_axis = rotMat(-90, z_axis).dot(y_axis)
         else:
             if np.round(np.arccos(z_axis.dot([0,1,0]))*180/np.pi) < 8:
                 z_axis = rotMat(0, y_axis).dot(z_axis)
@@ -417,19 +419,20 @@ def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist
                 z_axis = rotMat(0, y_axis).dot(z_axis)
             #x_axis = rotMat(-10, z_axis).dot(x_axis)
             #y_axis = rotMat(-10, z_axis).dot(y_axis)
+            #x_axis = rotMat(-90, z_axis).dot(y_axis)
 
         #if i in [472,473,474,22,23,24]:
         #    print(i, np.round(np.arccos(z_axis.dot([1,0,0]))*180/np.pi), np.arccos(z_axis.dot([0,1,0]))*180/np.pi, np.round(np.arccos(z_axis.dot([0,0,1]))*180/np.pi) )
         #    print(i, p-np.arccos(z_axis.dot([0,1,0]))*180/np.pi)
         #p = np.arccos(z_axis.dot([0,1,0]))*180/np.pi
 
-
         x_axis *= detector_spacing[0]*image_spacing
         vX, vY, vZ = x_axis
         y_axis *= detector_spacing[1]*image_spacing
         uX, uY, uZ = y_axis
         
-        prims.append(np.arctan2(z_axis[1], z_axis[2])-0.5*np.pi)
+        prims.append(np.arctan2(z_axis[1], z_axis[2]))
+        secs.append(np.arctan2(z_axis[0], z_axis[2]))
 
         v_detector = z_axis * dist_origin_detector[i]*image_spacing + iso*image_spacing
         v_source = -z_axis * dist_source_origin[i]*image_spacing + iso*image_spacing
@@ -449,7 +452,7 @@ def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist
     #filt[:50] = False
     #filt[0:3] = False
     proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors[filt])
-    return proj_geom, prims, filt
+    return proj_geom, (prims,secs), filt
 
 test_data = "044802004201113212fa0002f96ffbfeff4c04fe06fa00ae0431039600980000000000008000000000ffff0402040002010080008000800080008000800080008000800c000080008000800080008000800080ffffffffff0200800400ffff5aff1000cd0300000101060900000202020276008aff5aff10000000ff0cd3ffee0000800080000000807f0988009d0400800080008011030080add20000f62a32000000000014baffff01000000c40900000600000059d2ffff070000009d2a000008000000eaffffff09000000000000002a000000f8ffffff2b0000002c0000002c000000fdffffff36000000dfffffff370000000be3ffff38000000e1220000390000001419f3ff3a0000001bfcffff3b000000b87d0c00e80300002d0200003e000000000000003f00000000000000d007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a02c673f43e3a4bad0f2dbbe420991c4662011bc5cf57fbf568c80bc68250fbc15e7dbbe2241933cbf2367bf007b89440000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f01fe7f3fce02b73a52a9fb3b778bafc45988b7baedff7f3f7a71063af48554c13ea3fbbb1e4209ba0ffe7f3f5de675443ea3fb3b1e42093a0ffe7fbf778bafc401fe7f3fce02b73a52a9fb3bf48554c15988b73aedff7fbf7a7106ba5de67544c3f5a8be8f4294c27b94b242ec1d04c61f851fc148d1ff45000000000000000000"
 

@@ -14,6 +14,7 @@ import piccs
 import scipy.ndimage
 import scipy.signal
 import struct
+import test
 
 def conv_time(time):
     h = float(time[:2])*60*60
@@ -72,30 +73,20 @@ def normalize(images, mAs_array, kV_array, gammas, window_center, window_width, 
     skip = 4
     if images.shape[1] < 1000:
         skip = 2
+    if images.shape[1] < 600:
+        skip = 1
 
     #print(images.shape)
     sel = np.zeros(images.shape, dtype=bool)
     #sel[:,::skip,::skip] = True
-    if skip == 2:
-        for i in range(sel.shape[0]):
-            s = 600*skip
-            if i < 223:
-                l = 20*skip
-            elif i >= 223 and i <= 323:
-                l = 20*skip-int(np.round(skip*(i-223)/5))
-            else:
-                l = 0
-            r = (s+l)
-            #print(s, l, r, sel[0,0,:l].shape[0], sel[0,0,r:].shape[0], sel[0,0,l:r].shape[0])
-            sel[i,20*skip:-20*skip:skip,l:r:skip] = True
-            #sel[:,:,:l] = False
-    else:
-        sel[:,20*skip:-20*skip:skip,20*skip:-20*skip:skip] = True
+    
+    sel[:,20*skip:-20*skip:skip,20*skip:-20*skip:skip] = True
     #print(s,l,r)
     #skip = 1
     #norm_images = images / fs
     #norm_images = np.zeros(images[:, (10*skip):-(10*skip):skip,(10*skip):-(10*skip):skip].shape, dtype=np.float32)
-    norm_images = np.zeros((images.shape[0],images[0,20*skip:-20*skip:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,20*skip:-20*skip:skip].shape[0]))), dtype=np.float32)
+    norm_images_gained = np.zeros((images.shape[0],images[0,20*skip:-20*skip:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,20*skip:-20*skip:skip].shape[0]))), dtype=np.float32)
+    norm_images_ungained = np.zeros((images.shape[0],images[0,20*skip:-20*skip:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,20*skip:-20*skip:skip].shape[0]))), dtype=np.float32)
     #print(norm_images.shape, sel.shape)
     #print(np.size(norm_images)/images.shape[0]/(images.shape[1]/skip), np.count_nonzero(sel)/images.shape[0]/(images.shape[1]/skip))
     #print(np.count_nonzero(sel, axis=(1,2)))
@@ -109,43 +100,66 @@ def normalize(images, mAs_array, kV_array, gammas, window_center, window_width, 
     
     for i in range(len(fs)):
         #norm_img = gained_images[i, (10*skip):-(10*skip):skip,(10*skip):-(10*skip):skip]
-        norm_img = gained_images[i][sel[i]].reshape(norm_images[0].shape)
+        norm_img = gained_images[i][sel[i]].reshape(norm_images_gained[0].shape)
         #print(norm_img.shape)
         #norm_img = scipy.ndimage.gaussian_filter(gained_images[i], 3)[(10*skip):-(10*skip):skip,(10*skip):-(10*skip):skip]
         #norm_img = scipy.ndimage.median_filter(gained_images[i], skip)[(10*skip):-(10*skip):skip,(10*skip):-(10*skip):skip]
-        norm_images[i] = norm_img
+        norm_images_gained[i] = norm_img
+
+        norm_img = images[i][sel[i]].reshape(norm_images_gained[0].shape)
+        #print(norm_img.shape)
+        #norm_img = scipy.ndimage.gaussian_filter(gained_images[i], 3)[(10*skip):-(10*skip):skip,(10*skip):-(10*skip):skip]
+        #norm_img = scipy.ndimage.median_filter(gained_images[i], skip)[(10*skip):-(10*skip):skip,(10*skip):-(10*skip):skip]
+        norm_images_ungained[i] = norm_img
 
     gain = 2.30
     #gain = 1
     offset = 400
     use = fs>1
-    while (np.max(norm_images, axis=(1,2))[use] > (gain*fs[use])).all():
+    while (np.max(norm_images_gained, axis=(1,2))[use] > (gain*fs[use])).all():
         gain += 1
 
+    gain = np.ones_like(fs)
+    gain[use] = np.max(norm_images_gained, axis=(1,2))[use] / fs[use]
+
     #gain += 1
-    print("used gain: ", gain)
+    #print("used gain: ", gain)
     for i in range(len(fs)):
         #gain = fs[i] / np.max(norm_images[i])
-        norm_img = norm_images[i] / (offset + gain*fs[i])
-        norm_images[i] = -np.log(norm_img)
+        norm_img = norm_images_gained[i] / (offset + (gain*fs)[i])
+        norm_images_gained[i] = -np.log(norm_img)
+
+        #norm_img = norm_images_ungained[i] / (gain*fs)[i])
+        #norm_images_ungained[i] = -np.log(norm_img)
 
     #print(np.mean(fs), np.median(fs), np.max(fs), np.min(fs))
     #print(np.mean(mAs_array), np.median(mAs_array), np.max(mAs_array), np.min(mAs_array))
     #print(np.mean(gained_images), np.median(gained_images), np.max(gained_images), np.min(gained_images))
     #print(np.mean(images), np.median(images), np.max(images), np.min(images))
     #print(np.mean(norm_images), np.median(norm_images), np.max(norm_images), np.min(norm_images))
-    return norm_images, fs
+
+    #plt.figure()
+    #plt.plot(np.arange(len(fs)), fs)
+    #plt.figure()
+    #plt.plot(np.arange(len(images)), np.mean(images, axis=(1,2)))
+    #plt.plot(np.arange(len(images)), np.median(images, axis=(1,2)))
+    #plt.figure()
+    #plt.plot(np.arange(len(norm_images)), np.mean(norm_images, axis=(1,2)))
+    #plt.plot(np.arange(len(norm_images)), np.median(norm_images, axis=(1,2)))
+    
+    #plt.show()
+    return norm_images_gained, norm_images_ungained, offset+gain*fs, fs
 
 def filter_images(ims, ts, angles, mas):
     print("filter images")  
     filt = np.zeros(ts.shape, dtype=bool)
 
-    for i, (angle, ma) in enumerate(zip(angles, mas)):
-        if ma <= np.min(mas[np.bitwise_and(angles[:,0]==angle[0], angles[:,1]==angle[1])]):
-            filt[i] = True
+    #for i, (angle, ma) in enumerate(zip(angles, mas)):
+    #    if ma <= np.min(mas[np.bitwise_and(angles[:,0]==angle[0], angles[:,1]==angle[1])]):
+    #        filt[i] = True
     
     diff = np.linspace(angles[0,0],angles[-1,0],len(angles))-angles[:,0]
-    diff[1:] = angles[:-1,0]-angles[1:,0]-0.4
+    diff[1:] = angles[:-1,0]-angles[1:,0]
     filt = np.bitwise_or(np.bitwise_or(diff>0.1, diff<0.1), filt)
     return filt
 
@@ -289,19 +303,27 @@ def read_dicoms(indir, prefix, reg_angles=False):
                 ts.append(len(ts))
                 kvs.append(float(ds.KVP))
                 mas.append(float(ds.XRayTubeCurrent)*float(ds.ExposureTime)*0.001)
-                μas.append(float(ds[0x0021,0x1004].value)*0.001)
+                if ds[0x0021,0x1004].VR == "SL":
+                    μas.append(float(ds[0x0021,0x1004].value)*0.001)
+                else:
+                    μas.append(struct.unpack("<l", ds[0x0021,0x1004].value)[0]*0.001)
                 thetas.append(float(ds.PositionerPrimaryAngle))
                 phis.append(float(ds.PositionerSecondaryAngle))
+                ims.append(ds.pixel_array)
 
-                if ds[0x0021,0x1071].VR == "DS":
-                    drot.append(np.array(ds[0x0021,0x1071].value))
-                else:
-                    drot.append(np.array(list(struct.iter_unpack("<d", ds[0x0021,0x1071].value))))
+                #print(len(ts), mas[-1], μas[-1], np.mean(ims[-1]), np.max(ims[-1]))
+
+                #if ds[0x0021,0x1071].VR == "DS":
+                #    drot.append(np.array(ds[0x0021,0x1071].value))
+                #else:
+                #    drot.append(np.array(list(struct.iter_unpack("<f", ds[0x0021,0x1071].value))))
 
                 stparmdata = utils.unpack_sh_stparm(ds[0x0021,0x1012].value)
 
                 cs = np.array(stparmdata["COORD_SYS_C_ARM"]).reshape((3, 4))
-                #print(stparmdata["ISO_WORLD_X_A"],stparmdata["ISO_WORLD_Y_A"],stparmdata["ISO_WORLD_Z_A"], cs[:,3])
+                #print(stparmdata["ISO_WORLD_X_A"]/10-stparmdata["X_A"],stparmdata["ISO_WORLD_Y_A"]/10-stparmdata["Y_A"],stparmdata["ISO_WORLD_Z_A"]/10-stparmdata["Z_A"])
+                #print(cs[:,3]-np.array(stparmdata["COORD_SYS_PATIENT"]).reshape((3, 4))[:,3])
+                #print(stparmdata["TOD"], stparmdata["IT_LONG_A"], stparmdata["IT_HEIGHT_A"], stparmdata["IT_LAT_A"])
                 #cs[0,3] = stparmdata["ISO_WORLD_X_A"]*0.1 - cs[0,3]
                 #cs[1,3] = stparmdata["ISO_WORLD_Y_A"]*0.1 - cs[1,3]
                 #cs[2,3] = stparmdata["ISO_WORLD_Z_A"]*0.1 - cs[2,3]
@@ -355,12 +377,10 @@ def read_dicoms(indir, prefix, reg_angles=False):
                 prims.append(prim)
                 secs.append(sec)
 
-
-                ims.append(ds.pixel_array)
                 #gammas.append(np.array(ds[0x0021,0x1028][0][0x0021,0x1042].value))
                 window_center.append(float(ds.WindowCenter))
                 window_width.append(float(ds.WindowWidth))
-                water_value.append(float(ds[0x0021,0x1049].value))
+                #water_value.append(float(ds[0x0021,0x1049].value))
                 if ds[0x021,0x1010].VR == "US":
                     gamma_in.append(float(ds[0x021,0x1010].value))
                 else:
@@ -393,6 +413,14 @@ def read_dicoms(indir, prefix, reg_angles=False):
     sids = np.array(sids)
     sods = np.array(sods)
 
+    #plt.figure()
+    #plt.plot(np.arange(len(mas)), mas)
+    #plt.plot(np.arange(len(mas)), μas)
+
+    #plt.figure()
+    #plt.plot(np.arange(len(ims)), np.mean(ims, axis=(1,2)))
+    #plt.show()
+
     cs = coord_systems
     rots = np.arccos((cs[:,0,0]+cs[:,1,1]+cs[:,2,2]-1)/2)
     e1s = (cs[:,2,1]-cs[:,1,2]) / (2*np.sin(rots))
@@ -415,8 +443,16 @@ def read_dicoms(indir, prefix, reg_angles=False):
     prim[np.bitwise_and(cs[:,2,2]<0, cs[:,1,1]>0) ] -= 180
     prim[cs[:,1,0]>0] -= 180
 
-    thetas = prim
-    phis = sec
+    #plt.figure()
+    #plt.plot(np.arange(len(thetas)), thetas)
+    #plt.plot(np.arange(len(thetas)), prim)
+    #plt.figure()
+    #plt.plot(np.arange(len(thetas)), phis)
+    #plt.plot(np.arange(len(thetas)), sec)
+    #plt.show()
+
+    #thetas = prim
+    #phis = sec
 
     #print(prims)
     #print(secs)
@@ -426,6 +462,7 @@ def read_dicoms(indir, prefix, reg_angles=False):
     #print(coord_systems[170:180,:, 3])
 
     #plt.plot(np.arange(len(thetas)), prims)
+    #plt.plot(np.arange(len(phis)), phis)
     #plt.plot(np.arange(len(thetas)), thetas)
     #plt.show()
     #plt.figure()
@@ -440,19 +477,19 @@ def read_dicoms(indir, prefix, reg_angles=False):
     dicom_angles = np.vstack((thetas*np.pi/180.0, phis*np.pi/180.0, np.zeros_like(thetas))).T
     if reg_angles:
         angles = read_reg_angles(prefix, dicom_angles)
-        #diff = np.abs(dicom_angles[:,0]-angles[:,0])
-        #print(dicom_angles[diff>0.1,0], angles[diff>0.1,0], diff[diff>0.1])
-        #diff = np.abs(dicom_angles[:,1]-angles[:,1])
-        #print(dicom_angles[diff>0.1,1], angles[diff>0.1,1], diff[diff>0.1])
-        #diff = np.abs(dicom_angles[:,2]-angles[:,2])
-        #print(dicom_angles[diff>0.1,2], angles[diff>0.1,2], diff[diff>0.1])
+        diff = np.abs(dicom_angles[:,0]-angles[:,0])
+        print(dicom_angles[diff>0.1,0], angles[diff>0.1,0], diff[diff>0.1])
+        diff = np.abs(dicom_angles[:,1]-angles[:,1])
+        print(dicom_angles[diff>0.1,1], angles[diff>0.1,1], diff[diff>0.1])
+        diff = np.abs(dicom_angles[:,2]-angles[:,2])
+        print(dicom_angles[diff>0.1,2], angles[diff>0.1,2], diff[diff>0.1])
     else:
         angles = dicom_angles
         
     if False:
-        #filt = filter_images(ims, ts, angles, mas)
+        filt = filter_images(ims, ts, angles, mas)
         #filt = np.ones((ims.shape[0],), dtype=bool)
-        filt = np.linalg.norm(coord_systems[:,:,2], axis=-1)<1.1
+        #filt = np.linalg.norm(coord_systems[:,:,2], axis=-1)<1.1
         ims = ims[filt]
         μas = μas[filt]
         mas = mas[filt]
@@ -475,13 +512,13 @@ def read_dicoms(indir, prefix, reg_angles=False):
     #plt.plot(np.arange(len(diff)), diff)
     #plt.show()
 
-    ims, i0s = normalize(ims, μas, kvs, None, window_center, window_width, percent_gain)
+    ims_gained, ims_ungained, i0s_gained, i0s_ungained = normalize(ims, μas, kvs, None, window_center, window_width, percent_gain)
 
-    return ims, i0s, angles, coord_systems, sids, sods
+    return ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods
 
 def read_reg_angles(prefix, dicom_angles):
     name = 'vectors_' + prefix.split('_', maxsplit=1)[1][:-1] + '.mat'
-    #print(name)
+    print(name)
     if os.path.isfile(name):
         import scipy.io
         vecs = scipy.io.loadmat(name)['newVectors']
@@ -495,7 +532,9 @@ def read_reg_angles(prefix, dicom_angles):
                 theta += 2*np.pi
             angles.append([theta, -phi, 0])
         return np.array(angles)
-    return dicom_angles
+    else:
+        raise FileNotFoundError(name)
+    #return dicom_angles
 
 def create_geo(ims_shape, size, spacing):
     
@@ -615,8 +654,8 @@ def reco_astra(proj_data, name, astra_iter, proj_geom, vol_geom, astra_spacing, 
     rec = rec[::-1, ::-1]
     #print(rec.shape)
     #WriteAstraImage(rec*rec_mult, os.path.join("recos", "astra_"+name+"_reco.nrrd"), astra_spacing, astra_zoom)
-    sitk.WriteImage(sitk.GetImageFromArray(rec1), os.path.join("recos", "astra_"+name+"_reco.nrrd"))
-    save_image(rec*rec_mult, "reg_astra_"+name+"_reco.nrrd", origin, spacing)
+    sitk.WriteImage(sitk.GetImageFromArray(rec), os.path.join("recos", name+"_reco.nrrd"))
+    save_image(rec*rec_mult, name+"_reco_reg.nrrd", origin, spacing)
     #WriteAstraImage(real_image-rec*rec_mult, os.path.join("recos", "astra_"+name+"_error.nrrd"), astra_spacing, astra_zoom)
     #save_image(real_image-rec*rec_mult, "reg_astra_"+name+"_error.nrrd", origin, spacing)
     astra.algorithm.delete(alg_id)
@@ -749,18 +788,18 @@ def calc_pos_from_axis(axis_angles):
 def main():
     data = [
     #('201020_imbu_cbct_', '.\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'),
-    #('201020_imbu_sin_', '.\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
+    ('201020_imbu_sin_', '.\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
     #('201020_imbu_opti_', '.\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
     #('201020_imbu_circ_', '.\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'),
     #('201020_noimbu_cbct_', '.\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
     #('201020_noimbu_opti_', '.\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),
     #('210111_balt_cbct_', '.\\output\\CKM4Baltimore\\CBCT_SINO')
-    ('201207_cbct', '.\\output\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV'),
-    ('201207_circ', '.\\output\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD'),
-    ('201207_eight', '.\\output\\CKM\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD'),
-    ('201207_opti', '.\\output\\CKM\\Opti Traj\\20201207-163001.022000-P16_DR_HD'),
-    ('201207_sin', '.\\output\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD'),
-    ('201207_tomo', '.\\output\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD'),
+    #('201207_cbct', '.\\output\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV'),
+    #('201207_circ', '.\\output\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD'),
+    #('201207_eight', '.\\output\\CKM\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD'),
+    #('201207_opti', '.\\output\\CKM\\Opti Traj\\20201207-163001.022000-P16_DR_HD'),
+    #('201207_sin', '.\\output\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD'),
+    #('201207_tomo', '.\\output\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD'),
     ]
 
     origin, size, spacing, image = read_cbct_info(r".\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
@@ -773,15 +812,16 @@ def main():
         print(prefix, path)
         proctime = time.perf_counter()
         try:
-            ims, i0s, angles, coord_systems, sids, sods = read_dicoms(path, prefix, reg_angles=False)
+            reg_angles=False
+            ims, ims_ungained, i0s, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(path, prefix, reg_angles=reg_angles)
 
             angles_one = np.ones_like(angles[:,0])
-            geo = create_geo(ims.shape, size-20, spacing)
+            geo = create_geo(ims_ungained.shape, size-20, spacing)
             
             out_shape = geo.nVoxel
             detector_shape = np.array((1920,2480))
-            detector_mult = np.floor(detector_shape / np.array(ims.shape[1:]))
-            detector_shape = np.array(ims.shape[1:])
+            detector_mult = np.floor(detector_shape / np.array(ims_ungained.shape[1:]))
+            detector_shape = np.array(ims_ungained.shape[1:])
             detector_spacing = np.array((0.125, 0.125)) * detector_mult
             dSD = 1198
             dSI = 785
@@ -807,12 +847,23 @@ def main():
             #print(real_image.shape, cube_astra.shape, spacing)
             #print(astra_spacing, image_zoom, 1/np.min(astra_spacing), 1/np.min(spacing), 1.5/np.min(spacing))
 
-            if coord_systems is None:
-                proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dSI, dSD-dSI, 1/np.mean(astra_spacing))
+            astra.clear()
+
+            if reg_angles or coord_systems is None:
+                proj_geom_v, filt = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dSI, dSD-dSI, 1/np.min(astra_spacing))
             else:
-                proj_geom_v, prims, filt = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1/np.min(astra_spacing))
+            #print(detector_shape, ims.shape)
+                proj_geom_v, (prims,secs), filt = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1/np.min(astra_spacing))
                 #proj_geom_c = astra.create_proj_geom('cone', detector_spacing[0]/np.mean(astra_spacing), detector_spacing[1]/np.mean(astra_spacing), detector_shape[0], detector_shape[1], prims, dSI/np.mean(astra_spacing), (dSD-dSI)/np.mean(astra_spacing))
 
+
+            #plt.figure()
+            #plt.plot(np.arange(len(prims)), prims)
+            #plt.plot(np.arange(len(prims)), angles[:,0])
+            #plt.figure()
+            #plt.plot(np.arange(len(prims)), secs)
+            #plt.plot(np.arange(len(prims)), angles[:,1])
+            #plt.show()
 
             if False:
                 plt.figure()
@@ -825,13 +876,40 @@ def main():
                 proj_geom_v["Vectors"][:,0] = scipy.signal.savgol_filter(proj_geom_v["Vectors"][:,0], 51, 1)
                 #proj_geom_v["Vectors"][:,0] = np.zeros_like(proj_geom_v["Vectors"][:,0])
                 plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,0])
+                
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,3])
+                proj_geom_v["Vectors"][:,3] = scipy.signal.savgol_filter(proj_geom_v["Vectors"][:,3], 51, 1)
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,3])
                 plt.figure()
                 plt.title("y")
                 plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,1])
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,4])
                 plt.figure()
                 plt.title("z")
                 plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,2])
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,5])
                 plt.show()
+
+                plt.title("x")
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,6])
+                #proj_geom_v["Vectors"][:,0] = scipy.signal.savgol_filter(proj_geom_v["Vectors"][:,0], 2*len(proj_geom_v['Vectors'])//2-1, 2)
+                #proj_geom_v["Vectors"][:,6] = scipy.signal.savgol_filter(proj_geom_v["Vectors"][:,6], 51, 1)
+                #proj_geom_v["Vectors"][:,0] = np.zeros_like(proj_geom_v["Vectors"][:,0])
+                #plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,6])
+                
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,9])
+                #proj_geom_v["Vectors"][:,9] = scipy.signal.savgol_filter(proj_geom_v["Vectors"][:,9], 51, 1)
+                #plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,9])
+                plt.figure()
+                plt.title("y")
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,7])
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,10])
+                plt.figure()
+                plt.title("z")
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,8])
+                plt.plot(np.arange(len(proj_geom_v['Vectors'])), proj_geom_v["Vectors"][:,11])
+                plt.show()
+                exit(0)
                 #print(proj_geom_v1["Vectors"][0])
                 #print(proj_geom_v["Vectors"][0])
                 
@@ -839,105 +917,138 @@ def main():
             #print(np.array(cube_astra.shape)[[1,2,0]])
             #print(np.array(cube_astra.shape)[[1,0,2]])
             #vol_geom = astra.create_vol_geom(cube_astra.shape[1], cube_astra.shape[2], cube_astra.shape[0])
+            
             vol_geom = astra.create_vol_geom(cube_astra.shape[1], cube_astra.shape[0], cube_astra.shape[2])
 
-            ims_astra = np.swapaxes(ims, 0, 1)
+            #ims_astra = np.swapaxes(ims, 0, 1)
+            ims_ungained_astra = np.swapaxes(ims_ungained, 0, 1)
+            i0 = 1*np.max(ims_ungained_astra)
+            ims_astra = -np.log(ims_ungained_astra / i0)
             i0s_astra = np.ones_like(ims_astra)
             for i in range(i0s_astra.shape[1]):
                 i0s_astra[:,i,:] *= i0s[i]
+            i0s_ungained_astra = np.ones_like(ims_astra)*i0
+            #for i in range(i0s_astra.shape[1]):
+            #    i0s_ungained_astra[:,i,:] *= i0s_ungained[i]
 
             #print(ims_astra.shape, cube_astra.shape, detector_shape, detector_spacing)
             #print(ims_astra.dtype, i0s.dtype, cube_astra.dtype)
             #print(ims.shape, ims_astra.shape, detector_shape, i0s.shape, i0s_astra.shape)
             print("start reco")
-            sitk.WriteImage(sitk.GetImageFromArray(ims_astra), "recos/astra_"+name+"_input.nrrd")
+            print(ims_astra.shape, cube_astra.shape)
+            sitk.WriteImage(sitk.GetImageFromArray(ims_astra), "recos/"+name+"_input.nrrd")
             sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(np.swapaxes(real_image,0,2), 0, 1)[::-1,:,::-1]), "recos/astra_"+name+"_input_image.nrrd")
 
-            volume_id = astra.data3d.create('-vol', vol_geom, np.swapaxes(np.swapaxes(real_image,0,2), 0, 1)[::-1,:,::-1])
-            proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
-            algString = 'FP3D_CUDA'
-            cfg = astra.astra_dict(algString)
-            cfg['ProjectionDataId'] = proj_id
-            cfg['VolumeDataId'] = volume_id
-            alg_id = astra.algorithm.create(cfg)
-            astra.algorithm.run(alg_id)
-            astra.algorithm.delete(alg_id)
-            astra.data3d.delete(volume_id)
-            proj_data = np.zeros_like(ims_astra)
-            proj_data[:,filt] = astra.data3d.get(proj_id)
-            sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_"+name+"_sino.nrrd"))
-            astra.data3d.delete(proj_id)
+            saveSinos = True
+
+            if saveSinos:
+                volume_id = astra.data3d.create('-vol', vol_geom, np.swapaxes(np.swapaxes(real_image,0,2), 0, 1)[::-1,:,::-1])
+                proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
+                algString = 'FP3D_CUDA'
+                cfg = astra.astra_dict(algString)
+                cfg['ProjectionDataId'] = proj_id
+                cfg['VolumeDataId'] = volume_id
+                alg_id = astra.algorithm.create(cfg)
+                astra.algorithm.run(alg_id)
+                astra.algorithm.delete(alg_id)
+                astra.data3d.delete(volume_id)
+                proj_data = np.zeros_like(ims_astra)
+                proj_data[:,filt] = astra.data3d.get(proj_id)
+                sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", name+"_sino.nrrd"))
+                astra.data3d.delete(proj_id)
 
 
             rec = reco_astra(ims_astra[:,filt], name+"fdk_", 1, proj_geom_v, vol_geom, astra_spacing, image_zoom, cube_astra, origin, spacing, astra_algo="FDK_CUDA")
             
-            volume_id = astra.data3d.create('-vol', vol_geom, rec)
-            proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
-            algString = 'FP3D_CUDA'
-            cfg = astra.astra_dict(algString)
-            cfg['ProjectionDataId'] = proj_id
-            cfg['VolumeDataId'] = volume_id
-            alg_id = astra.algorithm.create(cfg)
-            astra.algorithm.run(alg_id)
-            astra.algorithm.delete(alg_id)
-            astra.data3d.delete(volume_id)
-            proj_data = np.zeros_like(ims_astra)
-            proj_data[:,filt] = astra.data3d.get(proj_id)
-            astra.data3d.delete(proj_id)
-            sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_"+name+"_sino_fdk.nrrd"))
+            if saveSinos:
+                volume_id = astra.data3d.create('-vol', vol_geom, rec)
+                proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
+                algString = 'FP3D_CUDA'
+                cfg = astra.astra_dict(algString)
+                cfg['ProjectionDataId'] = proj_id
+                cfg['VolumeDataId'] = volume_id
+                alg_id = astra.algorithm.create(cfg)
+                astra.algorithm.run(alg_id)
+                astra.algorithm.delete(alg_id)
+                astra.data3d.delete(volume_id)
+                proj_data = np.zeros_like(ims_astra)
+                proj_data[:,filt] = astra.data3d.get(proj_id)
+                astra.data3d.delete(proj_id)
+                sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", name+"_sino_fdk.nrrd"))
 
             #print(np.size(filt), np.count_nonzero(filt))
 
-            #exit(0)
+            
             rec = reco_astra(ims_astra[:,filt], name+"sirt_", 50, proj_geom_v, vol_geom, astra_spacing, image_zoom, cube_astra, origin, spacing, astra_algo="SIRT3D_CUDA")
 
-            volume_id = astra.data3d.create('-vol', vol_geom, rec)
-            proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
-            algString = 'FP3D_CUDA'
-            cfg = astra.astra_dict(algString)
-            cfg['ProjectionDataId'] = proj_id
-            cfg['VolumeDataId'] = volume_id
-            alg_id = astra.algorithm.create(cfg)
-            astra.algorithm.run(alg_id)
-            astra.algorithm.delete(alg_id)
-            astra.data3d.delete(volume_id)
-            proj_data = astra.data3d.get(proj_id)
-            astra.data3d.delete(proj_id)
-            sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_"+name+"_sino_sirt.nrrd"))
-            #exit(0)
+            if saveSinos:
+                volume_id = astra.data3d.create('-vol', vol_geom, rec)
+                proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
+                algString = 'FP3D_CUDA'
+                cfg = astra.astra_dict(algString)
+                cfg['ProjectionDataId'] = proj_id
+                cfg['VolumeDataId'] = volume_id
+                alg_id = astra.algorithm.create(cfg)
+                astra.algorithm.run(alg_id)
+                astra.algorithm.delete(alg_id)
+                astra.data3d.delete(volume_id)
+                proj_data = astra.data3d.get(proj_id)
+                astra.data3d.delete(proj_id)
+                sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", name+"_sino_sirt.nrrd"))
+            
             #cube_astra = np.swapaxes(cube_astra, 1, 2)
             #rec = np.swapaxes(rec, 0, 2)
             image_shape = rec.shape
             initial = np.zeros(image_shape)
-            initial = np.array(rec)
-            stat_iter = 50
+            #initial = np.array(rec)
+            stat_iter = 75
             e = 2
             e2 = 5
             for e2 in [4]:#,5,6]:
                 b = 10**(e)
                 β = 10**(e2/2)
-                for p in [1,2,"quad_wls", "huber_wls"]:
+                for p in ["quad_wls_{}".format(n) for n in range(6)]:
                     name1 = "pl_pcg_qs_ls"+str(e)+"-"+str(p)+"_"+str(e2)
                     rec_mult = astra_spacing[0]*astra_spacing[1]*astra_spacing[2]
                     rec_mult = 1
                     if p in ["quad_wls", "huber_wls"]:
-                        rec_algo = mlem.pl_pcg_qs_ls(ims_astra[:,filt], image_shape, proj_geom_v, angles_astra, stat_iter, initial=initial, real_image=np.swapaxes(np.swapaxes(cube_astra,0,2), 0, 1)[::-1,::-1], b=i0s_astra[:,filt], β=β, p=p)
+                        rec_algo = mlem.pl_pcg_qs_ls(ims_astra[:,filt], image_shape, proj_geom_v, angles_astra, stat_iter, initial=initial, real_image=np.swapaxes(np.swapaxes(cube_astra,0,2), 0, 1)[::-1,::-1], b=i0s_ungained_astra[:,filt], β=β, p=p)
+                    elif p in ["{}_wls_{}".format(p,n) for p in ["huber", "quad"] for n in [0,1,2,3,4,5]]:
+                        if p[-1] == "0":
+                            rec_algo = test.reco(ims_ungained_astra[:,filt], proj_geom_v, np.swapaxes(np.swapaxes(cube_astra,0,2), 0, 1)[::-1,::-1], iters=stat_iter, b=i0s_ungained_astra[:,filt], g=i0s[filt], β=β, p=p)
+                        else:
+                            rec_algo = test.reco(ims_ungained_astra[:,filt], proj_geom_v, np.swapaxes(np.swapaxes(cube_astra,0,2), 0, 1)[::-1,::-1], iters=stat_iter, b=i0s_ungained_astra[:,filt], g=i0s[filt], β=β, p=p)
                     else:
-                        rec_algo = mlem.pl_iot(ims_astra[:,filt], image_shape, proj_geom_v, angles_astra, stat_iter, initial=initial, real_image=np.swapaxes(np.swapaxes(cube_astra,0,2), 0, 1)[::-1,::-1], b=i0s_astra[:,filt], β=β, p=p)
+                        rec_algo = mlem.pl_iot(ims_astra[:,filt], image_shape, proj_geom_v, angles_astra, stat_iter, initial=initial, real_image=np.swapaxes(np.swapaxes(cube_astra,0,2), 0, 1)[::-1,::-1], b=i0s_ungained_astra[:,filt], β=β, p=p)
                     perftime = time.perf_counter()
                     for i, rec in enumerate(rec_algo):
                         if type(rec) is list:
                             save_plot(rec, name1, name1)
                         elif type(rec) is tuple:
                             save_plot(rec[0], name1 +"_error_", name)
-                            #save_plot(rec[1], name+"_obj_func_", name)
-                            #WriteAstraImage(rec[2]*rec_mult, os.path.join("recos", name+"_reco.nrrd"), astra_spacing, image_zoom)
+                            save_plot(rec[1], name1+"_obj_func_", name)
                             rec1 = np.swapaxes(rec[2], 0, 2)
                             rec1 = np.swapaxes(rec1, 1,2)
                             rec1 = rec1[::-1, ::-1]
-                            save_image(rec1*rec_mult, "reg_"+prefix+"_"+name1+"_reco.nrrd", origin, spacing)
+                            WriteAstraImage(rec[2]*rec_mult, os.path.join("recos", name+"_"+ name1+"_reco.nrrd"), astra_spacing, image_zoom)
+                            save_image(rec1*rec_mult, prefix+"_"+name1+"_reco_reg.nrrd", origin, spacing)
                             #WriteAstraImage(cube_astra-rec[2], os.path.join("recos", name+"_error.nrrd"), astra_spacing, image_zoom)
                             #save_image(cube_astra-rec*rec_mult, "reg_"+prefix+"_"+name+"_error.nrrd", origin, spacing)
+                            if saveSinos:
+                                volume_id = astra.data3d.create('-vol', vol_geom, rec[2])
+                                proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
+                                algString = 'FP3D_CUDA'
+                                cfg = astra.astra_dict(algString)
+                                cfg['ProjectionDataId'] = proj_id
+                                cfg['VolumeDataId'] = volume_id
+                                alg_id = astra.algorithm.create(cfg)
+                                astra.algorithm.run(alg_id)
+                                astra.algorithm.delete(alg_id)
+                                astra.data3d.delete(volume_id)
+                                proj_data = astra.data3d.get(proj_id)
+                                astra.data3d.delete(proj_id)
+                                sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", name + "_sino_"+name1+".nrrd"))
+
                         else:
                             #sitk.WriteImage(sitk.GetImageFromArray(rec*image_out_mult), os.path.join("recos", name+"_" + str(i) + "_reco.nrrd"))
                             #sitk.WriteImage(sitk.GetImageFromArray((cube-rec)*image_out_mult), os.path.join("recos", name+"_"+str(i)+"_error.nrrd"))
@@ -951,20 +1062,6 @@ def main():
                             #WriteAstraImage(cube_astra-rec, os.path.join("recos", name+"_error_" + str(i) + ".nrrd"), astra_spacing, image_zoom)
                             #save_image(cube_astra-rec*rec_mult, "reg_"+name+"_error_" + str(i) + ".nrrd", origin, spacing)
                             print(i, name1+": ", time.perf_counter()-perftime, np.sum(np.abs(cube_astra-rec1)), np.log(np.sum(np.abs(cube_astra-rec1))))
-
-            volume_id = astra.data3d.create('-vol', vol_geom, rec[2])
-            proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
-            algString = 'FP3D_CUDA'
-            cfg = astra.astra_dict(algString)
-            cfg['ProjectionDataId'] = proj_id
-            cfg['VolumeDataId'] = volume_id
-            alg_id = astra.algorithm.create(cfg)
-            astra.algorithm.run(alg_id)
-            astra.algorithm.delete(alg_id)
-            astra.data3d.delete(volume_id)
-            proj_data = astra.data3d.get(proj_id)
-            astra.data3d.delete(proj_id)
-            sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", "astra_"+name+"_sino_pl.nrrd"))
 
         except Exception as e:
             print(str(e))
