@@ -1,8 +1,7 @@
-from zipfile import ZIP_LZMA
-from matplotlib import image
 import numpy as np
 import astra
-from numpy.lib.type_check import imag
+import os
+import SimpleITK as sitk
 
 def Ax_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
@@ -352,6 +351,7 @@ def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin
         dX, dY, dZ = R.dot([0,0,dist_origin_detector*image_spacing])
         vX, vY, vZ = R.dot([detector_spacing[0]*image_spacing, 0, 0])
         uX, uY, uZ = R.dot([0,detector_spacing[1]*image_spacing, 0])
+        
         vectors[i] = srcX, srcY, srcZ, dX, dY, dZ, uX, uY, uZ, vX, vY, vZ
 
     #print(np.linalg.norm([vX, vY, vZ]), np.linalg.norm([uX, uY, uZ]), np.linalg.norm([dX, dY, dZ]), np.linalg.norm([srcX, srcY, srcZ]), dist_source_origin, dist_origin_detector)
@@ -370,62 +370,36 @@ def rotMat(θ, u):
                 [u[2]*u[0]*(1-cT)-u[1]*sT, u[2]*u[1]*(1-cT)+u[0]*sT, cT+u[2]*u[2]*(1-cT)]
             ])
 
-def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing):
-    #vectors = np.zeros((len(coord_systems), 12))
+def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing, flips=False):
     vectors = np.zeros((len(coord_systems), 12))
     prims = []
     secs = []
 
-    p = 0
-
+    filt = np.ones(vectors.shape[0], dtype=bool)
+    shift = np.array([0,0,0.63])
     for i in range(len(coord_systems)):
         x_axis = np.array(coord_systems[i, :,0])
         y_axis = np.array(coord_systems[i, :,1])
         z_axis = np.array(coord_systems[i, :,2])
         iso = (coord_systems[i, :,3]-coord_systems[0,:,3])
+        iso += np.array([0,0,5])
       
         x_axis /= np.linalg.norm(x_axis)
         y_axis /= np.linalg.norm(y_axis)
 
         z_axis /= np.linalg.norm(z_axis)
-
+        
         x = rotMat(90,z_axis).dot(y_axis)
-
-        #print(i, np.round(np.arccos(x_axis.dot([1,0,0]))*180/np.pi), np.arccos(x_axis.dot([0,1,0]))*180/np.pi, np.round(np.arccos(x_axis.dot([0,0,1]))*180/np.pi) )
-        #print(i, np.round(np.arccos(y_axis.dot([1,0,0]))*180/np.pi), np.arccos(y_axis.dot([0,1,0]))*180/np.pi, np.round(np.arccos(y_axis.dot([0,0,1]))*180/np.pi) )
-        #print(i, np.round(np.arccos(z_axis.dot([1,0,0]))*180/np.pi), np.arccos(z_axis.dot([0,1,0]))*180/np.pi, np.round(np.arccos(z_axis.dot([0,0,1]))*180/np.pi) )
-
-        #if np.round(np.arccos(z_axis.dot([0,1,0]))*180/np.pi) <= 9:
-        #    z_axis = rotMat(9, y_axis).dot(z_axis)
-            #x_axis = rotMat(10, z_axis).dot(x_axis)
-            #y_axis = rotMat(10, z_axis).dot(y_axis)
 
         if np.dot(x,x_axis)>0:
             if np.round(np.arccos(z_axis.dot([0,1,0]))*180/np.pi) <= 9:
                 z_axis = rotMat(180, y_axis).dot(z_axis)
-                #iso = rotMat(0, z_axis).dot(iso)*5
-                #x_axis = rotMat(180, z_axis).dot(x_axis)
-                #y_axis = rotMat(180, z_axis).dot(y_axis)
             else:
                 z_axis = rotMat(180, y_axis).dot(z_axis)
-            #x_axis = rotMat(10, z_axis).dot(x_axis)
-            #y_axis = rotMat(10, z_axis).dot(y_axis)
-            #x_axis = rotMat(-90, z_axis).dot(y_axis)
+            iso -= shift
         else:
-            if np.round(np.arccos(z_axis.dot([0,1,0]))*180/np.pi) < 8:
-                z_axis = rotMat(0, y_axis).dot(z_axis)
-                #x_axis = rotMat(180, z_axis).dot(x_axis)
-            else:
-                z_axis = rotMat(0, y_axis).dot(z_axis)
-            #x_axis = rotMat(-10, z_axis).dot(x_axis)
-            #y_axis = rotMat(-10, z_axis).dot(y_axis)
-            #x_axis = rotMat(-90, z_axis).dot(y_axis)
-
-        #if i in [472,473,474,22,23,24]:
-        #    print(i, np.round(np.arccos(z_axis.dot([1,0,0]))*180/np.pi), np.arccos(z_axis.dot([0,1,0]))*180/np.pi, np.round(np.arccos(z_axis.dot([0,0,1]))*180/np.pi) )
-        #    print(i, p-np.arccos(z_axis.dot([0,1,0]))*180/np.pi)
-        #p = np.arccos(z_axis.dot([0,1,0]))*180/np.pi
-
+            iso += shift
+            
         x_axis *= detector_spacing[0]*image_spacing
         vX, vY, vZ = x_axis
         y_axis *= detector_spacing[1]*image_spacing
@@ -442,17 +416,9 @@ def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist
 
         vectors[i] = srcX, srcY, srcZ, dX, dY, dZ, uX, uY, uZ, vX, vY, vZ
 
-    #print(np.linalg.norm([vX, vY, vZ]), np.linalg.norm([uX, uY, uZ]), np.linalg.norm([dX, dY, dZ]), np.linalg.norm([srcX, srcY, srcZ]), dist_source_origin, dist_origin_detector[-1], iso)
-    # Parameters: #rows, #columns, vectors
-    filt = np.ones(vectors.shape[0], dtype=bool)
-    #print(coord_systems[45:55])
     np.savetxt("coords.csv", vectors, delimiter=",")
-    #filt[53:55] = 0
-    #filt[-50:] = False
-    #filt[:50] = False
-    #filt[0:3] = False
     proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors[filt])
-    return proj_geom, (prims,secs), filt
+    return proj_geom, (np.array(prims),np.array(secs)), filt
 
 test_data = "044802004201113212fa0002f96ffbfeff4c04fe06fa00ae0431039600980000000000008000000000ffff0402040002010080008000800080008000800080008000800c000080008000800080008000800080ffffffffff0200800400ffff5aff1000cd0300000101060900000202020276008aff5aff10000000ff0cd3ffee0000800080000000807f0988009d0400800080008011030080add20000f62a32000000000014baffff01000000c40900000600000059d2ffff070000009d2a000008000000eaffffff09000000000000002a000000f8ffffff2b0000002c0000002c000000fdffffff36000000dfffffff370000000be3ffff38000000e1220000390000001419f3ff3a0000001bfcffff3b000000b87d0c00e80300002d0200003e000000000000003f00000000000000d007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a02c673f43e3a4bad0f2dbbe420991c4662011bc5cf57fbf568c80bc68250fbc15e7dbbe2241933cbf2367bf007b89440000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f01fe7f3fce02b73a52a9fb3b778bafc45988b7baedff7f3f7a71063af48554c13ea3fbbb1e4209ba0ffe7f3f5de675443ea3fb3b1e42093a0ffe7fbf778bafc401fe7f3fce02b73a52a9fb3bf48554c15988b73aedff7fbf7a7106ba5de67544c3f5a8be8f4294c27b94b242ec1d04c61f851fc148d1ff45000000000000000000"
 
@@ -466,111 +432,359 @@ def unpack_sh_stparm(data, f = "12h5h6ch8hcc5h2h6c5h2h4chc3c4h3cc17hh50i12f12f12
 
     data_dict = {}
     i=0
-    data_dict["CRAN_A"] = data_list[i]; i+=1
-    data_dict["RAO_A"] = data_list[i]; i+=1
-    data_dict["X_A"] = data_list[i]; i+=1
-    data_dict["Y_A"] = data_list[i]; i+=1
-    data_dict["Z_A"] = data_list[i]; i+=1
-    data_dict["ANGUL_A"] = data_list[i]; i+=1
-    data_dict["ORBITAL_A"] = data_list[i]; i+=1
-    data_dict["SID_A"] = data_list[i]; i+=1
-    data_dict["SOD_A"] = data_list[i]; i+=1
-    data_dict["TOD"] = data_list[i]; i+=1
-    data_dict["MAGN_A"] = data_list[i]; i+=1
-    data_dict["MFTV_A"] = data_list[i]; i+=1
-    data_dict["ROTAT_A"] = data_list[i]; i+=1
-    data_dict["ROTAT2_A"] = data_list[i]; i+=1
-    data_dict["ROTAT3_A"] = data_list[i]; i+=1
-    data_dict["MSOF_A"] = data_list[i]; i+=1
-    data_dict["COLLTV_A"] = data_list[i]; i+=1
-    data_dict["INV_IMG_DEFAULT_A"] = data_list[i]; i+=1
-    data_dict["MFIELD_POSSIBLE_A"] = data_list[i]; i+=1
-    data_dict["INV_IMG_DISPLAY_A"] = data_list[i]; i+=1
-    data_dict["IMG_ROT_A"] = data_list[i]; i+=1
-    data_dict["PLANE_A_PARK"] = data_list[i]; i+=1
-    data_dict["GRID_STATUS_A"] = data_list[i]; i+=1
+    data_dict["CRAN_A"] = data_list[i]
+    i+=1
+    data_dict["RAO_A"] = data_list[i]
+    i+=1
+    data_dict["X_A"] = data_list[i]
+    i+=1
+    data_dict["Y_A"] = data_list[i]
+    i+=1
+    data_dict["Z_A"] = data_list[i]
+    i+=1
+    data_dict["ANGUL_A"] = data_list[i]
+    i+=1
+    data_dict["ORBITAL_A"] = data_list[i]
+    i+=1
+    data_dict["SID_A"] = data_list[i]
+    i+=1
+    data_dict["SOD_A"] = data_list[i]
+    i+=1
+    data_dict["TOD"] = data_list[i]
+    i+=1
+    data_dict["MAGN_A"] = data_list[i]
+    i+=1
+    data_dict["MFTV_A"] = data_list[i]
+    i+=1
+    data_dict["ROTAT_A"] = data_list[i]
+    i+=1
+    data_dict["ROTAT2_A"] = data_list[i]
+    i+=1
+    data_dict["ROTAT3_A"] = data_list[i]
+    i+=1
+    data_dict["MSOF_A"] = data_list[i]
+    i+=1
+    data_dict["COLLTV_A"] = data_list[i]
+    i+=1
+    data_dict["INV_IMG_DEFAULT_A"] = data_list[i]
+    i+=1
+    data_dict["MFIELD_POSSIBLE_A"] = data_list[i]
+    i+=1
+    data_dict["INV_IMG_DISPLAY_A"] = data_list[i]
+    i+=1
+    data_dict["IMG_ROT_A"] = data_list[i]
+    i+=1
+    data_dict["PLANE_A_PARK"] = data_list[i]
+    i+=1
+    data_dict["GRID_STATUS_A"] = data_list[i]
+    i+=1
     
-    data_dict["CRAN_B"] = data_list[i]; i+=1
-    data_dict["RAO_B"] = data_list[i]; i+=1
-    data_dict["X_B"] = data_list[i]; i+=1
-    data_dict["Y_B"] = data_list[i]; i+=1
-    data_dict["Z_B"] = data_list[i]; i+=1
-    data_dict["ANGUL_B"] = data_list[i]; i+=1
-    data_dict["ORBITAL_B"] = data_list[i]; i+=1
-    data_dict["SID_B"] = data_list[i]; i+=1
-    data_dict["SOD_B"] = data_list[i]; i+=1
-    data_dict["TBL_TOP"] = data_list[i]; i+=1
+    data_dict["CRAN_B"] = data_list[i]
+    i+=1
+    data_dict["RAO_B"] = data_list[i]
+    i+=1
+    data_dict["X_B"] = data_list[i]
+    i+=1
+    data_dict["Y_B"] = data_list[i]
+    i+=1
+    data_dict["Z_B"] = data_list[i]
+    i+=1
+    data_dict["ANGUL_B"] = data_list[i]
+    i+=1
+    data_dict["ORBITAL_B"] = data_list[i]
+    i+=1
+    data_dict["SID_B"] = data_list[i]
+    i+=1
+    data_dict["SOD_B"] = data_list[i]
+    i+=1
+    data_dict["TBL_TOP"] = data_list[i]
+    i+=1
     i+=1 # DUMMY1
-    data_dict["MAGN_B"] = data_list[i]; i+=1
-    data_dict["MFTV_B"] = data_list[i]; i+=1
-    data_dict["ROTAT_B"] = data_list[i]; i+=1
-    data_dict["ROTAT2_B"] = data_list[i]; i+=1
-    data_dict["ROTAT3_B"] = data_list[i]; i+=1
-    data_dict["MSOF_B"] = data_list[i]; i+=1
-    data_dict["COLLTV_B"] = data_list[i]; i+=1
-    data_dict["INV_IMG_DEFAULT_B"] = data_list[i]; i+=1
-    data_dict["MFIELD_POSSIBLE_B"] = data_list[i]; i+=1
-    data_dict["PLANE_A_PARK"] = data_list[i]; i+=1
-    data_dict["INV_IMG_DISPLAY_B"] = data_list[i]; i+=1
-    data_dict["IMG_ROT_B"] = data_list[i]; i+=1
-    data_dict["DIS_ALL_TBL_VALUES"] = data_list[i]; i+=1
-    data_dict["SYS_TILT"] = data_list[i]; i+=1
-    data_dict["TBL_TILT"] = data_list[i]; i+=1
-    data_dict["TBL_ROT"] = data_list[i]; i+=1
-    data_dict["TBL_X"] = data_list[i]; i+=1
-    data_dict["TBL_Y"] = data_list[i]; i+=1
-    data_dict["TBL_Z"] = data_list[i]; i+=1
-    data_dict["TBL_CRADLE"] = data_list[i]; i+=1
-    data_dict["PAT_POS"] = data_list[i]; i+=1
-    data_dict["STPAR_ACT"] = data_list[i]; i+=1
-    data_dict["SYS_TYPE"] = data_list[i]; i+=1
-    data_dict["TBL_TYPE"] = data_list[i]; i+=1
-    data_dict["POSNO"] = data_list[i]; i+=1
-    data_dict["MOVE_A"] = data_list[i]; i+=1
-    data_dict["MOVE_B"] = data_list[i]; i+=1
-    data_dict["MOVE_TBL"] = data_list[i]; i+=1
-    data_dict["DISMODE"] = data_list[i]; i+=1
-    data_dict["IO_HEIGHT"] = data_list[i]; i+=1
-    data_dict["TBL_VERT"] = data_list[i]; i+=1
-    data_dict["TBL_LONG"] = data_list[i]; i+=1
-    data_dict["TBL_LAT"] = data_list[i]; i+=1
-    data_dict["STAND_SPECIAL"] = data_list[i]; i+=1
-    data_dict["ROOM_SELECTION"] = data_list[i]; i+=1
-    data_dict["GRID_STATUS_B"] = data_list[i]; i+=1
-    data_dict["VERSION_SHSTPAR"] = data_list[i]; i+=1
-    data_dict["CAREPOS_X_A"] = data_list[i]; i+=1
-    data_dict["CAREPOS_Y_A"] = data_list[i]; i+=1
-    data_dict["CAREPOS_X_B"] = data_list[i]; i+=1
-    data_dict["CAREPOS_Y_B"] = data_list[i]; i+=1
-    data_dict["CAMERAROT_A"] = data_list[i]; i+=1
-    data_dict["CAMERAROT_B"] = data_list[i]; i+=1
-    data_dict["IT_LONG_A"] = data_list[i]; i+=1
-    data_dict["IT_LAT_A"] = data_list[i]; i+=1
-    data_dict["IT_HEIGHT_A"] = data_list[i]; i+=1
-    data_dict["IT_LONG_B"] = data_list[i]; i+=1
-    data_dict["IT_LAT_B"] = data_list[i]; i+=1
-    data_dict["IT_HEIGHT_B"] = data_list[i]; i+=1
-    data_dict["SISOD_A"] = data_list[i]; i+=1
-    data_dict["SISOD_B"] = data_list[i]; i+=1
-    data_dict["ISO_WORLD_X_A"] = data_list[i]; i+=1
-    data_dict["ISO_WORLD_Y_A"] = data_list[i]; i+=1
-    data_dict["ISO_WORLD_Z_A"] = data_list[i]; i+=1
-    data_dict["NO_ELEM_STAND_PRIV"] = data_list[i]; i+=1
-    data_dict["STAND_PRIV"] = data_list[i:i+50]; i+=50
-    data_dict["COORD_SYS_C_ARM"] = data_list[i:i+12]; i+=12
-    data_dict["COORD_SYS_C_ARM_B"] = data_list[i:i+12]; i+=12
-    data_dict["COORD_SYS_TABLE"] = data_list[i:i+12]; i+=12
-    data_dict["COORD_SYS_PATIENT"] = data_list[i:i+12]; i+=12
-    data_dict["ROBOT_AXES"] = data_list[i:i+6]; i+=6
-    data_dict["TOKEN"] = data_list[i]; i+=1
-    data_dict["AP_ID_REQUESTER"] = data_list[i]; i+=1
-    data_dict["CONFIRM_POSITION"] = data_list[i]; i+=1
+    data_dict["MAGN_B"] = data_list[i]
+    i+=1
+    data_dict["MFTV_B"] = data_list[i]
+    i+=1
+    data_dict["ROTAT_B"] = data_list[i]
+    i+=1
+    data_dict["ROTAT2_B"] = data_list[i]
+    i+=1
+    data_dict["ROTAT3_B"] = data_list[i]
+    i+=1
+    data_dict["MSOF_B"] = data_list[i]
+    i+=1
+    data_dict["COLLTV_B"] = data_list[i]
+    i+=1
+    data_dict["INV_IMG_DEFAULT_B"] = data_list[i]
+    i+=1
+    data_dict["MFIELD_POSSIBLE_B"] = data_list[i]
+    i+=1
+    data_dict["PLANE_A_PARK"] = data_list[i]
+    i+=1
+    data_dict["INV_IMG_DISPLAY_B"] = data_list[i]
+    i+=1
+    data_dict["IMG_ROT_B"] = data_list[i]
+    i+=1
+    data_dict["DIS_ALL_TBL_VALUES"] = data_list[i]
+    i+=1
+    data_dict["SYS_TILT"] = data_list[i]
+    i+=1
+    data_dict["TBL_TILT"] = data_list[i]
+    i+=1
+    data_dict["TBL_ROT"] = data_list[i]
+    i+=1
+    data_dict["TBL_X"] = data_list[i]
+    i+=1
+    data_dict["TBL_Y"] = data_list[i]
+    i+=1
+    data_dict["TBL_Z"] = data_list[i]
+    i+=1
+    data_dict["TBL_CRADLE"] = data_list[i]
+    i+=1
+    data_dict["PAT_POS"] = data_list[i]
+    i+=1
+    data_dict["STPAR_ACT"] = data_list[i]
+    i+=1
+    data_dict["SYS_TYPE"] = data_list[i]
+    i+=1
+    data_dict["TBL_TYPE"] = data_list[i]
+    i+=1
+    data_dict["POSNO"] = data_list[i]
+    i+=1
+    data_dict["MOVE_A"] = data_list[i]
+    i+=1
+    data_dict["MOVE_B"] = data_list[i]
+    i+=1
+    data_dict["MOVE_TBL"] = data_list[i]
+    i+=1
+    data_dict["DISMODE"] = data_list[i]
+    i+=1
+    data_dict["IO_HEIGHT"] = data_list[i]
+    i+=1
+    data_dict["TBL_VERT"] = data_list[i]
+    i+=1
+    data_dict["TBL_LONG"] = data_list[i]
+    i+=1
+    data_dict["TBL_LAT"] = data_list[i]
+    i+=1
+    data_dict["STAND_SPECIAL"] = data_list[i]
+    i+=1
+    data_dict["ROOM_SELECTION"] = data_list[i]
+    i+=1
+    data_dict["GRID_STATUS_B"] = data_list[i]
+    i+=1
+    data_dict["VERSION_SHSTPAR"] = data_list[i]
+    i+=1
+    data_dict["CAREPOS_X_A"] = data_list[i]
+    i+=1
+    data_dict["CAREPOS_Y_A"] = data_list[i]
+    i+=1
+    data_dict["CAREPOS_X_B"] = data_list[i]
+    i+=1
+    data_dict["CAREPOS_Y_B"] = data_list[i]
+    i+=1
+    data_dict["CAMERAROT_A"] = data_list[i]
+    i+=1
+    data_dict["CAMERAROT_B"] = data_list[i]
+    i+=1
+    data_dict["IT_LONG_A"] = data_list[i]
+    i+=1
+    data_dict["IT_LAT_A"] = data_list[i]
+    i+=1
+    data_dict["IT_HEIGHT_A"] = data_list[i]
+    i+=1
+    data_dict["IT_LONG_B"] = data_list[i]
+    i+=1
+    data_dict["IT_LAT_B"] = data_list[i]
+    i+=1
+    data_dict["IT_HEIGHT_B"] = data_list[i]
+    i+=1
+    data_dict["SISOD_A"] = data_list[i]
+    i+=1
+    data_dict["SISOD_B"] = data_list[i]
+    i+=1
+    data_dict["ISO_WORLD_X_A"] = data_list[i]
+    i+=1
+    data_dict["ISO_WORLD_Y_A"] = data_list[i]
+    i+=1
+    data_dict["ISO_WORLD_Z_A"] = data_list[i]
+    i+=1
+    data_dict["NO_ELEM_STAND_PRIV"] = data_list[i]
+    i+=1
+    data_dict["STAND_PRIV"] = data_list[i:i+50]
+    i+=50
+    data_dict["COORD_SYS_C_ARM"] = data_list[i:i+12]
+    i+=12
+    data_dict["COORD_SYS_C_ARM_B"] = data_list[i:i+12]
+    i+=12
+    data_dict["COORD_SYS_TABLE"] = data_list[i:i+12]
+    i+=12
+    data_dict["COORD_SYS_PATIENT"] = data_list[i:i+12]
+    i+=12
+    data_dict["ROBOT_AXES"] = data_list[i:i+6]
+    i+=6
+    data_dict["TOKEN"] = data_list[i]
+    i+=1
+    data_dict["AP_ID_REQUESTER"] = data_list[i]
+    i+=1
+    data_dict["CONFIRM_POSITION"] = data_list[i]
+    i+=1
 
     #print(data_dict["COORD_SYS_C_ARM"])
     #print(data_dict["COORD_SYS_TABLE"])
     #print(data_dict["COORD_SYS_PATIENT"])
     #print(data_dict["MAGN_A"], data_dict["MFTV_A"], data_dict["MSOF_A"], data_dict["COLLTV_A"])
-
-    #print(data_dict["SID_A"], data_dict["SOD_A"], data_dict["SISOD_A"])
+    #print(data_dict["TOD"])
+    #print(data_dict["SID_A"], data_dict["SOD_A"], data_dict["SISOD_A"], data_dict["TOD"])
 
     return data_dict
+
+
+def read_cbct_info(path):
+
+    # open 2 fds
+    null_fds = [os.open(os.devnull, os.O_RDWR) for x in range(2)]
+    # save the current file descriptors to a tuple
+    save = os.dup(1), os.dup(2)
+    # put /dev/null fds on 1 and 2
+    os.dup2(null_fds[0], 1)
+    os.dup2(null_fds[1], 2)
+
+    # *** run the function ***
+
+    sitk.ProcessObject_GlobalDefaultDebugOff()
+    sitk.ProcessObject_GlobalWarningDisplayOff()
+    reader = sitk.ImageSeriesReader()
+    reader.DebugOff()
+    reader.GlobalWarningDisplayOff()
+    reader.MetaDataDictionaryArrayUpdateOn()
+    reader.LoadPrivateTagsOn()
+    reader.SetFileNames([os.path.join(path, f) for f in sorted(os.listdir(path))])
+    image = reader.Execute()
+
+    # restore file descriptors so I can print the results
+    os.dup2(save[0], 1)
+    os.dup2(save[1], 2)
+    # close the temporary fds
+    os.close(null_fds[0])
+    os.close(null_fds[1])
+
+    size = np.array(image.GetSize())
+    origin = image.GetOrigin()
+    direction = image.GetDirection()
+    spacing = np.array(image.GetSpacing())
+    return (origin, direction), size, spacing, image
+
+μW = 0.019286726
+μA = 0.000021063006
+
+def toHU(image):
+    return 1000.0*((image - μW)/(μW-μA))
+
+def fromHU(image):
+    return (μW-μA)*image/1000.0 + μW
+
+
+def sort_projs(projs, geo):
+    #edges = (projs[:-1,:,:]-projs[1:,:,:] + projs[:,:,:-1]-projs[:,:,1:])
+    #edges = edges>0
+    #diff = np.array((edges.shape[1], edges.shape[1]))
+    #for i in range(edges.shape[1]):
+    #    diff[i] = np.sum(edges[:,:,:]-edges[:,i,:], axis=(0,2))
+    vecs = geo['Vectors'][:,0:3]
+    dists = np.zeros((vecs.shape[0], vecs.shape[0]))
+    #print(geo['Vectors'].shape, vecs.shape, dists.shape, dists[0].shape)
+    for i in range(vecs.shape[0]):
+        dists[i] = np.linalg.norm(vecs-vecs[i], axis=1)
+
+    #print(dists[0])
+    #print(vecs)
+    #print(dists[1])
+
+    nn = [0]
+    while(len(nn) < vecs.shape[0]):
+        for neighbour in np.argsort(dists[nn[-1]]):
+            if neighbour in nn: continue
+            nn.append(neighbour)
+            #print(neighbour, dists[nn[-1]], vecs[nn[-1]])
+            break
+    
+    #return projs[:,nn,:]
+
+    def calc_len(path, dists):
+        l = 0
+        prev = None
+        for u in path:
+            if prev is not None:
+                l += dists[prev, u]
+            prev = u
+        return l
+    
+    len_nn = calc_len(nn, dists)
+
+    τ0 = 1.0 / (len_nn*vecs.shape[0])
+    pher = np.ones(dists.shape, dtype=float)*τ0
+
+    β = 2
+    α = 0.1
+    m = 50
+    q0 = 0.9
+    
+    def ps(ai):
+        r = visited[ai][-1]
+        den = np.sum([pher[r,s]*(1/dists[r,s])**β for s in visited[ai] if r!=s and dists[r,s]>0])
+        if den == 0:
+            den = 1
+        p = []
+        for s in range(dists.shape[0]):
+            if s in visited[ai]: p.append(0) 
+            elif r==s: p.append(0)
+            elif dists[r,s]==0:
+                p = np.zeros(dists.shape[0])
+                p[s]=1
+                return p
+            else: p.append(pher[r,s]*(1/dists[r,s])**β / den)
+        return p
+    its = 5
+    for i in range(its):
+        visited = [[0] for _ in range(m)]
+        for _ in range(vecs.shape[0]-1):
+            for ai in range(m):
+                q = np.random.random(1)[0]
+                if q <= q0:
+                    r = visited[ai][-1]
+                    p = []
+                    for u in range(vecs.shape[0]):
+                        if u in visited[ai]: p.append(0)
+                        elif u==r: p.append(0)
+                        elif dists[r,u] == 0:
+                            p = np.zeros(dists.shape[0])
+                            p[u]=1
+                            break
+                        else: p.append(pher[r,u]*(1/dists[r,u])**β)
+                    s = np.argmax(p)
+                    if s==0:
+                        print(p)
+                else:
+                    p = np.array(ps(ai))
+                    pk = np.cumsum(p)
+                    pk = pk / pk[-1]
+                    t = np.random.random(1)[0]
+                    s = np.argmax(pk>t)
+                    if s==0:
+                        print(p, pk, t, pk>t)
+                visited[ai].append(s)
+            for ai in range(m):
+                pher[visited[ai][-2], visited[ai][-1]] = (1-α)*pher[visited[ai][-2], visited[ai][-1]] + α * τ0
+
+        lens = [calc_len(visited[ai], dists) for ai in range(m)]
+        shortest = np.argmin(lens)
+        #print(i, shortest, lens[shortest], calc_len(range(dists.shape[0]),dists))
+        prev = None
+        for s in visited[shortest]:
+            if prev is not None:
+                pher[prev, s] = (1-α)*pher[prev, s] + α / lens[shortest]
+            prev = s
+    
+    #print(lens[shortest])
+    #print(visited[shortest])
+    return projs[:,visited[shortest],:], visited[shortest]
