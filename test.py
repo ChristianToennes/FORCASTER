@@ -110,6 +110,7 @@ def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_
     μ = np.zeros_like(real_image)
     #y = b*np.exp(-raw_projs)
     y = np.array(raw_projs[:])
+    y = y / np.mean(y, axis=(0,2))[np.newaxis,:,np.newaxis]
 
     Aμ = utils.Ax_astra(real_image.shape, geo)
     Aty = utils.Atb_astra(real_image.shape, geo)
@@ -127,7 +128,7 @@ def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_
         w[ii] = d / np.abs(C1x[ii])
         return w
 
-    pot, dercurv_type, opt_b = p.split('_')
+    pot, dercurv_type, opt_b, opt_reg = p.split('_')
     opt_b = int(opt_b)
     #if opt_b == "1":
     #    opt_b = True
@@ -286,6 +287,21 @@ def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_
             ĝ[~(ĝ<g_max)] = g_max
             ĝ[~(ĝ>g_min)] = g_min
 
+        if opt_b==6 and it>1 and it%5==0:
+            #bŷ = (b*np.exp(-ŷ))[focus].reshape(focus_shape)
+            ŷ_mean = np.mean(bŷ, axis=(0,2))
+            ŷ_mean[ŷ_mean==0] = np.exp(y_mean[ŷ_mean==0])
+            #ŷ_med = np.median(bŷ, axis=(0,2))
+            #ŷ_med[ŷ_med==0] = y_med[ŷ_med==0]
+            #ŷ_std = np.std(bŷ, axis=(0,2))
+            #ŷ_std[ŷ_std==0] = y_std[ŷ_std==0]
+            y_ŷ = (y_mean/ŷ_mean)
+            #y_ŷ[~np.bitwise_and(y_ŷ>0.2, y_ŷ<20)] = g_max
+            y_ŷ[~(y_ŷ<g_max)] = g_max
+            y_ŷ[~(y_ŷ>g_min)] = g_min
+            ĝ = (1-α) * ĝ + α * (y_ŷ)
+            ĝ[~(ĝ<g_max)] = g_max
+            ĝ[~(ĝ>g_min)] = g_min
         # update image
         
         #% gradient of cost function
