@@ -105,9 +105,10 @@ def dercurve_trl(data, li, curvtype = 'oc', iblock=None, nblock=None):
 
     return deriv, ni
 
-def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_min=1):
+def reco(raw_projs, geo, real_image, prior_image, iters, b, g, β, p, α = 0.5, g_max=300, g_min=1):
 
     μ = np.zeros_like(real_image)
+    μp = np.array(prior_image)
     #y = b*np.exp(-raw_projs)
     y = np.array(raw_projs[:])
     y = y / np.mean(y, axis=(0,2))[np.newaxis,:,np.newaxis]
@@ -127,7 +128,7 @@ def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_
         ii = np.abs(C1x) > d
         w[ii] = d / np.abs(C1x[ii])
         return w
-
+    
     pot, dercurv_type, opt_b, opt_reg = p.split('_')
     opt_b = int(opt_b)
     #if opt_b == "1":
@@ -139,19 +140,32 @@ def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_
     else:
         pot = pot_quad
 
-    def Rdercurv(C1x):
-        deriv = β * pot(C1x) * C1x
+    def Rdercurv_(x):
+        deriv = β * pot(C1x) * C1x + β * pot(C1x)
         curv = β * pot(C1x)
+        return deriv, curv
+    
+    def C1(x):
+        C1x = np.zeros_like(x)
+        C1x[:-1] = x[:-1]-x[1:]
+        C1x[:,:-1] += x[:,:-1]-x[:,1:]
+        C1x[:,:,:-1] += x[:,:,:-1]-x[:,:,1:]
+        C1x /= 3
+        return C1x
+
+    def Rdercurv(C1x, C1x_p):
+        deriv = β * pot(C1x) * C1x + β * pot(C1x_p) * C1x_p
+        curv = β * pot(C1x) + β * pot(C1x_p)
         return deriv, curv
 
     if dercurv_type=='wls':
         dercurv = dercurve_wls
-    elif dercurv_type == 'tlr':
+    elif dercurv_type == 'trl':
         dercurv = dercurve_trl
         curvtype = 'oc'
     else:
-        dercurv_type = 'wls'
-        dercurv = dercurve_wls
+        dercurv_type = 'trl'
+        dercurv = dercurve_trl
 
     if np.isscalar(b):
         b = b*np.ones_like(y)
@@ -169,13 +183,7 @@ def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_
 
     #% initialize projections
     ŷ = Aμ(μ)
-    def C1(x):
-        C1x = np.zeros_like(x)
-        C1x[:-1] = x[:-1]-x[1:]
-        C1x[:,:-1] += x[:,:-1]-x[:,1:]
-        C1x[:,:,:-1] += x[:,:,:-1]-x[:,:,1:]
-        C1x /= 3
-        return C1x
+    
     C1x = C1(μ)
 
     oldinprod = 0
@@ -305,9 +313,12 @@ def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_
         # update image
         
         #% gradient of cost function
-        data = (-np.log(y/(ĝ[np.newaxis,:,np.newaxis]*b)), ĝ[np.newaxis,:,np.newaxis]*b, r)
+        if dercurv_type=="wls":
+            data = (-np.log(y/(ĝ[np.newaxis,:,np.newaxis]*b)), ĝ[np.newaxis,:,np.newaxis]*b, r)
+        else:
+            data = (y, ĝ[np.newaxis,:,np.newaxis]*b, r)
         [hderiv, hcurv] = dercurv(data, ŷ, curvtype)
-        [pderiv, pcurv] = Rdercurv(μ)
+        [pderiv, pcurv] = Rdercurv(μ, μ-μp)
         grad = Aty(hderiv) + C1(pderiv)
 
         #% preconditioned gradient
@@ -340,7 +351,7 @@ def reco(raw_projs, geo, real_image, iters, b, g, β, p, α = 0.5, g_max=300, g_
         for i_s in range(nsub):
             if step != 0:
                 [hderiv, hcurv] = dercurv(data, ŷ + step * Adir, curvtype)
-                [pderiv, pcurv] = Rdercurv(C1x + step * C1dir)
+                [pderiv, pcurv] = Rdercurv(C1x + step * C1dir, C1(μ+step*ddir-μp))
             denom = (Adir**2).flatten().dot(hcurv.flatten()) + (C1dir**2).flatten().dot(pcurv.flatten())
             numer = Adir.flatten().dot(hderiv.flatten()) + C1dir.flatten().dot(pderiv.flatten())
             if denom == 0:
