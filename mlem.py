@@ -37,10 +37,9 @@ def p_norm(x, p, δ):
 def δp_norm(x, p, δ):
     a = (2*δ)**(-p)*(δ*δ*p)**(p-1)
     b = δ*(1-0.5*p)
+    
     f_pos = x>=0
-    xp = x[f_pos]
-    xn = x[~f_pos]
-
+    
     f_pos_gδ = np.bitwise_and(f_pos, x>δ)
     f_pos_ngδ = np.bitwise_and(f_pos, x<=δ)
     f_pos_gδ_gb = np.bitwise_and(f_pos_gδ, x>=-b)
@@ -65,13 +64,14 @@ def δp_norm(x, p, δ):
         r[f_pos_gδ_ngb] = (-x[f_pos_gδ_ngb]+b)**(p-1)
         r[f_npos_gδ_gb] = (x[f_npos_gδ_gb]+b)**(p-1)
         r[f_npos_gδ_ngb] = (-x[f_npos_gδ_ngb]-b)**(p-1)
-
+    
     r[r<0] = 0
     return r
 
 def δδp_norm(x, p, δ):
     a = (2*δ)**(-p)*(δ*δ*p)**(p-1)
     b = δ*(1-0.5*p)
+
     f_pos = x>=0
 
     f_pos_gδ = np.bitwise_and(f_pos, x>δ)
@@ -102,6 +102,94 @@ def δδp_norm(x, p, δ):
 
     r[r<0] = 0
     return r
+
+def δp_norm_grad(img, p, δ):
+    a = (2*δ)**(-p)*(δ*δ*p)**(p-1)
+    b = δ*(1-0.5*p)
+    res = np.zeros_like(img)
+    for x in (img[:-1]-img[1:], img[:,:-1]-img[:,1:], img[:,:,:-1]-img[:,:,1:]):
+        f_pos = x>=0
+        
+        f_pos_gδ = np.bitwise_and(f_pos, x>δ)
+        f_pos_ngδ = np.bitwise_and(f_pos, x<=δ)
+        f_pos_gδ_gb = np.bitwise_and(f_pos_gδ, x>=-b)
+        f_pos_gδ_ngb = np.bitwise_and(f_pos_gδ, x<-b)
+
+        f_npos_gδ = np.bitwise_and(~f_pos, x<-δ)
+        f_npos_ngδ = np.bitwise_and(~f_pos, x>=-δ)
+        f_npos_gδ_gb = np.bitwise_and(f_npos_gδ, x>=-b)
+        f_npos_gδ_ngb = np.bitwise_and(f_npos_gδ, x<-b)
+        
+        r = np.zeros_like(x)
+        r[f_pos_ngδ] = 2*a*x[f_pos_ngδ]
+        r[f_npos_ngδ] = 2*a*x[f_npos_ngδ]
+
+        if p==1:
+            r[f_pos_gδ_gb] = 1
+            r[f_pos_gδ_ngb] = 1
+            r[f_npos_gδ_gb] = 1
+            r[f_npos_gδ_ngb] = 1
+        else:
+            r[f_pos_gδ_gb] = (x[f_pos_gδ_gb]-b)**(p-1)
+            r[f_pos_gδ_ngb] = (-x[f_pos_gδ_ngb]+b)**(p-1)
+            r[f_npos_gδ_gb] = (x[f_npos_gδ_gb]+b)**(p-1)
+            r[f_npos_gδ_ngb] = (-x[f_npos_gδ_ngb]-b)**(p-1)
+        if res.shape[0] == r.shape[0]:
+            if res.shape[1] == r.shape[1]:
+                res[:,:,:-1] += r
+            else:
+                res[:,:-1] += r
+        else:
+            res[:-1] += r
+    
+    res /= 3
+    res[res<0] = 0
+    return res
+
+def δδp_norm_grad(img, p, δ):
+    a = (2*δ)**(-p)*(δ*δ*p)**(p-1)
+    b = δ*(1-0.5*p)
+
+    res = np.zeros_like(img)
+    for x in (img[:-1]-img[1:], img[:,:-1]-img[:,1:], img[:,:,:-1]-img[:,:,1:]):
+        f_pos = x>=0
+
+        f_pos_gδ = np.bitwise_and(f_pos, x>δ)
+        f_pos_ngδ = np.bitwise_and(f_pos, x<=δ)
+        f_pos_gδ_gb = np.bitwise_and(f_pos_gδ, x>=-b)
+        f_pos_gδ_ngb = np.bitwise_and(f_pos_gδ, x<-b)
+
+        f_npos_gδ = np.bitwise_and(~f_pos, x<-δ)
+        f_npos_ngδ = np.bitwise_and(~f_pos, x>=-δ)
+        f_npos_gδ_gb = np.bitwise_and(f_npos_gδ, x>=-b)
+        f_npos_gδ_ngb = np.bitwise_and(f_npos_gδ, x<-b)
+        
+        r = np.zeros_like(x)
+        r[f_pos_ngδ] = 2*a
+        r[f_npos_ngδ] = 2*a
+
+        if p!=1:
+            if p==2:
+                r[f_pos_gδ_gb] = (p-1)
+                r[f_pos_gδ_ngb] = (p-1)
+                r[f_npos_gδ_gb] = (p-1)
+                r[f_npos_gδ_ngb] = (p-1)
+            else:
+                r[f_pos_gδ_gb] = (p-1)*(x[f_pos_gδ_gb]-b)**(p-2)
+                r[f_pos_gδ_ngb] = (p-1)*(-x[f_pos_gδ_ngb]+b)**(p-2)
+                r[f_npos_gδ_gb] = (p-1)*(x[f_npos_gδ_gb]+b)**(p-2)
+                r[f_npos_gδ_ngb] = (p-1)*(-x[f_npos_gδ_ngb]-b)**(p-2)
+
+        if res.shape[0] == r.shape[0]:
+            if res.shape[1] == r.shape[1]:
+                res[:,:,:-1] += r
+            else:
+                res[:,:-1] += r
+        else:
+            res[:-1] += r
+    res /= 3
+    res[res<0] = 0
+    return res
 
 from PotentialFilter import potential_filter as c_ψ
 from PotentialFilter import potential_dx_filter as c_δψ
@@ -1244,15 +1332,19 @@ def pl_pcg_qs_ls(proj, out_shape, geo, angles, iters, initial=None, real_image=N
         return deriv, curv
 
     if dercurv=='wls':
-        dercurv = dercurve_wls
+        dercurv = dercurve_wls    
+        if np.isscalar(b):
+            data = (proj, b*np.ones_like(proj), np.zeros_like(proj))
+        else:
+            data = (proj, b, np.zeros_like(proj))
     elif dercurv == 'tlr':
         dercurv = dercurve_trl
-        curvtype = 'oc'
+        curvtype = 'oc'    
+        if np.isscalar(b):
+            data = (b*np.exp(-proj), b*np.ones_like(proj), np.zeros_like(proj))
+        else:
+            data = (b*np.exp(-proj), b, np.zeros_like(proj))
 
-    if np.isscalar(b):
-        data = (proj, b*np.ones_like(proj), np.zeros_like(proj))
-    else:
-        data = (proj, b, np.zeros_like(proj))
     #% initialize projections
     Ax = Ab(x)
     def C1(x):
@@ -1461,6 +1553,14 @@ def PIRPLE(proj, out_shape, geo, angles, iters, initial, real_image, b=10**4, β
 
     yield error, obj_func, μ
 
+def C1(x):
+    C1x = np.zeros_like(x)
+    C1x[:-1] = x[:-1]-x[1:]
+    C1x[:,:-1] += x[:,:-1]-x[:,1:]
+    C1x[:,:,:-1] += x[:,:,:-1]-x[:,:,1:]
+    C1x /= 3
+    return C1x
+
 def PIPLE(proj, out_shape, geo, angles, iters, initial, real_image, b=10**4, βp=10**3, βr=10**3, p=1, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True): # stayman 2013
 
     μ = np.array(initial)
@@ -1486,14 +1586,7 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial, real_image, b=10**4, βp
         c[c<ε] = ε
         d = Σi_a_ij2(c)
 
-    def C1(x):
-        C1x = np.zeros_like(x)
-        C1x[:-1] = x[:-1]-x[1:]
-        C1x[:,:-1] += x[:,:-1]-x[:,1:]
-        C1x[:,:,:-1] += x[:,:,:-1]-x[:,:,1:]
-        C1x /= 3
-        return C1x
-    C1μp = C1(μp)
+    #C1μp = C1(μp)
 
     c = np.zeros_like(y)
     for it in range(iters):
