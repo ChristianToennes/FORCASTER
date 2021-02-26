@@ -23,7 +23,7 @@ def sq_norm(x, _p, _δ):
 def δsq_norm(x, _p, _δ):
     return x / np.sqrt(x**2)
 def δδsq_norm(x, _p, _δ):
-    return np.zeros_like(x)
+    return np.ones_like(x)
 
 def p_norm(x, p, δ):
     a = (2*δ)**(-p)*(δ*δ*p)**(p-1)
@@ -850,6 +850,38 @@ def dercurve_wls(data, li, curvtype=None, iblock=None, nblock=None):
         curv = wi
     return deriv, curv
 
+def calc_oc(yi, bi, ri, li):
+    h = lambda y,b,r,l: y * np.log(b*np.exp(-l)+r) - (b*np.exp(-l)+r)
+    h0 = lambda y,b,r: y * np.log(b+r) - b+r
+    dh = lambda y,b,r,l: (1 - y / (b*np.exp(-l)+r)) * b*np.exp(-l)
+    #% compute curvature at l=0
+    ni_max = np.zeros_like(yi)
+    if np.isscalar(bi): #% scalar bi (must be positive!)
+        ni_max = bi * (1 - yi * ri / (bi + ri)**2)
+    else:
+        i0 = bi > 0;
+        if np.isscalar(ri):
+            rii = 1;
+        else:
+            rii = ri[i0];
+        ni_max[i0] = bi[i0] * (1 - yi[i0] * rii / (bi[i0] + rii)**2)
+
+    ni_max[ni_max<0] = 0
+    ni = ni_max
+
+    if False:
+        il0 = li <= 0;
+    else: #% trick in C program due to numerical precision issues
+        il0 = li < 0.1
+
+    i = ~il0
+    tmp = h(yi[i],bi,ri,li[i]) - h0(yi[i],bi,ri) - li[i] * dh(yi[i],bi,ri,li[i])
+    tmp[tmp<0] = 0
+    ni[i] = 2 / li[i]**2 * tmp
+
+    return ni
+
+
 def dercurve_trl(data, li, curvtype = 'oc', iblock=None, nblock=None): 
     yi = data[0]
     bi = data[1]
@@ -874,38 +906,11 @@ def dercurve_trl(data, li, curvtype = 'oc', iblock=None, nblock=None):
     #% trl_h_dh()
     #% transmission Poisson likelihood function
     #function [h, dh] = trl_h_dh
-    h = lambda y,b,r,l: y * np.log(b*np.exp(-l)+r) - (b*np.exp(-l)+r)
-    dh = lambda y,b,r,l: (1 - y / (b*np.exp(-l)+r)) * b*np.exp(-l)
-
+    
     #% Compute optimal surrogate parabola curvatures
     #% for Poisson transmission model based on Erdogan's formula.
     if curvtype=='oc':
-
-        #% compute curvature at l=0
-        ni_max = np.zeros_like(yi)
-        if np.isscalar(bi): #% scalar bi (must be positive!)
-            ni_max = bi * (1 - yi * ri / (bi + ri)**2)
-        else:
-            i0 = bi > 0;
-            if np.isscalar(ri):
-                rii = 1;
-            else:
-                rii = ri[i0];
-            ni_max[i0] = bi[i0] * (1 - yi[i0] * rii / (bi[i0] + rii)**2)
-
-        ni_max[ni_max<0] = 0
-        ni = ni_max
-
-        if False:
-            il0 = li <= 0;
-        else: #% trick in C program due to numerical precision issues
-            il0 = li < 0.1;
-
-        tmp = h(yi,bi,ri,li) - h(yi,bi,ri,0) - li * dh(yi,bi,ri,li)
-        i = ~il0
-        tmp[tmp<0] = 0
-        ni[i] = 2 / li[i]**2 * tmp[i]
-
+        ni = calc_oc(yi, bi, ri, li)
         #if (ni > ni_max).any():
         #%	plot([ni_max(:) ni(:) ni(:)>ni_max(:)])
         #    warning 'large ni'
@@ -1501,7 +1506,7 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial, real_image, b=10**4, βp
         l = Σj_a_ij(μ)
         eli = np.exp(-l)
         #ŷ = b*eli + r
-        ḣ = b*eli-y
+        ḣ = y-b*eli
         #ḣ = (1-y/ŷ)*b*eli
         #ḣ = y - ŷ
 
@@ -1513,28 +1518,33 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial, real_image, b=10**4, βp
             #c[f] -= y[f]*l[f]
             #c[f] += l[f]*y[f]
             #c[f] *= (2/(l[f]**2))
-            c[f] = 2*b/(l[f]**2) * (1 - eli[f] - l[f]*eli[f])
-            c[~f] = b
-            c[c<ε] = ε
-            d = Σi_a_ij2(c)
+            #c[f] = 2*b/(l[f]**2) * (1 - eli[f] - l[f]*eli[f])
+            #c[~f] = b
+            #c[c<ε] = ε
+            c = calc_oc(y, b, 0, l)
+            #d = Σi_a_ij2(c)
+            d = Σi_a_ij(c)
+
             
         C1μ = C1(μ)
         C1μ_p = C1(μ-μp)
         denom = (d
-            #+ βr * δδp_norm(C1μ, p, δ) + βp * δδp_norm(C1μ_p, p, δ)
-            + βr * c_μm(μ, δδψ, p=p) + βp * c_μm(μ-μp, δδψ, p=p)
+            #+ βr * c_μm(μ, δδψ, p=p) + βp * c_μm(μ-μp, δδψ, p=p)
+            + βr * δδp_norm(C1μ, p, δ) + βp * δδp_norm(C1μ_p, p, δ)
+            #+ βr * δδsq_norm(C1μ, p, δ) + βp * δδsq_norm(C1μ_p, p, δ)
             )
         fil = denom==0
         denom[fil]=1
         nom = (
             Σi_a_ij(ḣ)
-            - βr * c_μm(μ, δψ, p=p) - βp * c_μm(μ-μp, δψ, p=p)
-            #- βr * δp_norm(C1μ, p, δ) - βp * δp_norm(C1μ_p, p, δ)
+            #- βr * c_μm(μ, δψ, p=p) - βp * c_μm(μ-μp, δψ, p=p)
+            - βr * δp_norm(C1μ, p, δ) - βp * δp_norm(C1μ_p, p, δ)
+            #- βr * δsq_norm(C1μ, p, δ) - βp * δsq_norm(C1μ_p, p, δ)
         )
         up = nom / denom
-        up[fil] = 0
+        up[fil] = ε
         
-        μ = μ + up
+        μ = μ - up
         μ[~(μ>ε)] = ε
         #print(it, np.mean(nom), np.mean(denom), np.mean(up), np.mean(μ))
         #print(it, np.min(nom), np.min(denom), np.min(up), np.min(μ))
@@ -1545,43 +1555,3 @@ def PIPLE(proj, out_shape, geo, angles, iters, initial, real_image, b=10**4, βp
         obj_func.append((time.perf_counter()-proctime, 2))
 
     yield error, obj_func, μ
-
-
-def PWLS(proj, out_shape, geo, angles, iters, initial=None, real_image=None, b=10**2, β=10**3, p=1, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True, M=1): # dang 2015
-
-    if initial is None:
-        if use_astra:
-            initial = utils.FDK_astra(out_shape, geo)(proj, free_memory=True)
-        else:
-            initial = tigre.algorithms.fdk(proj, geo, angles) # initial guess
-    
-    μ = np.array(initial[:])
-
-    y = b * np.exp(-proj)
-
-
-    if use_astra:
-        Σj_a_ij = utils.Ax_astra(out_shape, geo)
-        Σi_a_ij = utils.Atb_astra(out_shape, geo)
-    else:
-        Σj_a_ij = lambda x: tigre.Ax(x, geo, angles)
-        Σi_a_ij = lambda x: tigre.Atb(x, geo, angles)
-    
-
-    for n in range(iters):
-        
-        l̂ = Σj_a_ij(μ)
-        ḣ = w*(proj-l̂)
-        
-        L̇ = Σi_a_ij(ḣ)
-        Ṙ = c_μm(μ, δψ, p=p)
-        R̈ = c_μm(μ, δδψ, p=p)
-        μ = μ + (L̇ - β*Ṙ) / (d + 2*β*R̈)
-
-        if n%1000 == 0:
-            if real_image is None:
-                print(n, np.mean(up), np.std(up), np.median(up), np.sum(up))
-            else:
-                print(n, np.sum(up), np.sum(np.abs(real_image-I)))
-
-    return I
