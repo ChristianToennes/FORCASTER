@@ -26,8 +26,10 @@ cube += [np.zeros_like(phant) for _ in range(10)]
 cube = np.array(cube)
 
 cube = sitk.GetArrayFromImage(sitk.ReadImage("3D_Shepp_Logan.nrrd"))
-#origin, size, spacing, image = utils.read_cbct_info(r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
-#cube = utils.fromHU(sitk.GetArrayFromImage(image))
+origin, size, spacing, image = utils.read_cbct_info(r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+_origin, _size, _spacing, prior_image = utils.read_cbct_info(r"E:\output\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+cube = utils.fromHU(sitk.GetArrayFromImage(image))
+prior_cube = utils.fromHU(sitk.GetArrayFromImage(prior_image))
 #cube = scipy.ndimage.zoom(np.swapaxes(sitk.GetArrayFromImage(sitk.ReadImage("StanfordBunny.nrrd")), 0, 1), 0.5, order=2)
 #print(cube.shape)
 cube_tigre = np.array(cube, dtype=np.float32)
@@ -164,7 +166,7 @@ def proj_astra(angles_astra, volume):
     proj_data = astra.data3d.get(proj_id)
     return proj_data
 
-def reco_astra2(proj_data, angles_astra, name):
+def reco_astra2(proj_data, angles_astra, name, prior=0):
     if astra_iter == 0: return np.zeros_like(cube_astra)
     perftime = time.perf_counter()
     #angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
@@ -172,7 +174,7 @@ def reco_astra2(proj_data, angles_astra, name):
     proj_id = astra.data3d.create('-sino', proj_geom_v, proj_data)
 
     sitk.WriteImage(sitk.GetImageFromArray(proj_data*sino_mult), os.path.join("recos", "astra_"+name+"_sino.nrrd"))
-    rec_id = astra.data3d.create('-vol', vol_geom, 0)
+    rec_id = astra.data3d.create('-vol', vol_geom, prior)
     cfg = astra.astra_dict(astra_algo)
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
@@ -316,37 +318,37 @@ for e in [3]:
     sitk.WriteImage(sitk.GetImageFromArray(t_projs_clean), os.path.join("recos", "input_sino_clean.nrrd"))
 
     astra_algo = "FDK_CUDA"
-    rec_clean = reco_astra2(t_projs_clean, angles_astra, astra_algo+"_clean")
-    rec_noise = reco_astra2(t_projs, angles_astra, astra_algo+"_noise")
-    rec_approx = reco_astra2(t_projs_approx, angles_astra, astra_algo+"_approx")
-    WriteAstraImage(np.abs(utils.toHU(rec_clean)-utils.toHU(rec_noise)), os.path.join("recos", "astra_"+astra_algo+"_diff.nrrd"))
-    WriteAstraImage(np.abs(utils.toHU(rec_clean)-utils.toHU(rec_approx)), os.path.join("recos", "astra_"+astra_algo+"_diff_approx.nrrd"))
+    rec_clean = reco_astra2(t_projs_clean, angles_astra, astra_algo+"_clean", prior_cube)
+    rec_noise = reco_astra2(t_projs, angles_astra, astra_algo+"_noise", prior_cube)
+    rec_approx = reco_astra2(t_projs_approx, angles_astra, astra_algo+"_approx", prior_cube)
+    WriteAstraImage(100*np.abs((rec_clean)-(rec_noise)), os.path.join("recos", "astra_"+astra_algo+"_diff.nrrd"))
+    WriteAstraImage(100*np.abs((rec_clean)-(rec_approx)), os.path.join("recos", "astra_"+astra_algo+"_diff_approx.nrrd"))
     astra_algo = "SIRT3D_CUDA"
-    rec_clean = reco_astra2(t_projs_clean, angles_astra, astra_algo+"_clean")
-    rec_noise = reco_astra2(t_projs, angles_astra, astra_algo+"_noise")
-    rec_approx = reco_astra2(t_projs_approx, angles_astra, astra_algo+"_approx")
-    WriteAstraImage(np.abs(utils.toHU(rec_clean)-utils.toHU(rec_noise)), os.path.join("recos", "astra_"+astra_algo+"_diff.nrrd"))
-    WriteAstraImage(np.abs(utils.toHU(rec_clean)-utils.toHU(rec_approx)), os.path.join("recos", "astra_"+astra_algo+"_diff_approx.nrrd"))
-    #astra_iter = 25
+    rec_clean = reco_astra2(t_projs_clean, angles_astra, astra_algo+"_clean", prior_cube)
+    rec_noise = reco_astra2(t_projs, angles_astra, astra_algo+"_noise", prior_cube)
+    rec_approx = reco_astra2(t_projs_approx, angles_astra, astra_algo+"_approx", prior_cube)
+    WriteAstraImage(100*np.abs((rec_clean)-(rec_noise)), os.path.join("recos", "astra_"+astra_algo+"_diff.nrrd"))
+    WriteAstraImage(100*np.abs((rec_clean)-(rec_approx)), os.path.join("recos", "astra_"+astra_algo+"_diff_approx.nrrd"))
+    astra_iter = 100
     astra_algo = "CGLS3D_CUDA"
-    rec_clean = reco_astra2(t_projs_clean, angles_astra, astra_algo+"_clean")
-    rec_noise = reco_astra2(t_projs, angles_astra, astra_algo+"_noise")
-    rec_approx = reco_astra2(t_projs_approx, angles_astra, astra_algo+"_approx")
-    WriteAstraImage(np.abs(utils.toHU(rec_clean)-utils.toHU(rec_noise)), os.path.join("recos", "astra_"+astra_algo+"_diff.nrrd"))
-    WriteAstraImage(np.abs(utils.toHU(rec_clean)-utils.toHU(rec_approx)), os.path.join("recos", "astra_"+astra_algo+"_diff_approx.nrrd"))
-
+    rec_clean = reco_astra2(t_projs_clean, angles_astra, astra_algo+"_clean", prior_cube)
+    rec_noise = reco_astra2(t_projs, angles_astra, astra_algo+"_noise", prior_cube)
+    rec_approx = reco_astra2(t_projs_approx, angles_astra, astra_algo+"_approx", prior_cube)
+    WriteAstraImage(100*np.abs((rec_clean)-(rec_noise)), os.path.join("recos", "astra_"+astra_algo+"_diff.nrrd"))
+    WriteAstraImage(100*np.abs((rec_clean)-(rec_approx)), os.path.join("recos", "astra_"+astra_algo+"_diff_approx.nrrd"))
+    exit(0)
     for p in ["{}_wls_{}_0".format(p,n) for p in ["huber", "quad"] for n in [0,1,2,3,4,5,6]]:
         for e2 in range(1, 20):
             β = 10**(e2/2)
             #name = "TEST"+str(e)+"-"+str(p)+"_"+str(e2)
             name = "TEST"+"-"+str(p)+"_"+str(e2)
             if name in iters:
-                #rec_clean = reco(lambda proj, geo: test.reco(proj, geo, cube_astra, iters[name], (g*b)[np.newaxis,:,np.newaxis]*np.ones_like(proj), g*b, β, p, α = 0.3), name+"_clean", angles_astra, projs_clean, iters[name])
-                #rec_noise = reco(lambda proj, geo: test.reco(proj, geo, cube_astra, iters[name], np.max(g)*b, g*b, β, p, α = 0.3), name+"_noise", angles_astra, projs, iters[name])
-                #rec_approx = reco(lambda proj, geo: test.reco(proj, geo, cube_astra, iters[name], (1.5*np.max(projs)), g*b, β, p, α = 0.3), name+"_approx", angles_astra, projs, iters[name])
-                #WriteAstraImage(np.abs(utils.toHU(rec_clean)-utils.toHU(rec_noise)), os.path.join("recos", "astra_"+name+"_diff.nrrd"))
-                #WriteAstraImage(np.abs(utils.toHU(rec_clean)-utils.toHU(rec_approx)), os.path.join("recos", "astra_"+name+"_diff_approx.nrrd"))
-                pass
+                rec_clean = reco(lambda proj, geo: test.reco(proj, geo, cube_astra, prior_cube, iters[name], (g*b)[np.newaxis,:,np.newaxis]*np.ones_like(proj), g*b, β, p, α = 0.3), name+"_clean", angles_astra, projs_clean, iters[name])
+                rec_noise = reco(lambda proj, geo: test.reco(proj, geo, cube_astra, prior_cube, iters[name], np.max(g)*b, g*b, β, p, α = 0.3), name+"_noise", angles_astra, projs, iters[name])
+                rec_approx = reco(lambda proj, geo: test.reco(proj, geo, cube_astra, prior_cube, iters[name], (1.5*np.max(projs)), g*b, β, p, α = 0.3), name+"_approx", angles_astra, projs, iters[name])
+                WriteAstraImage(100*np.abs((rec_clean)-(rec_noise)), os.path.join("recos", "astra_"+name+"_diff.nrrd"))
+                WriteAstraImage(100*np.abs((rec_clean)-(rec_approx)), os.path.join("recos", "astra_"+name+"_diff_approx.nrrd"))
+                #pass
 
     stat_iter=30
     for e in [5]:
@@ -355,7 +357,7 @@ for e in [3]:
             β = 10**e2
             for p in [1.4, 1, 2]:
                 name = "PIPLE-"+str(p)+"-"+str(e)+"-"+str(e2)
-                rec_piple = reco(lambda proj, geo: mlem.PIPLE(proj, cube_astra.shape, geo, angles_astra, stat_iter, initial=np.zeros_like(cube_astra), real_image=cube_astra, b=b, βp=β, βr=β, p=p, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True), name, angles_astra, proj_data_clean, stat_iter)
-            p = "quad_wls_0_0"
+                #rec_piple = reco(lambda proj, geo: mlem.PIPLE(proj, cube_astra.shape, geo, angles_astra, stat_iter, initial=np.zeros_like(cube_astra), real_image=cube_astra, b=b, βp=β, βr=β, p=p, δψ=c_δp_norm, δδψ=c_δp_t_norm, use_astra=True), name, angles_astra, proj_data_clean, stat_iter)
+            p = "quad_trl_0_0"
             name = "TEST-"+str(p)+"-"+str(e)+"-"+str(e2)
-            rec_clean = reco(lambda proj, geo: test.reco(proj, geo, cube_astra, stat_iter, (g*b)[np.newaxis,:,np.newaxis]*np.ones_like(proj), g*b, β, p, α = 0.3), name+"_clean", angles_astra, proj_data_clean, stat_iter)
+            #rec_clean = reco(lambda proj, geo: test.reco(proj, geo, cube_astra, stat_iter, (g*b)[np.newaxis,:,np.newaxis]*np.ones_like(proj), g*b, β, p, α = 0.3), name+"_clean", angles_astra, proj_data_clean, stat_iter)

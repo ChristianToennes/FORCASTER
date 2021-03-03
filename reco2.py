@@ -820,8 +820,8 @@ def main():
     #('200824_tomo_', 'E:\\output\\TrajTomo'),
     #('201013_sin_', 'E:\\output\\CKM_LumbalSpine\\20201013-150514.166000\\P16_DR_LD'),
     #('201020_imbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'),
-    ('201020_imbu_sin_', 'E:\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
-    ('201020_imbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
+    #('201020_imbu_sin_', 'E:\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
+    #('201020_imbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
     ('201020_imbu_circ_', 'E:\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'),
     #('201020_noimbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
     #('201020_noimbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),
@@ -960,6 +960,8 @@ def main():
                 #reg_vecs[:,:,1] = np.linalg.norm(proj_geom_v['Vectors'].reshape(-1,3,4)[:,:,1], axis=-1)[:,np.newaxis]* reg_vecs[:,:,1]/np.linalg.norm(reg_vecs[:,:,1], axis=-1)[:,np.newaxis]
                 #reg_vecs[:,:,2] = np.linalg.norm(proj_geom_v['Vectors'].reshape(-1,3,4)[:,:,2], axis=-1)[:,np.newaxis]* reg_vecs[:,:,2]/np.linalg.norm(reg_vecs[:,:,2], axis=-1)[:,np.newaxis]
                 proj_geom_reg = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], reg_vecs.reshape(-1, 12))
+                print(detector_shape, proj_geom_reg)
+                exit(0)
                 #proj_geom_a, filt = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, np.mean(sods), np.mean(sids-sods), 1.23/np.min(astra_spacing))
             #else:
             #print(detector_shape, ims.shape)
@@ -1059,7 +1061,7 @@ def main():
             sitk.WriteImage(sitk.GetImageFromArray(ims_astra), "recos/"+name+"_input.nrrd")
             #sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(np.swapaxes(real_image,0,2), 0, 1)[::-1,:,::-1]), "recos/astra_"+name+"_input_image.nrrd")
             
-            saveSinos = False
+            saveSinos = True
 
             if saveSinos:
                 volume_id = astra.data3d.create('-vol', vol_geom, np.swapaxes(np.swapaxes(real_image,0,2), 0, 1)[::-1,:,::-1])
@@ -1165,9 +1167,10 @@ def main():
             rec = reco_astra(proj_data[:,filt], name+"fake_sirt_", 100, proj_geom_v, vol_geom, astra_spacing, image_zoom, cube_astra, origin, spacing, astra_algo="SIRT3D_CUDA")
 
             if proj_geom_reg is not None:
-                rec = reco_astra(ims_astra[:,filt], name+"reg_fdk_", 1, proj_geom_reg, vol_geom, astra_spacing, image_zoom, cube_astra, origin, spacing, astra_algo="FDK_CUDA")
-                rec = reco_astra(ims_astra[:,filt], name+"reg_sirt_", 50, proj_geom_reg, vol_geom, astra_spacing, image_zoom, cube_astra, origin, spacing, astra_algo="SIRT3D_CUDA")
+                rec = reco_astra(ims_astra, name+"reg_fdk_", 1, proj_geom_reg, vol_geom, astra_spacing, image_zoom, cube_astra, origin, spacing, astra_algo="FDK_CUDA")
+                rec = reco_astra(ims_astra, name+"reg_sirt_", 50, proj_geom_reg, vol_geom, astra_spacing, image_zoom, cube_astra, origin, spacing, astra_algo="SIRT3D_CUDA")
 
+            exit(0)
             #cube_astra = np.swapaxes(cube_astra, 1, 2)
             #rec = np.swapaxes(rec, 0, 2)
             image_shape = rec.shape
