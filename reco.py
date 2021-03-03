@@ -1,6 +1,4 @@
-
 import astra
-import tigre
 import numpy as np
 import scipy.io
 import scipy.ndimage
@@ -16,7 +14,7 @@ stat_iter = 40
 image_out_mult = 100
 
 astra_algo = 'SIRT3D_CUDA'
-tigre_algo = tigre.algorithms.sirt
+#tigre_algo = tigre.algorithms.sirt
 
 phant = np.array([scipy.io.loadmat('phantom.mat')['phantom256']], dtype=np.float32)[0]
 
@@ -28,8 +26,8 @@ cube += [np.zeros_like(phant) for _ in range(10)]
 cube = np.array(cube)
 
 cube = sitk.GetArrayFromImage(sitk.ReadImage("3D_Shepp_Logan.nrrd"))
-origin, size, spacing, image = utils.read_cbct_info(r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
-cube = utils.fromHU(sitk.GetArrayFromImage(image))
+#origin, size, spacing, image = utils.read_cbct_info(r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+#cube = utils.fromHU(sitk.GetArrayFromImage(image))
 #cube = scipy.ndimage.zoom(np.swapaxes(sitk.GetArrayFromImage(sitk.ReadImage("StanfordBunny.nrrd")), 0, 1), 0.5, order=2)
 #print(cube.shape)
 cube_tigre = np.array(cube, dtype=np.float32)
@@ -83,24 +81,6 @@ proj_geom_c = astra.create_proj_geom('cone', detector_spacing[0]/image_zoom, det
 angles_astra=np.vstack((angles, angles_zero, angles_zero)).T
 #proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing/image_zoom, detector_shape, dist_source_origin/image_zoom, dist_detector_origin/image_zoom, image_zoom)
 
-angles_tigre = np.vstack((angles, np.ones_like(angles)*np.pi*0.5, np.zeros_like(angles))).T
-geo_p = tigre.geometry(mode='parallel',nVoxel = image_shape, default=True)
-geo_p.nDetector = detector_shape
-geo_p.dDetector = detector_spacing
-geo_p.sDetector = geo_p.dDetector * geo_p.nDetector
-geo_p.DSD = dist_detector_origin + dist_source_origin
-geo_p.DSO = dist_source_origin
-geo_p.dVoxel = image_spacing
-geo_p.sVoxel = geo_p.nVoxel * geo_p.dVoxel
-
-geo_c = tigre.geometry(mode='cone',nVoxel = image_shape, default=True)
-geo_c.nDetector = detector_shape
-geo_c.dDetector = detector_spacing
-geo_c.sDetector = geo_c.dDetector * geo_c.nDetector
-geo_c.DSD = dist_detector_origin + dist_source_origin
-geo_c.DSO = dist_source_origin
-geo_c.dVoxel = image_spacing
-geo_c.sVoxel = geo_c.nVoxel * geo_c.dVoxel
 if False:
     perftime = time.perf_counter()
     volume_id = astra.data3d.create('-vol', vol_geom, cube_astra*cube_mult)
@@ -213,53 +193,33 @@ def reco_astra(angles_astra, name):
     proj_data = proj_astra(angles_astra, cube_astra*cube_mult)
     return reco_astra2(proj_data, angles_astra, name)
 
-def reco_tigre(angles_astra, name):
-    if tigre_iter == 0: return    
-    perftime = time.perf_counter()
-    #angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
-    angles_tigre = angles_astra*angles_tigre_mult+angles_tigre_add
-    proj_data = tigre.Ax(cube_tigre, geo_c, angles_tigre, 'interpolated')
-    sitk.WriteImage(sitk.GetImageFromArray(np.moveaxis(proj_data, 0,1)), os.path.join("recos", "tigre_"+name+"_sino.nrrd"))
-    rec = tigre_algo(proj_data, geo_c, angles_tigre, niter=tigre_iter)
-    WriteTigreImage(rec, os.path.join("recos", "tigre_"+name+"_reco.nrrd"))
-    WriteTigreImage(cube_tigre-rec, os.path.join("recos", "tigre_"+name+"_error.nrrd"))
-    print("Tigre "+name+": ", time.perf_counter()-perftime, np.sum(np.abs(cube_tigre-rec)))
-    return rec
-
 angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
 name = "circ"
 reco_astra(angles_astra, name)
-reco_tigre(angles_astra, name)
 
 angles_astra=np.vstack((angles, angles_zero, angles_zero)).T
 name = "rot1"
 reco_astra(angles_astra, name)
-reco_tigre(angles_astra, name)
 
 angles_astra=np.vstack((angles_zero, angles, angles_zero)).T
 name = "rot2"
 reco_astra(angles_astra, name)
-reco_tigre(angles_astra, name)
 
 angles_astra=np.vstack((angles_zero, angles_zero, angles)).T
 name = "rot3"
 reco_astra(angles_astra, name)
-reco_tigre(angles_astra, name)
 
 angles_astra=np.vstack((angles, angles, angles)).T
 name = "rotA"
 reco_astra(angles_astra, name)
-reco_tigre(angles_astra, name)
 
 angles_astra=np.vstack((angles, np.sin(3*angles)*(30/180*np.pi)+angles_one*0.5*np.pi, angles_one*np.pi)).T
 name = "3sin"
 reco_astra(angles_astra, name)
-reco_tigre(angles_astra, name)
 
 angles_astra=np.vstack((angles, np.sin(2*angles)*(30/180*np.pi)+angles_one*0.5*np.pi, angles_one*np.pi)).T
 name = "2sin"
 reco_astra(angles_astra, name)
-reco_tigre(angles_astra, name)
 
 
 import mlem
