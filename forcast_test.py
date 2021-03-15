@@ -6,10 +6,35 @@ import i0
 import os
 import pydicom
 import struct
-import scipy.optimize
+import scipy.interpolate
 import astra
 import time
 import itertools
+
+def write_vectors(name, vecs):
+    with open(name+".csv", "w") as f:
+        f.writelines([",".join([str(v) for v in vec])+"\n" for vec in vecs])
+
+def read_vectors(path):
+    with open(path, "r") as f:
+        res = np.array([[float(v) for v in l.split(',')] for l in f.readlines().split()])
+    return res
+
+def smooth(vecs, span=5):
+    res = np.zeros_like(vecs)
+    for ind in range(vecs.shape[1]):
+        re = np.convolve(vecs[:,ind], np.ones(span * 2 + 1) / (span * 2 + 1), mode="same")
+
+        # The "my_average" part: shrinks the averaging window on the side that 
+        # reaches beyond the data, keeps the other side the same size as given 
+        # by "span"
+        re[0] = np.average(vecs[:span, ind])
+        for i in range(1, span + 1):
+            re[i] = np.average(vecs[:i + span, ind])
+            re[-i] = np.average(vecs[-i - span:, ind])
+        res[:,ind] = re
+
+    return res
 
 def normalize(images, mAs_array, kV_array, percent_gain):
     print("normalize images")
@@ -75,15 +100,16 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     use = fs>1
     while (np.max(norm_images_gained, axis=(1,2))[use] > (gain*fs[use])).all():
         gain += 1
-    gain = np.ones_like(fs)
-    offset = 0
+    #gain = np.ones_like(fs)
+    #offset = 0
     for i in range(len(fs)):
         norm_img = norm_images_gained[i] / (offset + (gain*fs)[i])
+        #norm_img = norm_images_gained[i] / (1.1*np.max(norm_images_gained[i]))
         norm_images_gained[i] = -np.log(norm_img)
 
     return norm_images_gained, norm_images_ungained, offset+gain*fs, fs
 
-def read_dicoms(indir):
+def read_dicoms(indir, max_ims=np.inf):
     print("read dicoms")
     kvs = []
     mas = []
@@ -237,9 +263,11 @@ def read_dicoms(indir):
                     percent_gain.append(ds[0x0019,0x1008].value)
                 else:
                     percent_gain.append(float(int.from_bytes(ds[0x0019,0x1008].value, "little", signed=False)))
-            if len(ts)>0:
+            
+            del ds
+            if len(ts)>=max_ims:
                 break
-        if len(ts)>0:
+        if len(ts)>=max_ims:
             break
 
     print("create numpy arrays")
@@ -277,9 +305,201 @@ def read_dicoms(indir):
 
     return ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods
 
+def reg_and_reco(proj_path, cbct_path, name, method=0):
+    print(name)
+    ims, ims_ungained, i0s, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=200)
+    #ims = ims[:20]
+    #coord_systems = coord_systems[:20]
+    skip = int(len(ims)/100)
+    ims = ims[::skip]
+    coord_systems = coord_systems[::skip]
+    sids = sids[::skip]
+    sods = sods[::skip]
 
-def main(proj_path, cbct_path):
-    ims, ims_ungained, i0s, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(proj_path)
+    origin, size, spacing, image = utils.read_cbct_info(cbct_path)
+    real_image = utils.fromHU(sitk.GetArrayFromImage(image))
+    del image
+    if not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
+        sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
+
+    real_image = real_image[::-1, ::-1]
+    real_image = np.swapaxes(real_image, 1,2)
+    real_image = np.swapaxes(real_image, 0, 2)
+
+    detector_shape = np.array((1920,2480))
+    detector_mult = np.floor(detector_shape / np.array(ims.shape[1:]))
+    detector_shape = np.array(ims.shape[1:])
+    detector_spacing = np.array((0.125, 0.125)) * detector_mult
+
+    cali = {}
+    cali['feat_thres'] = 80
+    cali['iterations'] = 50
+    cali['confidence_thres'] = 0.025
+    cali['relax_factor'] = 0.3
+    cali['match_thres'] = 60
+    cali['max_ratio'] = 0.9
+    cali['max_distance'] = 20
+    cali['outlier_confidence'] = 85
+
+    geo, (prims, secs), _ = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+
+    #print(angles, prims, secs)
+
+    input_sino = np.swapaxes(ims,0,1)
+    input_sino = sitk.GetImageFromArray(input_sino)
+    sitk.WriteImage(input_sino, os.path.join("recos", "forcast_"+name+"_input.nrrd"))
+    del input_sino
+
+    Ax = utils.Ax_geo_astra(real_image.shape, real_image)
+    sino = Ax(geo)
+    sino = sitk.GetImageFromArray(sino)
+    sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino.nrrd"))
+    del sino
+    rec = utils.FDK_astra(real_image.shape, geo)(np.swapaxes(ims, 0,1))
+    rec = np.swapaxes(rec, 0, 2)
+    rec = np.swapaxes(rec, 1,2)
+    rec = rec[::-1, ::-1]
+    rec = sitk.GetImageFromArray(rec)*100
+    sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-uncorrected.nrrd"))
+    del rec
+    
+    np.seterr(all='raise') 
+    if method==0:
+        perftime = time.perf_counter()
+        vecs = []
+        scales = []
+        corrs = []
+        for i in range(len(ims)):
+            print(i, end=",", flush=True)
+            vec = geo['Vectors'][i]
+            cur = np.array([0,0,0,0,0.0])
+            real_img = forcast.Projection_Preprocessing(ims[i])
+            for si in range(5):
+                geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], np.array([vec]))
+                proj_d = forcast.Projection_Preprocessing(Ax(geo_d))[:,0]
+                #old_cur = np.array(cur)
+                cur = np.array([0,0,0,0,0.0])
+                try:
+                    cur, scale = forcast.roughRegistration(cur, real_img, proj_d, {'feat_thres': cali['feat_thres']}, vec, Ax, detector_shape)
+                    #print(cur)
+                except Exception as ex:
+                    print(ex)
+                    raise
+                corrs.append(cur)
+                vec = forcast.applyChange(vec, cur)
+                if (np.abs(cur)<1e-8).all():
+                    print(si, end=" ", flush=True)
+                    break
+                #scales.append(scale)
+            vecs.append(vec)
+        
+        corrs = np.array(corrs)
+        vecs = np.array(vecs)
+
+        write_vectors(name+"-rough-corr", corrs)
+        write_vectors(name+"-rough", vecs)
+
+        vecs = smooth(vecs)
+        write_vectors(name+"-rough-smoot", vecs)
+
+        scales = np.array(scales)
+        lens = np.linalg.norm(vecs[:,0:3], axis=-1)
+        #print(lens, scale)
+        #vecs = np.array([forcast.applyChange(vec, np.array([0,0,np.mean(scales)*np.mean(l),0,0])) for vec,l,scale in zip(vecs,lens,scales)]) 
+        perftime = time.perf_counter()-perftime
+        print("rough reg done ", perftime)
+        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
+        sino = Ax(reg_geo)
+        sino = sitk.GetImageFromArray(sino)
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
+        del sino
+        rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+        rec = np.swapaxes(rec, 0, 2)
+        rec = np.swapaxes(rec, 1,2)
+        rec = rec[::-1, ::-1]
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
+        del rec
+        
+        #Ax.free()
+        #return
+    elif method==1:
+        perftime = time.perf_counter()
+        vecs = []
+        corrs = []
+        for i in range(len(ims)):
+            print(i, end=" ", flush=True)
+            try:
+                geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], geo['Vectors'][i:i+1])
+                proj_d = forcast.Projection_Preprocessing(Ax(geo_d))[:,0]
+                real_img = forcast.Projection_Preprocessing(ims[i])
+                cur = forcast.lessRoughRegistration(np.array([0,0,0,0,0.0]), real_img, proj_d, {'feat_thres': cali['feat_thres']}, geo['Vectors'][i], Ax)
+                corrs.append(cur)
+                vec = forcast.applyChange(geo['Vectors'][i], cur)
+                vecs.append(vec)
+            except Exception as ex:
+                print(ex)
+                raise
+        
+        vecs = np.array(vecs)
+        corrs = np.array(corrs)
+
+        write_vectors(name+"-lessrough-corr", corrs)
+        write_vectors(name+"-lessrough", vecs)
+
+        perftime = time.perf_counter()-perftime
+        print("rough reg done ", perftime)
+        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
+        sino = Ax(reg_geo)
+        sino = sitk.GetImageFromArray(sino)
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-lessrough.nrrd"))
+        del sino
+        rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+        rec = np.swapaxes(rec, 0, 2)
+        rec = np.swapaxes(rec, 1,2)
+        rec = rec[::-1, ::-1]
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-lessrough.nrrd"))
+        del rec
+
+        #Ax.free()
+        #return
+    elif method==2:
+        good_values= [
+            #[7,0.2,0.01],
+            [1,1,0.1],
+            [0.5,7,0.1],
+            [0.2,1,0.08],
+            #[5,7.33333333,0.05],
+            #[5,17,0.05],
+        ]
+        for xy,z,r in good_values:
+            perftime = time.perf_counter()
+            vecs = []
+            for i in range(len(ims)):
+                print(i, end=" ", flush=True)
+                try:
+                    bfgs_vec, fun, err = forcast.bfgs(i, ims, real_image, cali, geo, real_image.shape, Ax, np.array([xy, xy, z, r, r]))
+                    vecs.append(bfgs_vec)
+                except Exception as ex:
+                    print(ex)
+                    raise
+                
+            perftime = time.perf_counter()-perftime
+            print("reg done ", xy, z, r, perftime)
+            vecs = np.array(vecs)
+            reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
+            sino = Ax(reg_geo)
+            sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join("recos", "forcast_"+name+"_sino-"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
+            rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+            rec = np.swapaxes(rec, 0, 2)
+            rec = np.swapaxes(rec, 1,2)
+            rec = rec[::-1, ::-1]
+            sitk.WriteImage(sitk.GetImageFromArray(rec)*100, os.path.join("recos", "forcast_"+name+"_reco-"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
+    Ax.free()
+
+def parameter_search(proj_path, cbct_path):
+    ims, ims_ungained, i0s, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=1)
 
     origin, size, spacing, image = utils.read_cbct_info(cbct_path)
     real_image = utils.fromHU(sitk.GetArrayFromImage(image))
@@ -317,34 +537,37 @@ def main(proj_path, cbct_path):
     geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], geo['Vectors'][0:1])
     proj_d = forcast.Projection_Preprocessing(Ax(geo_d))[:,0]
     real_img = forcast.Projection_Preprocessing(ims[0])
-    cur = forcast.roughRegistration(np.array([0,0,0,0,0.0]), real_img, proj_d, {'feat_thres': cali['feat_thres']}, geo['Vectors'][0])
+    cur, _scale = forcast.roughRegistration(np.array([0,0,0,0,0.0]), real_img, proj_d, {'feat_thres': cali['feat_thres']}, geo['Vectors'][0])
     vec = forcast.applyChange(geo['Vectors'][0], cur)
     vecs = np.array([vec])
     geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
     proj_d = forcast.Projection_Preprocessing(Ax(geo_d))
     sitk.WriteImage(sitk.GetImageFromArray(proj_d), os.path.join("recos", "forcast_rough.nrrd"))
 
-    for i in range(len(ims)):
-        print("Projection ", i)
-        funs = []
-        with open('stats.csv','w') as f:
-            good_values= [
-                [5,7.33333333,0.05],
-                [5,17,0.05],
-            ]
-            for e,m1,m2 in good_values:
+    with open('stats.csv','w') as f:
+        good_values= [
+            [7,0.2,0.01],
+            [0.5,7,0.1],
+            [0.2,1,0.08],
+            [5,7.33333333,0.05],
+            [5,17,0.05],
+        ]
+        for xy,z,r in good_values:
+            for i in range(len(ims)):
+                print("Projection ", i)
+                funs = []
                 try:
                     perftime = time.perf_counter()
-                    bfgs_vecs, fun, err = forcast.bfgs(i, ims, real_image, cali, geo, real_image.shape, Ax, np.array([e,e*m1,e,e*m2,e*m2]))
+                    bfgs_vecs, fun, err = forcast.bfgs(i, ims, real_image, cali, geo, real_image.shape, Ax, np.array([xy, xy, z, r, r]))
                     perftime = time.perf_counter()-perftime
-                    print(int(fun), int(err), e, m1, m2, perftime)
-                    funs.append([e,m1,m2,fun,err,perftime])
-                    f.write(",".join([str(e) for e in [e,m1,m2,fun,err,perftime]])+"\n")
+                    print(int(fun), int(err), xy, z, r, perftime)
+                    funs.append([xy,z,r,fun,err,perftime])
+                    f.write(",".join([str(e) for e in [xy,z,r,fun,err,perftime]])+"\n")
                     if fun < 12000:
                         bfgs_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], np.array([bfgs_vecs]))
                         sino = Ax(bfgs_geo)
                         #sitk.WriteImage(sitk.GetImageFromArray(input_sino), os.path.join("recos", "forcast_input.nrrd"))
-                        sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join("recos", "forcast_sino_bfgs--"+str(fun)+"--"+str(e)+"_"+str(m1)+"_"+str(m2)+".nrrd"))
+                        sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join("recos", "forcast_sino_bfgs--"+str(fun)+"--"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
                 except Exception as ex:
                     print(ex)
             for xy in itertools.chain(np.linspace(0.1,1,10), np.linspace(1,10,10)):
@@ -357,7 +580,7 @@ def main(proj_path, cbct_path):
                             bfgs_vecs, fun, err = forcast.bfgs(i, ims, real_image, cali, geo, real_image.shape, Ax, np.array([xy,xy,z,r,r]))
                             perftime = time.perf_counter()-perftime
                             print(int(fun), int(err), xy, z, r, perftime)
-                            funs.append([e,m1,m2,fun,err,perftime])
+                            funs.append([xy,z,r,fun,err,perftime])
                             f.write(",".join([str(e) for e in [xy,z,r,fun,err,perftime]])+"\n")
                             if fun < 12000:
                                 bfgs_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], np.array([bfgs_vecs]))
@@ -381,6 +604,62 @@ def main(proj_path, cbct_path):
 
 
 if __name__ == "__main__":
+    #cbct_path = r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
+    #proj_path = 'E:\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'
+
+    cbct_path = r"E:\output\CKM4Baltimore2019\20191108-081024.994000\DCT Head Clear Nat Fill Full HU Normal [AX3D]"
+    #proj_path = 'E:\\output\\CKM4Baltimore2019\\20191108-081024.994000\\20sDCT Head 70kV'
+
+    projs = [
+    ('191108_balt_cbct_', 'E:\\output\\CKM4Baltimore2019\\20191108-081024.994000\\20sDCT Head 70kV'),
+    #('191108_balt_all_', 'E:\\output\\CKM4Baltimore2019\\20191108-081024.994000\\DR Overview'),
+    ]
+
+    #for name, proj_path in projs:
+    #    reg_and_reco(proj_path, cbct_path, name, 0)
+
+    cbct_path = r"E:\output\CKM4Baltimore2019\20191107-091105.486000\DCT Head Clear Nat Fill Full HU Normal [AX3D]"
+    projs = [
+    #('191107_balt_sin1_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\Sin1'),
+    #('191107_balt_sin2_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\Sin2'),
+    #('191107_balt_sin3_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\Sin3'),
+    ('191107_balt_cbct_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\20sDCT Head 70kV'),
+    ]
+    for name, proj_path in projs:
+        reg_and_reco(proj_path, cbct_path, name, 0)
+
     cbct_path = r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
-    proj_path = 'E:\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'
-    main(proj_path, cbct_path)
+    projs = [
+    ('201020_imbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'),
+    ('201020_imbu_sin_', 'E:\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD'),
+    ('201020_imbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD'),
+    ('201020_imbu_circ_', 'E:\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD'),
+    #('201020_imbureg_noimbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV'),
+    #('201020_imbureg_noimbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD'),
+    ]
+    for name, proj_path in projs:
+        reg_and_reco(proj_path, cbct_path, name, 0)
+    #for name, proj_path in projs:
+    #    reg_and_reco(proj_path, cbct_path, name, 1)
+    #for name, proj_path in projs:
+    #    reg_and_reco(proj_path, cbct_path, name, 2)
+
+    cbct_path = r"E:\output\CKM4Baltimore\CBCT_2021_01_11_16_04_12"
+    projs = [
+    ('210111_balt_cbct_', 'E:\\output\\CKM4Baltimore\\CBCT_SINO'),
+    ('210111_balt_circ_', 'E:\\output\\CKM4Baltimore\\Circle_Fluoro'),
+    ]
+    for name, proj_path in projs:
+        reg_and_reco(proj_path, cbct_path, name, 0)
+
+    cbct_path = r"E:\output\CKM\CBCT\20201207-093148.064000-DCT Head Clear Nat Fill Full HU Normal [AX3D]"
+    projs = [
+    ('201207_cbct_', 'E:\\output\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV'),
+    ('201207_circ_', 'E:\\output\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD'),
+    ('201207_eight_', 'E:\\output\\CKM\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD'),
+    #('201207_opti_', 'E:\\output\\CKM\\Opti Traj\\20201207-163001.022000-P16_DR_HD'),
+    #('201207_sin_', 'E:\\output\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD'),
+    #('201207_tomo_', 'E:\\output\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD'),
+    ]
+    for name, proj_path in projs:
+        reg_and_reco(proj_path, cbct_path, name, 0)
