@@ -159,15 +159,12 @@ def FORCAST(index, proj, priorCT, cali, fullgeo, out_shape, eps, Ax = None):
     return applyChange(fullgeo['Vectors'][index], best)
     #end
 
-def bfgs(index, proj, priorCT, cali, fullgeo, out_shape, Ax, eps):
+def bfgs(index, proj, fullgeo, Ax, cali, eps):
     feat_thres=cali['feat_thres']
     real_img = proj[index]
     
     detector_shape = [fullgeo['DetectorRowCount'], fullgeo['DetectorColCount']]
 
-    if Ax is None:
-        Ax = utils.Ax_geo_astra(out_shape, priorCT)
-    
     real_img = Projection_Preprocessing(real_img)
     #sitk.WriteImage(sitk.GetImageFromArray(real_img), "./recos/forcast_input.nrrd")
     
@@ -205,7 +202,7 @@ def bfgs(index, proj, priorCT, cali, fullgeo, out_shape, Ax, eps):
     proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
     cur, _scale = roughRegistration(cur, real_img, proj_d, feature_params, vecs[0], Ax, detector_shape, data_real=data_real)
     #print("rough reg f", f(cur))
-    ret = scipy.optimize.minimize(f, cur, method='L-BFGS-B', options={'eps':eps,'gtol':1e-8,'ftol':1e-8})
+    ret = scipy.optimize.minimize(f, cur, method='L-BFGS-B', options={'eps':eps})
     #print(ret)
     #eps = np.array([5,5,5,.25,.25])
     #ret = scipy.optimize.minimize(f, ret.x, method='L-BFGS-B', options={'eps':eps})
@@ -243,7 +240,7 @@ def correctZ(cur, vec, points_real, points_new):
         dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_new for r in points_new])
         dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real for r in points_real])
     #dist_new[np.bitwise_and(dist_real==0,dist_new==0)] = 1
-    if np.count_nonzero(dist_new) > 0:
+    if np.count_nonzero(dist_new) > 5:
         scale = 1-np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])
         #print(scale, len(dist_new[dist_new!=0]), len(dist_real[dist_new!=0]))
         zdir = vec[0:3]/np.linalg.norm(vec[0:3])
@@ -251,30 +248,34 @@ def correctZ(cur, vec, points_real, points_new):
         cur[0:3] += scale * zdir * np.linalg.norm(vec[0:3])
     return cur
 
-def correctRot(cur, vec, points_real, points_new, Ax, detector_shape, real_img, data_real):
+def correctRot(cur, vec, points_real, points_new, Ax, real_img, data_real, eps=0.01):
     if len(points_new.shape)==1:
         diff = np.std(np.array([[n.pt[0]-r.pt[0], n.pt[1]-r.pt[1]]  for n,r in zip(points_new,points_real)]), axis=0)
     else:
         diff = np.std(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points_new,points_real)]), axis=0)
-    dvec = np.array(calcJacVectors(applyChange(vec,cur), np.array([0.03,0.03])))
-    geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], dvec)
-    proj_d = Projection_Preprocessing(Ax(geo_d))
+    dvec = np.array(calcJacVectors(applyChange(vec,cur), np.array([eps,eps])))
+    proj_d = Projection_Preprocessing(Ax(dvec))
     
     points=[]
     valid=[]
-    for p,v in [trackFeatures_(real_img, proj_d[:,i], data_real, {}) for i in range(proj_d.shape[1])]:
-        points.append(p)
-        valid.append(v==1)
+    if len(points_real.shape)==1:
+        for p,v in [trackFeatures_(real_img, proj_d[:,i], data_real, {}) for i in range(proj_d.shape[1])]:
+            points.append(p)
+            valid.append(v==1)
+    else:
+        for p,v in [trackFeatures(real_img, proj_d[:,i], data_real, {}) for i in range(proj_d.shape[1])]:
+            points.append(p)
+            valid.append(v==1)
     points = np.array(points)
     valid = np.array(valid)
 
     if np.count_nonzero(valid[0])!=0 and np.count_nonzero(valid[1])!=0:
         if len(points_new.shape)==1:
-            diff1 = np.std(np.abs(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])])))
-            diff2 = np.std(np.abs(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])])))
+            diff1 = np.std(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])]))
+            diff2 = np.std(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])]))
         else:
-            diff1 = np.std(np.abs(np.array([n[0]-r[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])])))
-            diff2 = np.std(np.abs(np.array([n[0]-r[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])])))
+            diff1 = np.std(np.array([n[0]-r[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])]))
+            diff2 = np.std(np.array([n[0]-r[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])]))
 
         jac1 = (-1.5*diff[0]+2.0*diff1-0.5*diff2)
     else:
@@ -283,11 +284,11 @@ def correctRot(cur, vec, points_real, points_new, Ax, detector_shape, real_img, 
 
     if np.count_nonzero(valid[2])!=0 and np.count_nonzero(valid[3])!=0:
         if len(points_new.shape)==1:
-            diff1 = np.std(np.abs(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])])))
-            diff2 = np.std(np.abs(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])])))
+            diff1 = np.std(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])]))
+            diff2 = np.std(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])]))
         else:
-            diff1 = np.std(np.abs(np.array([n[1]-r[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])])))
-            diff2 = np.std(np.abs(np.array([n[1]-r[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])])))
+            diff1 = np.std(np.array([n[1]-r[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])]))
+            diff2 = np.std(np.array([n[1]-r[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])]))
         jac2 = (-1.5*diff[1]+2.0*diff1-0.5*diff2)
     else:
         #print("no jac")
@@ -310,14 +311,13 @@ opt_opts = {"L-BFGS-B": {'gtol':1e-16,'ftol':1e-16,'maxiter':10,"eps":0.001,'max
             "trust-krylov":{"gtol":1e-8}
             }
 
-def correctR(cur, vec, Ax, detector_shape, data_real, real_img, eps, feature_params={}, method='L-BFGS-B'):
+def correctR(cur, vec, Ax, data_real, real_img, eps, feature_params={}, method='L-BFGS-B', α1=1, α2=100):
     GIoldold = GI(real_img,real_img)
     def f(x):
         cur_x = cur
         cur_x[3:] = x
         vecs = np.array([applyChange(vec,cur_x)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
+        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
         try:
             ret = calcObjective(data_real, real_img, proj_d, feature_params, GIoldold=GIoldold)
             return ret
@@ -329,11 +329,12 @@ def correctR(cur, vec, Ax, detector_shape, data_real, real_img, eps, feature_par
         cur_x = cur
         cur_x[3] = x
         vecs = np.array([applyChange(vec,cur_x)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
+        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
         try:
             ret = calcObjectiveStd(data_real, real_img, proj_d, 1, feature_params)
-            return ret
+            ret1 = calcObjective(data_real, real_img, proj_d, feature_params, GIoldold=GIoldold)
+            #print(1, ret, ret1)
+            return α1*ret + α2*ret1
         except Exception as e:
             print(e)
             print(x)
@@ -342,11 +343,12 @@ def correctR(cur, vec, Ax, detector_shape, data_real, real_img, eps, feature_par
         cur_x = cur
         cur_x[4] = x
         vecs = np.array([applyChange(vec,cur_x)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
+        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
         try:
             ret = calcObjectiveStd(data_real, real_img, proj_d, 2, feature_params)
-            return ret
+            ret1 = calcObjective(data_real, real_img, proj_d, feature_params, GIoldold=GIoldold)
+            #print(2, ret, ret1)
+            return α1*ret + α2 * ret1
         except Exception as e:
             print(e)
             print(x)
@@ -356,18 +358,16 @@ def correctR(cur, vec, Ax, detector_shape, data_real, real_img, eps, feature_par
         cur_x = cur
         cur_x[3:] = x
         vecs = np.array([applyChange(vec,cur_x)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
-        ret = estimateJac(vec, cur_x, np.array([eps,eps]), Ax, detector_shape, data_real, real_img, proj_d, feature_params)
+        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
+        ret = estimateJac(vec, cur_x, np.array([eps,eps]), Ax, data_real, real_img, proj_d, feature_params)
         return ret
     
     def hessf(x):
         cur_x = cur
         cur_x[3:] = x
         vecs = np.array([applyChange(vec,cur_x)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
-        ret = estimateHessian(vec, cur_x, np.array([eps,eps]), Ax, detector_shape, data_real, real_img, proj_d, feature_params)[1]
+        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
+        ret = estimateHessian(vec, cur_x, np.array([eps,eps]), Ax, data_real, real_img, proj_d, feature_params)[1]
         return ret
 
     #perftime = time.perf_counter()
@@ -386,12 +386,12 @@ def correctR(cur, vec, Ax, detector_shape, data_real, real_img, eps, feature_par
     #cur[3:] += ret.x
     method='L-BFGS-B'
     options = dict(opt_opts[method])
-    options['eps'] = 0.05
+    options['eps'] = eps
     ret = scipy.optimize.minimize(f1, np.array([0]), method=method, options=options)
     cur[3] += ret.x
     method='L-BFGS-B'
     options = dict(opt_opts[method])
-    options['eps'] = 0.005
+    options['eps'] = eps
     ret = scipy.optimize.minimize(f2, np.array([0]), method=method, options=options)
     cur[4] += ret.x
     #print(method, "none", eps, ret)
@@ -420,10 +420,9 @@ def correctR(cur, vec, Ax, detector_shape, data_real, real_img, eps, feature_par
     #print(time.perf_counter()-perftime)
     return cur
 
-def updatePoints(cur, vec, Ax, detector_shape, real_img, data_real, feature_params):
+def updatePoints(cur, vec, Ax, real_img, data_real, feature_params):
     vec = applyChange(np.array(vec), cur)
-    geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], np.array([vec]))
-    proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
+    proj_d = Projection_Preprocessing(Ax(np.array([vec])))[:,0]
     return proj_d, vec
 
 def lessRoughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, data_real=None):
@@ -431,33 +430,42 @@ def lessRoughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, data
         data_real = findInitialFeatures(real_img, feature_params)
     #points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
     corr = np.array(cur)
-    for i2 in range(2):
-        points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
+    for i2 in range(1):
+        if len(data_real[0].shape)==1:
+            points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
+        else:
+            points, valid = trackFeatures(real_img, proj_img, data_real, feature_params)
         cur = correctXY(np.zeros_like(corr), vec, data_real[0][valid], points[valid])
         cur = correctZ(cur, vec, data_real[0][valid], points[valid])
-        proj_img, vec = updatePoints(cur, vec, Ax, real_img.shape, real_img, data_real, feature_params, True)
+        proj_img, vec = updatePoints(cur, vec, Ax, real_img, data_real, feature_params)
         corr += cur
-    for i1 in range(1):
+    for i1 in range(2):
         #perftime = time.perf_counter()
-        points, valid = trackFeatures(real_img, proj_img, data_real, feature_params)
-        cur = correctR(np.zeros_like(corr), vec, Ax, real_img.shape, data_real, real_img, 0.01)
+        if len(data_real[0].shape)==1:
+            points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
+        else:
+            points, valid = trackFeatures(real_img, proj_img, data_real, feature_params)
+        cur = correctR(np.zeros_like(corr), vec, Ax, data_real, real_img, 0.005)
         #print(time.perf_counter()-perftime, 10**(-i1))
         #cur = correctXY(cur, vec, data_real[0][valid], points[valid])
         #cur = correctZ(cur, vec, data_real[0][valid], points[valid])
-        proj_img, vec = updatePoints(cur, vec, Ax, real_img.shape, real_img, data_real, feature_params)
+        proj_img, vec = updatePoints(cur, vec, Ax, real_img, data_real, feature_params)
         #print(np.count_nonzero(valid), end=',', flush=True)
         corr += cur
     print(corr, flush=True)
     #exit(0)
     for i1 in range(1):
-        points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
+        if len(data_real[0].shape)==1:
+            points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
+        else:
+            points, valid = trackFeatures(real_img, proj_img, data_real, feature_params)
         cur = correctXY(np.zeros_like(corr), vec, data_real[0][valid], points[valid])
         cur = correctZ(cur, vec, data_real[0][valid], points[valid])
-        proj_img, vec = updatePoints(cur, vec, Ax, real_img.shape, real_img, data_real, feature_params)
+        proj_img, vec = updatePoints(cur, vec, Ax, real_img, data_real, feature_params)
         corr += cur
     return corr
 
-def roughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, detector_shape, data_real=None):
+def roughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, data_real=None):
     #print("rough")
     if data_real is None:
         data_real = findInitialFeatures(real_img, feature_params)
@@ -467,7 +475,7 @@ def roughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, detector
     cur = correctXY(cur, vec, data_real[0][valid], points[valid])
     cur = correctZ(cur, vec, data_real[0][valid], points[valid])
     
-    cur = correctRot(cur, vec, data_real[0][valid], points[valid], Ax, detector_shape, real_img, data_real)
+    cur = correctRot(cur, vec, data_real[0][valid], points[valid], Ax, real_img, data_real)
     #print(scale)
     
     #minX, minY, maxX, maxY = getBoundingBox(data_real[0][valid])
@@ -592,18 +600,16 @@ def calcHessianVectors(vec, eps):
     new_vecs = np.array(new_vecs)
     return new_vecs
 
-def estimateHessian(vec, cur, eps, Ax, detector_shape, data_real, real_img, ini_DRR, feature_params):
+def estimateHessian(vec, cur, eps, Ax, data_real, real_img, ini_DRR, feature_params):
     perftime_jac = time.perf_counter()
     dvec = calcHessianVectors(applyChange(vec, cur), eps)
 
     cvec = np.array([applyChange(vec, cur)]*len(dvec) )
-    geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], cvec)
-    proj_d = Ax(geo_d)
+    proj_d = Ax(cvec)
     proj_d = Projection_Preprocessing(proj_d)
     sitk.WriteImage(sitk.GetImageFromArray(proj_d), ".\\recos\\undiff_sino.nrrd")
     
-    geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], dvec)
-    proj_d = Projection_Preprocessing(Ax(geo_d))
+    proj_d = Projection_Preprocessing(Ax(dvec))
     sitk.WriteImage(sitk.GetImageFromArray(proj_d), ".\\recos\\diff_sino.nrrd")
 
     jac = np.zeros(eps.shape[0])
@@ -636,12 +642,11 @@ def estimateHessian(vec, cur, eps, Ax, detector_shape, data_real, real_img, ini_
     #print("jac+hess calculation", time.perf_counter()-perftime_jac)
     return jac, hess
 
-def estimateJac(vec, cur, eps, Ax, detector_shape, data_real, real_img, ini_DRR, feature_params):
+def estimateJac(vec, cur, eps, Ax, data_real, real_img, ini_DRR, feature_params):
     #perftime_jac = time.perf_counter()
     dvec = np.array(calcJacVectors(applyChange(vec,cur), eps))
 
-    geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], dvec)
-    proj_d = Projection_Preprocessing(Ax(geo_d))
+    proj_d = Projection_Preprocessing(Ax(dvec))
     #sitk.WriteImage(sitk.GetImageFromArray(proj_d), ".\\recos\\diff_sino.nrrd")
     jac = np.zeros(eps.shape[0])
     f0 = calcObjective(data_real, real_img, ini_DRR, feature_params)
@@ -652,7 +657,7 @@ def estimateJac(vec, cur, eps, Ax, detector_shape, data_real, real_img, ini_DRR,
     #print("jac calculation", time.perf_counter()-perftime_jac)
     return jac
 
-def calcStepSize(vec, d, cur, eps, Ax, detector_shape, data_real, real_img, ini_DRR, feature_params):
+def calcStepSize(vec, d, cur, eps, Ax, data_real, real_img, ini_DRR, feature_params):
     perftime = time.perf_counter()
     c1 = 1e-4
     c2 = 0.9
@@ -662,15 +667,13 @@ def calcStepSize(vec, d, cur, eps, Ax, detector_shape, data_real, real_img, ini_
 
     def f(x):
         vecs = np.array([applyChange(vec,x)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))
+        proj_d = Projection_Preprocessing(Ax(vecs))
         ret = calcObjective(data_real, real_img, proj_d[:,0], feature_params)
         return ret
 
     def ḟ(x):
         vecs = np.array([applyChange(vec,x), applyChange(applyChange(vec,x), d)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))
+        proj_d = Projection_Preprocessing(Ax(vecs))
         f0 = calcObjective(data_real, real_img, proj_d[:,0], feature_params)
         f1 = calcObjective(data_real, real_img, proj_d[:,1], feature_params)
         ret = (f1-f0) / np.linalg.norm(d)
@@ -678,9 +681,8 @@ def calcStepSize(vec, d, cur, eps, Ax, detector_shape, data_real, real_img, ini_
     
     def gradf(x):
         vecs = np.array([applyChange(vec,x)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
-        ret = estimateJac(vec, x, eps, Ax, detector_shape, data_real, real_img, proj_d, feature_params)
+        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
+        ret = estimateJac(vec, x, eps, Ax, data_real, real_img, proj_d, feature_params)
         return ret
 
     #return scipy.optimize.line_search(f, gradf, cur, d)[0]
@@ -750,8 +752,11 @@ def calcObjective(data_old, old_img, new_img, feature_params, GIoldold=None):
     return GIoldold / (GIoldnew+1e-8)
 
 def calcObjectiveStd(data_old, old_img, new_img, comp, feature_params):
-    points_new, valid = trackFeatures(old_img, new_img, data_old, feature_params)
     points_old, _ = data_old
+    if len(points_old.shape)==1:
+        points_new, valid = trackFeatures_(old_img, new_img, data_old, feature_params)
+    else:
+        points_new, valid = trackFeatures(old_img, new_img, data_old, feature_params)
     #points_new, valid = data_new
     #print(points_new.shape, points_old.shape, valid.shape)
     good_new = points_new[valid]
@@ -777,7 +782,7 @@ def calcObjectiveStd(data_old, old_img, new_img, comp, feature_params):
     #print(comp, f, len(good_new), int(100*np.count_nonzero(valid)/len(valid)))
     return f
 
-def calcObjective_(data_old, old_img, new_img, feature_params):
+def calcObjectiveDist(data_old, old_img, new_img, feature_params):
     f1 = 0.0
     its = 1
     for i in range(its):
@@ -809,7 +814,7 @@ def calcObjective_(data_old, old_img, new_img, feature_params):
                 old_p = p
         
             f1 += np.sum((dists_new-dists_old)**2)
-            f1 += np.count_nonzero(~valid)*500
+            #f1 += np.count_nonzero(~valid)*500
             #print(len(good_new),len(valid),f1/len(good_new))
         else:
             #print(len(points_old), len(points_new), len(good_new))
@@ -914,7 +919,7 @@ def findInitialFeatures(img, feature_params, use_cpu=True):
     if use_cpu:
         #detector = cv2.xfeatures2d_SURF.create(100, 4, 3, False, True)
         #detector = cv2.SIFT_create()
-        detector = cv2.AKAZE_create(threshold=0.0002 )
+        detector = cv2.AKAZE_create(threshold=0.0001 )
         #detector = cv2.ORB_create(nfeatures=300, scaleFactor=1.4, nlevels=4, edgeThreshold=41, patchSize=41, fastThreshold=5)
         points, features = detector.detectAndCompute(img, mask)
         points = np.array(points)

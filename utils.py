@@ -63,6 +63,35 @@ def Ax_geo_astra(out_shape, x):
     run_Ax.free = free
     return run_Ax
 
+def Ax_vecs_astra(out_shape, detector_shape, x):
+    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
+    vol_id = astra.data3d.create('-vol', vol_geom, x)
+    iterations = 1
+    freed = False
+    def free():
+        nonlocal freed
+        astra.data3d.delete(vol_id)
+        freed = True
+    def run_Ax(vecs, free_memory=False):
+        nonlocal freed
+        if freed:
+            print("data structures and algorithm already deleted")
+            return 0
+        proj_geom = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
+        proj_id = astra.data3d.create('-proj3d', proj_geom)
+        cfg = astra.astra_dict('FP3D_CUDA')
+        cfg['ProjectionDataId'] = proj_id
+        cfg['VolumeDataId'] = vol_id
+        alg_id = astra.algorithm.create(cfg)
+        astra.algorithm.run(alg_id, iterations)
+        result = astra.data3d.get(proj_id)
+        astra.data3d.delete(proj_id)
+        astra.algorithm.delete(alg_id)
+        if free_memory:
+            free()
+        return result
+    run_Ax.free = free
+    return run_Ax
 
 def Ax2_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
@@ -418,7 +447,7 @@ def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist
         x_axis /= np.linalg.norm(x_axis)
         y_axis /= np.linalg.norm(y_axis)
 
-        z_axis /= np.linalg.norm(z_axis)
+        z_axis /= -np.linalg.norm(z_axis)
         
         x = rotMat(90,z_axis).dot(y_axis)
 
