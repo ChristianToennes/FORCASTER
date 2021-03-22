@@ -225,12 +225,13 @@ def correctXY(cur, vec, points_real, points_new):
         #print(diff)
     else:
         diff = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points_new,points_real)])
-    xdir = vec[6:9]/np.linalg.norm(vec[6:9])
-    ydir = vec[9:12]/np.linalg.norm(vec[9:12])
-    #cur[0] += np.median(diff, axis=0)[0] / np.linalg.norm(vec[6:9])
-    #cur[1] += np.median(diff, axis=0)[1] / np.linalg.norm(vec[9:12])
-    cur[0:3] += np.median(diff, axis=0)[0] * xdir / np.linalg.norm(vec[6:9])
-    cur[0:3] += np.median(diff, axis=0)[1] * ydir / np.linalg.norm(vec[9:12])
+    if len(diff)>1:
+        xdir = vec[6:9]/np.linalg.norm(vec[6:9])
+        ydir = vec[9:12]/np.linalg.norm(vec[9:12])
+        #cur[0] += np.median(diff, axis=0)[0] / np.linalg.norm(vec[6:9])
+        #cur[1] += np.median(diff, axis=0)[1] / np.linalg.norm(vec[9:12])
+        cur[0:3] += np.median(diff, axis=0)[0] * xdir / np.linalg.norm(vec[6:9])
+        cur[0:3] += np.median(diff, axis=0)[1] * ydir / np.linalg.norm(vec[9:12])
     return cur
 
 def correctZ(cur, vec, points_real, points_new):
@@ -252,55 +253,56 @@ def correctZ(cur, vec, points_real, points_new):
     return cur
 
 def correctRot(cur, vec, points_real, points_new, Ax, detector_shape, real_img, data_real):
-    if len(points_new.shape)==1:
-        diff = np.std(np.array([[n.pt[0]-r.pt[0], n.pt[1]-r.pt[1]]  for n,r in zip(points_new,points_real)]), axis=0)
-    else:
-        diff = np.std(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points_new,points_real)]), axis=0)
-    dvec = np.array(calcJacVectors(applyChange(vec,cur), np.array([0.03,0.03])))
-    geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], dvec)
-    proj_d = Projection_Preprocessing(Ax(geo_d))
-    
-    points=[]
-    valid=[]
-    for p,v in [trackFeatures_(real_img, proj_d[:,i], data_real, {}) for i in range(proj_d.shape[1])]:
-        points.append(p)
-        valid.append(v==1)
-    points = np.array(points)
-    valid = np.array(valid)
-
-    if np.count_nonzero(valid[0])!=0 and np.count_nonzero(valid[1])!=0:
+    if len(points_new) > 1:
         if len(points_new.shape)==1:
-            diff1 = np.std(np.abs(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])])))
-            diff2 = np.std(np.abs(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])])))
+            diff = np.std(np.array([[n.pt[0]-r.pt[0], n.pt[1]-r.pt[1]]  for n,r in zip(points_new,points_real)]), axis=0)
         else:
-            diff1 = np.std(np.abs(np.array([n[0]-r[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])])))
-            diff2 = np.std(np.abs(np.array([n[0]-r[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])])))
+            diff = np.std(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points_new,points_real)]), axis=0)
+        dvec = np.array(calcJacVectors(applyChange(vec,cur), np.array([0.03,0.03])))
+        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], dvec)
+        proj_d = Projection_Preprocessing(Ax(geo_d))
+        
+        points=[]
+        valid=[]
+        for p,v in [trackFeatures_(real_img, proj_d[:,i], data_real, {}) for i in range(proj_d.shape[1])]:
+            points.append(p)
+            valid.append(v==1)
+        points = np.array(points)
+        valid = np.array(valid)
 
-        jac1 = (-1.5*diff[0]+2.0*diff1-0.5*diff2)
-    else:
-        #print("no jac")
-        jac1=0
+        if np.count_nonzero(valid[0])!=0 and np.count_nonzero(valid[1])!=0:
+            if len(points_new.shape)==1:
+                diff1 = np.std(np.abs(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])])))
+                diff2 = np.std(np.abs(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])])))
+            else:
+                diff1 = np.std(np.abs(np.array([n[0]-r[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])])))
+                diff2 = np.std(np.abs(np.array([n[0]-r[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])])))
 
-    if np.count_nonzero(valid[2])!=0 and np.count_nonzero(valid[3])!=0:
-        if len(points_new.shape)==1:
-            diff1 = np.std(np.abs(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])])))
-            diff2 = np.std(np.abs(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])])))
+            jac1 = (-1.5*diff[0]+2.0*diff1-0.5*diff2)
         else:
-            diff1 = np.std(np.abs(np.array([n[1]-r[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])])))
-            diff2 = np.std(np.abs(np.array([n[1]-r[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])])))
-        jac2 = (-1.5*diff[1]+2.0*diff1-0.5*diff2)
-    else:
-        #print("no jac")
-        jac2 = 0
+            #print("no jac")
+            jac1=0
 
-    #print(diff.shape, diff1.shape, diff2.shape)
+        if np.count_nonzero(valid[2])!=0 and np.count_nonzero(valid[3])!=0:
+            if len(points_new.shape)==1:
+                diff1 = np.std(np.abs(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])])))
+                diff2 = np.std(np.abs(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])])))
+            else:
+                diff1 = np.std(np.abs(np.array([n[1]-r[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])])))
+                diff2 = np.std(np.abs(np.array([n[1]-r[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])])))
+            jac2 = (-1.5*diff[1]+2.0*diff1-0.5*diff2)
+        else:
+            #print("no jac")
+            jac2 = 0
 
-    if jac1 != 0 and np.abs(diff[0]/jac1) < 1:
-        #print(diff[0], jac1, diff[0]/jac1)
-        cur[3] += diff[0]/jac1
-    if jac2 != 0 and np.abs(diff[1]/jac2) < 1:
-        #print(diff[1], jac2, diff[1]/jac2)
-        cur[4] += diff[1]/jac2
+        #print(diff.shape, diff1.shape, diff2.shape)
+
+        if jac1 != 0 and np.abs(diff[0]/jac1) < 1:
+            #print(diff[0], jac1, diff[0]/jac1)
+            cur[3] += diff[0]/jac1
+        if jac2 != 0 and np.abs(diff[1]/jac2) < 1:
+            #print(diff[1], jac2, diff[1]/jac2)
+            cur[4] += diff[1]/jac2
 
     return cur
 
@@ -463,6 +465,13 @@ def roughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, detector
         data_real = findInitialFeatures(real_img, feature_params)
     points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
     
+    #plt.figure()
+    #plt.imshow(real_img)
+    #plt.figure()
+    #plt.imshow(proj_img)
+    #plt.show()
+    #plt.close()
+
     #print(len(data_real[0]), np.count_nonzero(valid))
     cur = correctXY(cur, vec, data_real[0][valid], points[valid])
     cur = correctZ(cur, vec, data_real[0][valid], points[valid])
@@ -914,7 +923,7 @@ def findInitialFeatures(img, feature_params, use_cpu=True):
     if use_cpu:
         #detector = cv2.xfeatures2d_SURF.create(100, 4, 3, False, True)
         #detector = cv2.SIFT_create()
-        detector = cv2.AKAZE_create(threshold=0.0002 )
+        detector = cv2.AKAZE_create(threshold=0.0001 )
         #detector = cv2.ORB_create(nfeatures=300, scaleFactor=1.4, nlevels=4, edgeThreshold=41, patchSize=41, fastThreshold=5)
         points, features = detector.detectAndCompute(img, mask)
         points = np.array(points)
