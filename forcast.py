@@ -163,8 +163,6 @@ def bfgs(index, proj, fullgeo, Ax, cali, eps):
     feat_thres=cali['feat_thres']
     real_img = proj[index]
     
-    detector_shape = [fullgeo['DetectorRowCount'], fullgeo['DetectorColCount']]
-
     real_img = Projection_Preprocessing(real_img)
     #sitk.WriteImage(sitk.GetImageFromArray(real_img), "./recos/forcast_input.nrrd")
     
@@ -181,8 +179,7 @@ def bfgs(index, proj, fullgeo, Ax, cali, eps):
     
     def f(x):
         vecs = np.array([applyChange(vec,x)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
+        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
         try:
             ret = calcObjective(data_real, real_img, proj_d, feature_params)
             return ret
@@ -193,14 +190,12 @@ def bfgs(index, proj, fullgeo, Ax, cali, eps):
         
     def gradf(x):
         vecs = np.array([applyChange(vec,x)])
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
-        ret = estimateJac(vec, x, eps, Ax, detector_shape, data_real, real_img, proj_d, feature_params)
+        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
+        ret = estimateJac(vec, x, eps, Ax, data_real, real_img, proj_d, feature_params)
         return ret
 
-    geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-    proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
-    cur, _scale = roughRegistration(cur, real_img, proj_d, feature_params, vecs[0], Ax, detector_shape, data_real=data_real)
+    proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
+    cur, _scale = roughRegistration(cur, real_img, proj_d, feature_params, vecs[0], Ax, data_real=data_real)
     #print("rough reg f", f(cur))
     ret = scipy.optimize.minimize(f, cur, method='L-BFGS-B', options={'eps':eps})
     #print(ret)
@@ -211,8 +206,7 @@ def bfgs(index, proj, fullgeo, Ax, cali, eps):
     #ret = scipy.optimize.minimize(f, ret.x, method='L-BFGS-B', options={'eps':eps})
     #print(ret)
     vecs = np.array([applyChange(vec, ret.x)])
-    geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-    proj_d = Projection_Preprocessing(Ax(geo_d))[:,0]
+    proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
     return applyChange(vec, ret.x), ret.fun, np.sum((real_img-proj_d)**2)
 
 def correctXY(cur, vec, points_real, points_new):
@@ -249,15 +243,15 @@ def correctZ(cur, vec, points_real, points_new):
         cur[0:3] += scale * zdir * np.linalg.norm(vec[0:3])
     return cur
 
-def correctRot(cur, vec, points_real, points_new, Ax, detector_shape, real_img, data_real):
+def correctRot(cur, vec, points_real, points_new, Ax, real_img, data_real):
+    #print(len(points_new), len(points_real))
     if len(points_new) > 1:
         if len(points_new.shape)==1:
             diff = np.std(np.array([[n.pt[0]-r.pt[0], n.pt[1]-r.pt[1]]  for n,r in zip(points_new,points_real)]), axis=0)
         else:
             diff = np.std(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points_new,points_real)]), axis=0)
         dvec = np.array(calcJacVectors(applyChange(vec,cur), np.array([0.03,0.03])))
-        geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], dvec)
-        proj_d = Projection_Preprocessing(Ax(geo_d))
+        proj_d = Projection_Preprocessing(Ax(dvec))
         
         points=[]
         valid=[]
@@ -272,6 +266,8 @@ def correctRot(cur, vec, points_real, points_new, Ax, detector_shape, real_img, 
                 valid.append(v==1)
         points = np.array(points)
         valid = np.array(valid)
+
+        #print(np.count_nonzero(valid, axis=1))
 
         if np.count_nonzero(valid[0])!=0 and np.count_nonzero(valid[1])!=0:
             if len(points_new.shape)==1:
@@ -863,7 +859,6 @@ def trackFeatures_(base_img, next_img, data, feature_params):
         print("no features in new image")
         return base_points, np.zeros(len(base_points), dtype=bool) 
 
-
     matches = matcher.knnMatch(f1, f2, k=2)
 
     # Need to draw only good matches, so create a mask
@@ -927,16 +922,16 @@ def findInitialFeatures(img, feature_params, use_cpu=True):
     if use_cpu:
         #detector = cv2.xfeatures2d_SURF.create(100, 4, 3, False, True)
         #detector = cv2.SIFT_create()
-        detector = cv2.AKAZE_create(threshold=0.0001 )
+        detector = cv2.AKAZE_create(threshold=0.0001, nOctaves=4, nOctaveLayers=4)
         #detector = cv2.ORB_create(nfeatures=300, scaleFactor=1.4, nlevels=4, edgeThreshold=41, patchSize=41, fastThreshold=5)
         points, features = detector.detectAndCompute(img, mask)
         points = np.array(points)
-        #points = np.array([[p.pt[0], p.pt[1]] for p in points], dtype=np.float32)
+        
         #feature_params = dict( maxCorners = 200,
-        #               qualityLevel = 0.1,
+        #               qualityLevel = 0.01,
         #               minDistance = 7,
-        #               blockSize = 7 )
-        ##points = cv2.goodFeaturesToTrack(img, mask=mask, **feature_params)[:,0]
+        #               blockSize = 13 )
+        #points = cv2.goodFeaturesToTrack(img, mask=mask, **feature_params)[:,0]
         #features = None
     else:
         if "feat_thres" in feature_params:

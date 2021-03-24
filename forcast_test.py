@@ -305,7 +305,7 @@ def reg_rough(ims, geo, Ax, feature_params):
         vec = geo['Vectors'][i]
         cur = np.array([0,0,0,0,0.0])
         real_img = forcast.Projection_Preprocessing(ims[i])
-        for si in range(5):
+        for si in range(3):
             proj_d = forcast.Projection_Preprocessing(Ax(np.array([vec])))[:,0]
             #old_cur = np.array(cur)
             cur = np.array([0,0,0,0,0.0])
@@ -325,7 +325,7 @@ def reg_rough(ims, geo, Ax, feature_params):
     
     corrs = np.array(corrs)
     vecs = np.array(vecs)
-
+    print(corrs)
     return vecs, corrs
 
 def reg_lessrough(ims, geo, Ax, feature_params):
@@ -388,38 +388,21 @@ def reg_bfgs(ims, geo, Ax, feature_params, eps = [1,1,1,0.1,0.1]):
             for i in range(2):
                 bfgs_vec, fun, err = forcast.bfgs(i, ims, geo, Ax, feature_params, np.array(eps))
                 geo['Vectors'][i] = bfgs_vec
-            vecs.append(bfgs_vec)
+            vecs[i] = bfgs_vec
         except Exception as ex:
             print(ex)
-            #raise
+            raise
     
     return vecs
 
-def reg_and_reco(proj_path, cbct_path, name, method=0):
+def reg_and_reco(real_image, ims, geo, detector_shape, name, method=0):
     print(name)
-    ims, ims_ungained, i0s, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=200)
-    #ims = ims[:20]
-    #coord_systems = coord_systems[:20]
-    skip = int(len(ims)/100)
-    ims = ims[::skip]
-    coord_systems = coord_systems[::skip]
-    sids = sids[::skip]
-    sods = sods[::skip]
-
-    origin, size, spacing, image = utils.read_cbct_info(cbct_path)
-    real_image = utils.fromHU(sitk.GetArrayFromImage(image))
-    del image
     if not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
         sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
 
-    real_image = real_image[::-1, ::-1]
-    real_image = np.swapaxes(real_image, 1,2)
-    real_image = np.swapaxes(real_image, 0, 2)
-
-    detector_shape = np.array((1920,2480))
-    detector_mult = np.floor(detector_shape / np.array(ims.shape[1:]))
-    detector_shape = np.array(ims.shape[1:])
-    detector_spacing = np.array((0.125, 0.125)) * detector_mult
+    #real_image = real_image[::-1, ::-1]
+#    real_image = np.swapaxes(real_image, 1,2)
+#    real_image = np.swapaxes(real_image, 0, 2)
 
     cali = {}
     cali['feat_thres'] = 80
@@ -430,8 +413,6 @@ def reg_and_reco(proj_path, cbct_path, name, method=0):
     cali['max_ratio'] = 0.9
     cali['max_distance'] = 20
     cali['outlier_confidence'] = 85
-
-    geo, (prims, secs), _ = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
 
     #print(angles, prims, secs)
 
@@ -478,11 +459,11 @@ def reg_and_reco(proj_path, cbct_path, name, method=0):
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
         del rec
 
-        vecs = smooth(vecs)
-        write_vectors(name+"-rough-smooth", vecs)
+        vecs_smooth = smooth(vecs)
+        write_vectors(name+"-rough-smooth", vecs_smooth)
 
-        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        sino = Ax(vecs)
+        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs_smooth)
+        sino = Ax(vecs_smooth)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough-smooth.nrrd"))
         del sino
@@ -519,11 +500,11 @@ def reg_and_reco(proj_path, cbct_path, name, method=0):
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-lessrough.nrrd"))
         del rec
         
-        vecs = smooth(vecs)
-        write_vectors(name+"-lessrough-smooth", vecs)
+        vecs_smooth = smooth(vecs)
+        write_vectors(name+"-lessrough-smooth", vecs_smooth)
 
-        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        sino = Ax(vecs)
+        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs_smooth)
+        sino = Ax(vecs_smooth)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-lessrough-smooth.nrrd"))
         del sino
@@ -569,7 +550,26 @@ def reg_and_reco(proj_path, cbct_path, name, method=0):
             rec = np.swapaxes(rec, 1,2)
             rec = rec[::-1, ::-1]
             sitk.WriteImage(sitk.GetImageFromArray(rec)*100, os.path.join("recos", "forcast_"+name+"_reco-"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
+                
+            vecs_smooth = smooth(vecs)
+            write_vectors(name+"-lessrough-smooth", vecs_smooth)
+
+            reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs_smooth)
+            sino = Ax(vecs_smooth)
+            sino = sitk.GetImageFromArray(sino)
+            sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-lessrough-smooth.nrrd"))
+            del sino
+            rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+            rec = np.swapaxes(rec, 0, 2)
+            rec = np.swapaxes(rec, 1,2)
+            rec = rec[::-1, ::-1]
+            rec = sitk.GetImageFromArray(rec)*100
+            sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-lessrough-smooth.nrrd"))
+            del rec
+            
     Ax.free()
+
+    return vecs, vecs_smooth
 
 def parameter_search(proj_path, cbct_path):
     ims, ims_ungained, i0s, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=1)
@@ -718,21 +718,78 @@ if __name__ == "__main__":
     for name, proj_path, cbct_path in projs:
         break
         try:
-            reg_and_reco(proj_path, cbct_path, name, 0)
+            ims, ims_ungained, i0s, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=200)
+            #ims = ims[:20]
+            #coord_systems = coord_systems[:20]
+            skip = int(len(ims)/100)
+            ims = ims[::skip]
+            coord_systems = coord_systems[::skip]
+            sids = sids[::skip]
+            sods = sods[::skip]
+
+            origin, size, spacing, image = utils.read_cbct_info(cbct_path)
+
+            detector_shape = np.array((1920,2480))
+            detector_mult = np.floor(detector_shape / np.array(ims.shape[1:]))
+            detector_shape = np.array(ims.shape[1:])
+            detector_spacing = np.array((0.125, 0.125)) * detector_mult
+
+            real_image = utils.fromHU(sitk.GetArrayFromImage(image))
+            del image
+            geo, (prims, secs), _ = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+            reg_and_reco(real_image, ims, geo, detector_shape, name, 0)
         except Exception as e:
             print(name, "rough failed", e)
             raise
     for name, proj_path, cbct_path in projs:
         
         try:
-            reg_and_reco(proj_path, cbct_path, name, 1)
+            ims, ims_ungained, i0s, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=200)
+            #ims = ims[:20]
+            #coord_systems = coord_systems[:20]
+            skip = int(len(ims)/100)
+            ims = ims[::skip]
+            coord_systems = coord_systems[::skip]
+            sids = sids[::skip]
+            sods = sods[::skip]
+
+            origin, size, spacing, image = utils.read_cbct_info(cbct_path)
+
+            detector_shape = np.array((1920,2480))
+            detector_mult = np.floor(detector_shape / np.array(ims.shape[1:]))
+            detector_shape = np.array(ims.shape[1:])
+            detector_spacing = np.array((0.125, 0.125)) * detector_mult
+
+            real_image = utils.fromHU(sitk.GetArrayFromImage(image))
+            del image
+            geo, (prims, secs), _ = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+            reg_and_reco(real_image, ims, geo, detector_shape, name, 1)
         except Exception as e:
             print(name, "less rough failed", e)
             raise
     for name, proj_path, cbct_path in projs:
         
         try:
-            reg_and_reco(proj_path, cbct_path, name, 2)
+            ims, ims_ungained, i0s, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=200)
+            #ims = ims[:20]
+            #coord_systems = coord_systems[:20]
+            skip = int(len(ims)/100)
+            ims = ims[::skip]
+            coord_systems = coord_systems[::skip]
+            sids = sids[::skip]
+            sods = sods[::skip]
+
+            origin, size, spacing, image = utils.read_cbct_info(cbct_path)
+
+            detector_shape = np.array((1920,2480))
+            detector_mult = np.floor(detector_shape / np.array(ims.shape[1:]))
+            detector_shape = np.array(ims.shape[1:])
+            detector_spacing = np.array((0.125, 0.125)) * detector_mult
+
+            real_image = utils.fromHU(sitk.GetArrayFromImage(image))
+            del image
+            geo, (prims, secs), _ = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+            reg_and_reco(real_image, ims, geo, detector_shape, name, 2)
         except Exception as e:
             print(name, "bfgs failed", e)
             raise
