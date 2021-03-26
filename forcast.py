@@ -8,158 +8,7 @@ import SimpleITK as sitk
 import time
 import scipy.optimize
 
-#eps = 1e-16
-def FORCAST(index, proj, priorCT, cali, fullgeo, out_shape, eps, Ax = None):
-    #% FORCAST algorithm 
-    #% @todo complete it
-    
-    #%Check whether input is correct and assigne variables
-    #print('Checking and assigning parameters')
-    #if nargin == 5:
-    #    if ~(strcmp(class(varargin{1}), 'det_obj') && strcmp(class(varargin{2}), 'traj_obj') && strcmp(class(varargin{3}), 'img_obj') && strcmp(class(varargin{4}), 'cali_obj'))
-    #        print('Wrong input! One or more inputs is/are not the required input')
-    #    #end
-    #    det     = varargin{1}
-    #    traj    = varargin{2}
-    #    img     = varargin{3}
-    #    cali    = varargin{4}
-    #elif nargin == 2:
-    #        if ~(strcmp(class(varargin{1}), 'cali_obj'))
-    #        print('Wrong input! Input is not a cali_obj')
-    #        #end
-    #        cali   = varargin{1}
-    #        det    = cali.det_obj
-    #        traj   = cali.traj_obj
-    #        img    = cali.img_obj 
-    #else:
-    #    print('Wrong number of input. Either set det_obj, traj_obj, img_obj, cali_obj or just cali.obj as input!')
-    #end
-        
-    #print('off','images:initSize:adjustingMag')
-    perftime = time.perf_counter()
-    gengif=0
-    feat_thres=cali['feat_thres']
-    iterations=cali['iterations']
-    #real_img    = img.raw_data[:,:,proj]
-    real_img = proj[index]
-    #priorCT     = img.CBCT
-    #ini_DRR     = img.drr_data[:,:,proj]
-    #ini_pms     = traj.pm_set[:, proj]
-
-    #visu_mode           = cali.visumode
-    confidence_thres    = cali['confidence_thres']
-    relax_factor        = cali['relax_factor']
-    match_thres         = cali['match_thres'] 
-    max_ratio           = cali['max_ratio']
-    max_distance        = cali['max_distance']
-    outlier_confidence  = cali['outlier_confidence']
-
-    up = 1
-
-    detector_shape = [fullgeo['DetectorRowCount'], fullgeo['DetectorColCount']]
-
-    num_feat=np.zeros(iterations)
-    norm_rpe=np.zeros(iterations)
-    params=np.zeros((iterations,5))
-    if Ax is None:
-        Ax = utils.Ax_geo_astra(out_shape, priorCT)
-    geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], fullgeo['Vectors'][index:index+1])
-    ini_DRR = Ax(geo)[:,0]
-    ini_DRR = Projection_Preprocessing(ini_DRR)
-    
-    real_img = Projection_Preprocessing(real_img)
-    #sitk.WriteImage(sitk.GetImageFromArray(real_img), "./recos/forcast_input.nrrd")
-    
-    # params for ShiTomasi corner detection
-    feature_params = dict( maxCorners = 100,
-                        qualityLevel = 0.3,
-                        minDistance = 7,
-                        blockSize = 7,
-                        feat_thres = feat_thres )
-    # Parameters for lucas kanade optical flow
-    feature_params = dict( winSize  = (15,15),
-                    maxLevel = 2,
-                    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
-                        feat_thres = feat_thres )
-
-    data_real = findInitialFeatures(real_img, feature_params)
-
-    vec = geo['Vectors'][0]
-    #eps = np.array([1.0,1.0,1.0,.05,.05])
-    cur = np.zeros_like(eps)
-    jac, hess = estimateHessian(vec, cur, eps, Ax, detector_shape, data_real, real_img, ini_DRR, feature_params)
-    i_hess = np.linalg.inv(hess)
-
-    print("initialized", time.perf_counter()-perftime)
-
-    print('Starting Calibration')
-    for it_nr in range(iterations):
-        print('Iteration ', it_nr)
-        perftime = time.perf_counter()
-
-        data0 = trackFeatures(real_img, ini_DRR, data_real, feature_params)
-
-        if len(data0[0]) < 5:
-            print("reduce feature threshold")
-            feat_thres *= 0.9
-            data_real = findInitialFeatures(real_img, feature_params)
-            continue
-
-        #print(i_hess)
-        #corr = np.linalg.solve(hess, -jac)
-        corr = i_hess.dot(-jac)
-
-        step = calcStepSize(vec, corr, cur, eps, Ax, detector_shape, data_real, real_img, ini_DRR, feature_params)
-        #print(step, corr)
-        s = step*corr
-        cur = cur + s
-        geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], np.array([applyChange(vec, cur)]))
-        ini_DRR = Ax(geo)[:,0]
-        ini_DRR=Projection_Preprocessing(ini_DRR)
-
-        jac_old = jac
-        jac = estimateJac(vec, cur, eps, Ax, detector_shape, data_real, real_img, ini_DRR, feature_params)
-        y = jac-jac_old
-        sty = s.dot(y)
-        yBy = (y@i_hess).dot(y)
-        #print(sty, yBy)
-        i_hess = i_hess + (sty + yBy)*np.outer(s,s) / (sty*sty) - (np.outer(i_hess.dot(y), s) + (np.outer(s,y) @ i_hess )) / sty
-        #print(corr, step)
-        #print(jac)
-        #print(i_hess)
-
-        num_feat[it_nr] = len(data0[0])
-
-        norm_rpe[it_nr] = calcObjective(data_real, real_img, ini_DRR, feature_params)
-        params[it_nr] = cur
-        print('loss function {}'.format(norm_rpe[it_nr]))
-        print("iteration time", time.perf_counter()-perftime)
-
-        if it_nr%10==0:
-            eps *= 0.7
-            sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ini_DRR,0,1)), "./recos/forcast_"+str(it_nr//10)+".nrrd")
-        
-        if norm_rpe[it_nr] == 0:
-            if data0[1].any():
-                break
-            else:
-                feat_thres *= 0.9
-                print("reduce feature threshold", feat_thres)
-                feature_params['feat_thres'] = feat_thres
-                data_real = findInitialFeatures(real_img, feature_params)
-    #end
-    #cali['cali_pms'][:,proj]   = ini_pms
-    #cali['cali_vec'][:,proj]   = vec_dist
-    print('Calibrations terminated. {} were found! \n'.format(num_feat[it_nr]))
-    #cali.eval_para[proj]= [num_feat,norm_rpe,sum_corr]
-    sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ini_DRR,0,1)), "./recos/forcast_output.nrrd")
-
-    best = params[np.argmin(norm_rpe)]
-
-    return applyChange(fullgeo['Vectors'][index], best)
-    #end
-
-def bfgs(index, proj, fullgeo, Ax, cali, eps):
+def bfgs(index, proj, params, Ax, cali, eps):
     feat_thres=cali['feat_thres']
     real_img = proj[index]
     
@@ -171,15 +20,11 @@ def bfgs(index, proj, fullgeo, Ax, cali, eps):
 
     data_real = findInitialFeatures(real_img, feature_params)
 
-    vec = fullgeo['Vectors'][index]
     #eps = np.array([10,10,10,.5,.5])
-    cur = np.zeros_like(eps)
-
-    vecs = np.array([vec])
+    cur = params[index]
     
     def f(x):
-        vecs = np.array([applyChange(vec,x)])
-        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
+        proj_d = Projection_Preprocessing(Ax( np.array([x]) ) ) [:,0]
         try:
             ret = calcObjective(data_real, real_img, proj_d, feature_params)
             return ret
@@ -189,13 +34,12 @@ def bfgs(index, proj, fullgeo, Ax, cali, eps):
             raise e
         
     def gradf(x):
-        vecs = np.array([applyChange(vec,x)])
-        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
-        ret = estimateJac(vec, x, eps, Ax, data_real, real_img, proj_d, feature_params)
+        proj_d = Projection_Preprocessing(Ax( np.array([x]) ) )[:,0]
+        ret = estimateJac(np.array([0,0,1]), x, eps, Ax, data_real, real_img, proj_d, feature_params)
         return ret
 
-    proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
-    cur, _scale = roughRegistration(cur, real_img, proj_d, feature_params, vecs[0], Ax, data_real=data_real)
+    proj_d = Projection_Preprocessing(Ax( np.array([cur]) ) )[:,0]
+    cur = roughRegistration(cur, real_img, proj_d, feature_params, Ax, data_real=data_real)
     #print("rough reg f", f(cur))
     ret = scipy.optimize.minimize(f, cur, method='L-BFGS-B', options={'eps':eps})
     #print(ret)
@@ -205,9 +49,8 @@ def bfgs(index, proj, fullgeo, Ax, cali, eps):
     #eps = np.array([1,1,1,.25,.25])
     #ret = scipy.optimize.minimize(f, ret.x, method='L-BFGS-B', options={'eps':eps})
     #print(ret)
-    vecs = np.array([applyChange(vec, ret.x)])
-    proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
-    return applyChange(vec, ret.x), ret.fun, np.sum((real_img-proj_d)**2)
+    proj_d = Projection_Preprocessing(Ax(np.array([ret.x])))[:,0]
+    return ret.x, ret.fun, np.sum((real_img-proj_d)**2)
 
 def correctXY(cur, vec, points_real, points_new):
     #print("xy")
@@ -217,12 +60,12 @@ def correctXY(cur, vec, points_real, points_new):
     else:
         diff = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points_new,points_real)])
     if len(diff)>1:
-        xdir = vec[6:9]/np.linalg.norm(vec[6:9])
-        ydir = vec[9:12]/np.linalg.norm(vec[9:12])
+        xdir = vec[6:9]#/np.linalg.norm(vec[6:9])
+        ydir = vec[9:12]#/np.linalg.norm(vec[9:12])
         #cur[0] += np.median(diff, axis=0)[0] / np.linalg.norm(vec[6:9])
         #cur[1] += np.median(diff, axis=0)[1] / np.linalg.norm(vec[9:12])
-        cur[0:3] += np.median(diff, axis=0)[0] * xdir / np.linalg.norm(vec[6:9])
-        cur[0:3] += np.median(diff, axis=0)[1] * ydir / np.linalg.norm(vec[9:12])
+        cur[0:3] += np.median(diff, axis=0)[0] * xdir# / np.linalg.norm(vec[6:9])
+        cur[0:3] += np.median(diff, axis=0)[1] * ydir# / np.linalg.norm(vec[9:12])
     return cur
 
 def correctZ(cur, vec, points_real, points_new):
@@ -236,22 +79,54 @@ def correctZ(cur, vec, points_real, points_new):
         dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real for r in points_real])
     #dist_new[np.bitwise_and(dist_real==0,dist_new==0)] = 1
     if np.count_nonzero(dist_new) > 5:
-        scale = 1-np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])
+        #scale = 1-np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])
+        scale = np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1
         #print(scale, len(dist_new[dist_new!=0]), len(dist_real[dist_new!=0]))
-        zdir = vec[0:3]/np.linalg.norm(vec[0:3])
+        zdir = vec[3:6]/np.linalg.norm(vec[3:6])
         #cur[2] += scale * np.linalg.norm(vec[0:3])
-        cur[0:3] += scale * zdir * np.linalg.norm(vec[0:3])
+        cur[0:3] += scale * zdir #* np.linalg.norm(vec[3:6])
     return cur
 
-def correctRot(cur, vec, points_real, points_new, Ax, real_img, data_real):
+def correctRot(cur, points_real, points_new, Ax, real_img, data_real, eps=0.01):
+    dcur = calcJacVectors(cur, np.array([0,0,0,eps,eps,eps]))
+    dcur.append(cur)
+    dcur = np.array(dcur)
+    #print(dcur)
+    proj_d = Projection_Preprocessing(Ax(dcur))
+    GIoldold = GI(real_img, real_img)
+    diff = [calcObjective(data_real, real_img, proj_d[:,proj], {}, GIoldold) for proj in range(proj_d.shape[1])]
+
+    jac1 = (diff[1]-2*diff[-1]+diff[0]) / (eps**2)
+    jac2 = (diff[3]-2*diff[-1]+diff[2]) / (eps**2)
+    jac3 = (diff[5]-2*diff[-1]+diff[4]) / (eps**2)
+    
+    old_cur = np.array(cur)
+
+    if jac1 != 0 and np.abs(diff[-1]/jac1) < 1:
+        #print(diff[0], jac1, diff[0]/jac1)
+        cur[3] += diff[-1]/jac1
+    if jac2 != 0 and np.abs(diff[-1]/jac2) < 1:
+        #print(diff[1], jac2, diff[1]/jac2)
+        cur[4] += diff[-1]/jac2
+    if jac3 != 0 and np.abs(diff[-1]/jac3) < 1:
+        #print(diff[1], jac2, diff[1]/jac2)
+        cur[5] += diff[-1]/jac3
+    
+    #print(diff[-1]/jac1,diff[-1]/jac2,diff[-1]/jac3)
+    #print(diff)
+    #print(jac1, jac2, jac3)
+    #print(old_cur-cur)
+    return cur
+
+
+def correctRot_(cur, points_real, points_new, Ax, real_img, data_real, eps=0.1):
     #print(len(points_new), len(points_real))
+    old_cur = np.array(cur)
     if len(points_new) > 1:
-        if len(points_new.shape)==1:
-            diff = np.std(np.array([[n.pt[0]-r.pt[0], n.pt[1]-r.pt[1]]  for n,r in zip(points_new,points_real)]), axis=0)
-        else:
-            diff = np.std(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points_new,points_real)]), axis=0)
-        dvec = np.array(calcJacVectors(applyChange(vec,cur), np.array([0.03,0.03])))
-        proj_d = Projection_Preprocessing(Ax(dvec))
+        diff = np.array([calcObjectiveStdPoints(i, points_new, points_real) for i in range(3)])
+        dcur = np.array(calcJacVectors(cur, np.array([0,0,0,eps,eps,eps])))
+        #print(dcur)
+        proj_d = Projection_Preprocessing(Ax(dcur))
         
         points=[]
         valid=[]
@@ -267,31 +142,35 @@ def correctRot(cur, vec, points_real, points_new, Ax, real_img, data_real):
         points = np.array(points)
         valid = np.array(valid)
 
-        #print(np.count_nonzero(valid, axis=1))
+        #print(points.shape, np.count_nonzero(valid, axis=1))
+
+        #print([calcObjectiveStdPoints(0, points[i][valid[i]], data_real[0][valid[i]] ) for i in range(len(points))])
+        #print([calcObjectiveStdPoints(1, points[i][valid[i]], data_real[0][valid[i]] ) for i in range(len(points))])
+        #print([calcObjectiveStdPoints(2, points[i][valid[i]], data_real[0][valid[i]] ) for i in range(len(points))])
 
         if np.count_nonzero(valid[0])!=0 and np.count_nonzero(valid[1])!=0:
-            if len(points_new.shape)==1:
-                diff1 = np.std(np.abs(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])])))
-                diff2 = np.std(np.abs(np.array([n.pt[0]-r.pt[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])])))
-            else:
-                diff1 = np.std(np.abs(np.array([n[0]-r[0]  for n,r in zip(points[0][valid[0]],data_real[0][valid[0]])])))
-                diff2 = np.std(np.abs(np.array([n[0]-r[0]  for n,r in zip(points[1][valid[1]],data_real[0][valid[1]])])))
-            jac1 = (-1.5*diff[0]+2.0*diff1-0.5*diff2)
+            diff1 = calcObjectiveStdPoints(0, points[0][valid[0]], data_real[0][valid[0]] )
+            diff2 = calcObjectiveStdPoints(0, points[1][valid[1]], data_real[0][valid[1]] )
+            jac1 = (diff2-2*diff[0]+diff1) / (eps**2)
         else:
             #print("no jac")
             jac1=0
 
         if np.count_nonzero(valid[2])!=0 and np.count_nonzero(valid[3])!=0:
-            if len(points_new.shape)==1:
-                diff1 = np.std(np.abs(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])])))
-                diff2 = np.std(np.abs(np.array([n.pt[1]-r.pt[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])])))
-            else:
-                diff1 = np.std(np.abs(np.array([n[1]-r[1]  for n,r in zip(points[2][valid[2]],data_real[0][valid[2]])])))
-                diff2 = np.std(np.abs(np.array([n[1]-r[1]  for n,r in zip(points[3][valid[3]],data_real[0][valid[3]])])))
-            jac2 = (-1.5*diff[1]+2.0*diff1-0.5*diff2)
+            diff1 = calcObjectiveStdPoints(1, points[2][valid[2]], data_real[0][valid[2]] )
+            diff2 = calcObjectiveStdPoints(1, points[3][valid[3]], data_real[0][valid[3]] )
+            jac2 = (diff2-2*diff[1]+diff1) / (eps**2)
         else:
             #print("no jac")
             jac2 = 0
+
+        if np.count_nonzero(valid[4])!=0 and np.count_nonzero(valid[5])!=0:
+            diff1 = calcObjectiveStdPoints(2, points[4][valid[4]], data_real[0][valid[4]] )
+            diff2 = calcObjectiveStdPoints(2, points[5][valid[5]], data_real[0][valid[5]] )
+            jac3 = (diff2-2*diff[2]+diff1) / (eps**2)
+        else:
+            #print("no jac")
+            jac3 = 0
 
         if jac1 != 0 and np.abs(diff[0]/jac1) < 1:
             #print(diff[0], jac1, diff[0]/jac1)
@@ -299,7 +178,14 @@ def correctRot(cur, vec, points_real, points_new, Ax, real_img, data_real):
         if jac2 != 0 and np.abs(diff[1]/jac2) < 1:
             #print(diff[1], jac2, diff[1]/jac2)
             cur[4] += diff[1]/jac2
-
+        if jac3 != 0 and np.abs(diff[2]/jac3) < 1:
+            #print(diff[1], jac2, diff[1]/jac2)
+            cur[5] += diff[2]/jac3
+        
+        #print(diff[0]/jac1,diff[1]/jac2,diff[2]/jac3)
+        #print(diff)
+        #print(jac1, jac2, jac3)
+        #print(old_cur-cur)
     return cur
 
 opt_opts = {"L-BFGS-B": {'gtol':1e-16,'ftol':1e-16,'maxiter':10,"eps":0.001,'maxls':50},
@@ -308,13 +194,12 @@ opt_opts = {"L-BFGS-B": {'gtol':1e-16,'ftol':1e-16,'maxiter':10,"eps":0.001,'max
             "trust-krylov":{"gtol":1e-8}
             }
 
-def correctR(cur, vec, Ax, data_real, real_img, eps, feature_params={}, method='L-BFGS-B', α1=1, α2=100):
+def correctR(cur, Ax, data_real, real_img, eps, feature_params={}, method='L-BFGS-B', α1=1, α2=100):
     GIoldold = GI(real_img,real_img)
     def f(x):
         cur_x = cur
         cur_x[3:] = x
-        vecs = np.array([applyChange(vec,cur_x)])
-        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
+        proj_d = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
         try:
             ret = calcObjective(data_real, real_img, proj_d, feature_params, GIoldold=GIoldold)
             return ret
@@ -325,10 +210,9 @@ def correctR(cur, vec, Ax, data_real, real_img, eps, feature_params={}, method='
     def f1(x):
         cur_x = cur
         cur_x[3] = x
-        vecs = np.array([applyChange(vec,cur_x)])
-        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
+        proj_d = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
         try:
-            ret = calcObjectiveStd(data_real, real_img, proj_d, 1, feature_params)
+            ret = calcObjectiveStd(data_real, real_img, proj_d, 0, feature_params)
             ret1 = calcObjective(data_real, real_img, proj_d, feature_params, GIoldold=GIoldold)
             #print(1, ret, ret1)
             return α1*ret + α2*ret1
@@ -339,8 +223,20 @@ def correctR(cur, vec, Ax, data_real, real_img, eps, feature_params={}, method='
     def f2(x):
         cur_x = cur
         cur_x[4] = x
-        vecs = np.array([applyChange(vec,cur_x)])
-        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
+        proj_d = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
+        try:
+            ret = calcObjectiveStd(data_real, real_img, proj_d, 1, feature_params)
+            ret1 = calcObjective(data_real, real_img, proj_d, feature_params, GIoldold=GIoldold)
+            #print(2, ret, ret1)
+            return α1*ret + α2 * ret1
+        except Exception as e:
+            print(e)
+            print(x)
+            raise e
+    def f3(x):
+        cur_x = cur
+        cur_x[5] = x
+        proj_d = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
         try:
             ret = calcObjectiveStd(data_real, real_img, proj_d, 2, feature_params)
             ret1 = calcObjective(data_real, real_img, proj_d, feature_params, GIoldold=GIoldold)
@@ -350,21 +246,18 @@ def correctR(cur, vec, Ax, data_real, real_img, eps, feature_params={}, method='
             print(e)
             print(x)
             raise e
-
     def gradf(x):
         cur_x = cur
         cur_x[3:] = x
-        vecs = np.array([applyChange(vec,cur_x)])
-        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
-        ret = estimateJac(vec, cur_x, np.array([eps,eps]), Ax, data_real, real_img, proj_d, feature_params)
+        proj_d = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
+        ret = estimateJac(cur_x, np.array([0,0,0,eps,eps,eps]), Ax, data_real, real_img, proj_d, feature_params)
         return ret
     
     def hessf(x):
         cur_x = cur
         cur_x[3:] = x
-        vecs = np.array([applyChange(vec,cur_x)])
-        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
-        ret = estimateHessian(vec, cur_x, np.array([eps,eps]), Ax, data_real, real_img, proj_d, feature_params)[1]
+        proj_d = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
+        ret = estimateHessian(cur_x, np.array([0,0,0,eps,eps,eps]), Ax, data_real, real_img, proj_d, feature_params)[1]
         return ret
 
     #perftime = time.perf_counter()
@@ -391,6 +284,11 @@ def correctR(cur, vec, Ax, data_real, real_img, eps, feature_params={}, method='
     options['eps'] = eps
     ret = scipy.optimize.minimize(f2, np.array([0]), method=method, options=options)
     cur[4] += ret.x
+    method='L-BFGS-B'
+    options = dict(opt_opts[method])
+    options['eps'] = eps
+    ret = scipy.optimize.minimize(f3, np.array([0]), method=method, options=options)
+    cur[5] += ret.x
     #print(method, "none", eps, ret)
     #print(time.perf_counter()-perftime)
     
@@ -417,52 +315,43 @@ def correctR(cur, vec, Ax, data_real, real_img, eps, feature_params={}, method='
     #print(time.perf_counter()-perftime)
     return cur
 
-def updatePoints(cur, vec, Ax, real_img, data_real, feature_params):
-    vec = applyChange(np.array(vec), cur)
-    proj_d = Projection_Preprocessing(Ax(np.array([vec])))[:,0]
-    return proj_d, vec
-
-def lessRoughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, data_real=None):
+def lessRoughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None):
     if data_real is None:
         data_real = findInitialFeatures(real_img, feature_params)
     #points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
-    corr = np.array(cur)
     for i2 in range(1):
         if len(data_real[0].shape)==1:
             points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
         else:
             points, valid = trackFeatures(real_img, proj_img, data_real, feature_params)
-        cur = correctXY(np.zeros_like(corr), vec, data_real[0][valid], points[valid])
-        cur = correctZ(cur, vec, data_real[0][valid], points[valid])
-        proj_img, vec = updatePoints(cur, vec, Ax, real_img, data_real, feature_params)
-        corr += cur
+        cur = correctXY(cur, Ax.create_vecs(np.array([cur]))[0], data_real[0][valid], points[valid])
+        cur = correctZ(cur, Ax.create_vecs(np.array([cur]))[0], data_real[0][valid], points[valid])
+        proj_img = Projection_Preprocessing(Ax(np.array([cur])))[:,0]
     for i1 in range(2):
         #perftime = time.perf_counter()
         if len(data_real[0].shape)==1:
             points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
         else:
             points, valid = trackFeatures(real_img, proj_img, data_real, feature_params)
-        cur = correctR(np.zeros_like(corr), vec, Ax, data_real, real_img, 0.005)
+        cur = correctR(cur, Ax, data_real, real_img, 0.1)
         #print(time.perf_counter()-perftime, 10**(-i1))
         #cur = correctXY(cur, vec, data_real[0][valid], points[valid])
         #cur = correctZ(cur, vec, data_real[0][valid], points[valid])
-        proj_img, vec = updatePoints(cur, vec, Ax, real_img, data_real, feature_params)
+        proj_img = Projection_Preprocessing(Ax(np.array([cur])))[:,0]
         #print(np.count_nonzero(valid), end=',', flush=True)
-        corr += cur
-    print(corr, flush=True)
+    print(cur, flush=True)
     #exit(0)
     for i1 in range(1):
         if len(data_real[0].shape)==1:
             points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
         else:
             points, valid = trackFeatures(real_img, proj_img, data_real, feature_params)
-        cur = correctXY(np.zeros_like(corr), vec, data_real[0][valid], points[valid])
-        cur = correctZ(cur, vec, data_real[0][valid], points[valid])
-        proj_img, vec = updatePoints(cur, vec, Ax, real_img, data_real, feature_params)
-        corr += cur
-    return corr
+        cur = correctXY(cur, Ax.create_vecs(np.array([cur]))[0], data_real[0][valid], points[valid])
+        cur = correctZ(cur, Ax.create_vecs(np.array([cur]))[0], data_real[0][valid], points[valid])
+        proj_img = Projection_Preprocessing(Ax(np.array([cur])))[:,0]
+    return cur
 
-def roughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, data_real=None):
+def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None):
     #print("rough")
     if data_real is None:
         data_real = findInitialFeatures(real_img, feature_params)
@@ -476,10 +365,11 @@ def roughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, data_rea
     #plt.close()
 
     #print(len(data_real[0]), np.count_nonzero(valid))
-    cur = correctXY(cur, vec, data_real[0][valid], points[valid])
-    cur = correctZ(cur, vec, data_real[0][valid], points[valid])
+    cur = correctXY(cur, Ax.create_vecs(np.array([cur]))[0], data_real[0][valid], points[valid])
+    cur = correctZ(cur, Ax.create_vecs(np.array([cur]))[0], data_real[0][valid], points[valid])
     
-    cur = correctRot(cur, vec, data_real[0][valid], points[valid], Ax, real_img, data_real)
+    cur = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real)
+    cur = correctRot(cur, data_real[0][valid], points[valid], Ax, real_img, data_real)
     #print(scale)
     
     #minX, minY, maxX, maxY = getBoundingBox(data_real[0][valid])
@@ -492,9 +382,7 @@ def roughRegistration(cur, real_img, proj_img, feature_params, vec, Ax, data_rea
     #print(scale, dX/(maxX-minX), dY/(maxY-minY), (maxX-minX)/dX, (maxY-minY)/dY, np.linalg.norm(vec[0:3]))
     #cur[2] = (1-np.min(scale)) * np.linalg.norm(vec[0:3])
     #print(cur)
-    return cur, 1
-
-
+    return cur
 
 def getBoundingBox(points):
     minX = points[0].pt[0]
@@ -512,109 +400,37 @@ def getBoundingBox(points):
             maxY > point.pt[1]
     return minX, minY, maxX, maxY
 
-def applyChange(vec, corr):
-    vec_new = np.array(vec)
-    Rθ = utils.rotMat(corr[3], vec_new[6:9])
-    vec_new[0:3] = Rθ.dot(vec_new[0:3])
-    vec_new[3:6] = Rθ.dot(vec_new[3:6])
-    vec_new[9:12] = Rθ.dot(vec_new[9:12])
-    # rot ϕ
-    Rϕ = utils.rotMat(corr[4], vec_new[9:12])
-    vec_new[0:3] = Rϕ.dot(vec_new[0:3])
-    vec_new[3:6] = Rϕ.dot(vec_new[3:6])
-    vec_new[6:9] = Rϕ.dot(vec_new[6:9])
-    # trans x
-    #xdir = vec_new[6:9]/np.linalg.norm(vec_new[6:9])
-    #vec_new[0:3] += corr[0]*xdir
-    #vec_new[3:6] += corr[0]*xdir
-    # trans y
-    #ydir = vec_new[9:12]/np.linalg.norm(vec_new[9:12])
-    #vec_new[0:3] += corr[1]*ydir
-    #vec_new[3:6] += corr[1]*ydir
-    # trans z
-    #zdir = vec_new[0:3]/np.linalg.norm(vec_new[0:3])
-    #vec_new[0:3] += corr[2]*zdir
-    #vec_new[3:6] += corr[2]*zdir
-    # trans x
-    vec_new[0] += corr[0]
-    vec_new[3] += corr[0]
-    # trans y
-    vec_new[1] += corr[1]
-    vec_new[4] += corr[1]
-    # trans z
-    vec_new[2] += corr[2]
-    vec_new[5] += corr[2]
-    return vec_new
+def calcJacVectors(cur, eps):
+    curs = []
+    for i in range(len(eps)):
+        if eps[i] != 0:
+            cur_p = np.array(cur)
+            cur_m = np.array(cur)
+            cur_p[i] += eps[i]
+            cur_m[i] -= eps[i]
+            curs.append(cur_p)
+            curs.append(cur_m)
+    return curs
 
-def calcJacVectors(vec, eps):
-    vecs = []
-    for i, ep in enumerate(eps):
-        vec_p = np.array(vec)
-        vec_m = np.array(vec)
-        if i==-1:
-            vec_p[0] += ep
-            vec_p[3] += ep
-            vec_m[0] -= ep
-            vec_m[3] -= ep
-        elif i==-1:
-            # trans y
-            vec_p[1] += ep
-            vec_p[4] += ep
-            vec_m[1] -= ep
-            vec_m[4] -= ep
-        elif i==-1:
-            # trans z
-            vec_p[2] += ep
-            vec_p[5] += ep
-            vec_m[2] -= ep
-            vec_m[5] -= ep
-        elif i==0:
-            # rot θ
-            Rθ = utils.rotMat(ep, vec_p[6:9])
-            vec_p[0:3] = Rθ.dot(vec_p[0:3])
-            vec_p[3:6] = Rθ.dot(vec_p[3:6])
-            #vec_p[6:9] = Rθ.dot(vec_p[6:9])
-            vec_p[9:12] = Rθ.dot(vec_p[9:12])
-            Rθ = utils.rotMat(2*ep, vec_m[6:9])
-            vec_m[0:3] = Rθ.dot(vec_m[0:3])
-            vec_m[3:6] = Rθ.dot(vec_m[3:6])
-            #vec_m[6:9] = Rθ.dot(vec_m[6:9])
-            vec_m[9:12] = Rθ.dot(vec_m[9:12])
-        elif i==1:
-            # rot ϕ
-            Rϕ = utils.rotMat(ep, vec_p[9:12])
-            vec_p[0:3] = Rϕ.dot(vec_p[0:3])
-            vec_p[3:6] = Rϕ.dot(vec_p[3:6])
-            vec_p[6:9] = Rϕ.dot(vec_p[6:9])
-            #vec_p[9:12] = Rϕ.dot(vec_p[9:12])
-            Rϕ = utils.rotMat(2*ep, vec_m[9:12])
-            vec_m[0:3] = Rϕ.dot(vec_m[0:3])
-            vec_m[3:6] = Rϕ.dot(vec_m[3:6])
-            vec_m[6:9] = Rϕ.dot(vec_m[6:9])
-            #vec_p[9:12] = Rϕ.dot(vec_p[9:12])
-        vecs.append(vec_p)
-        vecs.append(vec_m)
-    return vecs
+def calcHessianVectors(cur, eps):
+    curs = calcJacVectors(cur, eps)
+    new_curs = calcJacVectors(cur, eps)
+    for p_cur in curs:
+        new_curs += calcJacVectors(p_cur, eps)
+    new_curs = np.array(new_curs)
+    return new_curs
 
-def calcHessianVectors(vec, eps):
-    vecs = calcJacVectors(vec, eps)
-    new_vecs = calcJacVectors(vec, eps)
-    for p_vec in vecs:
-        new_vecs += calcJacVectors(p_vec, eps)
-    new_vecs = np.array(new_vecs)
-    return new_vecs
+def estimateHessian(cur, eps, Ax, data_real, real_img, ini_DRR, feature_params):
+    #perftime_jac = time.perf_counter()
+    dcur = calcHessianVectors(cur, eps)
 
-def estimateHessian(vec, cur, eps, Ax, data_real, real_img, ini_DRR, feature_params):
-    perftime_jac = time.perf_counter()
-    dvec = calcHessianVectors(applyChange(vec, cur), eps)
-
-    cvec = np.array([applyChange(vec, cur)]*len(dvec) )
-    proj_d = Ax(cvec)
-    proj_d = Projection_Preprocessing(proj_d)
-    sitk.WriteImage(sitk.GetImageFromArray(proj_d), ".\\recos\\undiff_sino.nrrd")
+    #ccur = np.array([cur]*len(dcur))
+    #proj_d = Ax(ccur)
+    #proj_d = Projection_Preprocessing(proj_d)
+    #sitk.WriteImage(sitk.GetImageFromArray(proj_d), ".\\recos\\undiff_sino.nrrd")
     
-    proj_d = Projection_Preprocessing(Ax(dvec))
-    sitk.WriteImage(sitk.GetImageFromArray(proj_d), ".\\recos\\diff_sino.nrrd")
+    proj_d = Projection_Preprocessing(Ax(dcur))
+    #sitk.WriteImage(sitk.GetImageFromArray(proj_d), ".\\recos\\diff_sino.nrrd")
 
     jac = np.zeros(eps.shape[0])
     hess = np.zeros((eps.shape[0], eps.shape[0]))
@@ -646,11 +462,11 @@ def estimateHessian(vec, cur, eps, Ax, data_real, real_img, ini_DRR, feature_par
     #print("jac+hess calculation", time.perf_counter()-perftime_jac)
     return jac, hess
 
-def estimateJac(vec, cur, eps, Ax, data_real, real_img, ini_DRR, feature_params):
+def estimateJac(cur, eps, Ax, data_real, real_img, ini_DRR, feature_params):
     #perftime_jac = time.perf_counter()
-    dvec = np.array(calcJacVectors(applyChange(vec,cur), eps))
+    dcur = np.array(calcJacVectors(cur, eps))
 
-    proj_d = Projection_Preprocessing(Ax(dvec))
+    proj_d = Projection_Preprocessing(Ax(dcur))
     #sitk.WriteImage(sitk.GetImageFromArray(proj_d), ".\\recos\\diff_sino.nrrd")
     jac = np.zeros(eps.shape[0])
     f0 = calcObjective(data_real, real_img, ini_DRR, feature_params)
@@ -660,81 +476,6 @@ def estimateJac(vec, cur, eps, Ax, data_real, real_img, ini_DRR, feature_params)
         jac[proj_index] = (-1.5*f0+2*f1-0.5*f2) / eps[proj_index]
     #print("jac calculation", time.perf_counter()-perftime_jac)
     return jac
-
-def calcStepSize(vec, d, cur, eps, Ax, data_real, real_img, ini_DRR, feature_params):
-    perftime = time.perf_counter()
-    c1 = 1e-4
-    c2 = 0.9
-    α = 0
-    t = 1
-    β = np.inf
-
-    def f(x):
-        vecs = np.array([applyChange(vec,x)])
-        proj_d = Projection_Preprocessing(Ax(vecs))
-        ret = calcObjective(data_real, real_img, proj_d[:,0], feature_params)
-        return ret
-
-    def ḟ(x):
-        vecs = np.array([applyChange(vec,x), applyChange(applyChange(vec,x), d)])
-        proj_d = Projection_Preprocessing(Ax(vecs))
-        f0 = calcObjective(data_real, real_img, proj_d[:,0], feature_params)
-        f1 = calcObjective(data_real, real_img, proj_d[:,1], feature_params)
-        ret = (f1-f0) / np.linalg.norm(d)
-        return ret
-    
-    def gradf(x):
-        vecs = np.array([applyChange(vec,x)])
-        proj_d = Projection_Preprocessing(Ax(vecs))[:,0]
-        ret = estimateJac(vec, x, eps, Ax, data_real, real_img, proj_d, feature_params)
-        return ret
-
-    #return scipy.optimize.line_search(f, gradf, cur, d)[0]
-    ḟx = ḟ(cur)
-    fx = f(cur) 
-
-    if True:
-        α = 0.1
-        pre_fx = f(cur+α*d)
-        for i in range(1000):
-            cur_fx = f(cur+1.5*α*d)
-            if cur_fx < pre_fx:
-                pre_fx = cur_fx
-                α = α * 1.5
-            else:
-                return α
-        return α
-    if False:
-        xa, xb, xc, fa, fb, fc, funcalls = scipy.optimize.bracket(f, cur, cur+0.1*d)
-        if fa<fb:
-            if fa<fc:
-                return xa
-            else:
-                return xc
-        else:
-            if fb<fc:
-                return xb
-            else:
-                return xc
-            
-    while(1):
-        x_td = cur+t*d
-        #print(α, t, f(x_td) > fx + c1*t*ḟx, ḟ(x_td) < c2*ḟx)
-        if f(x_td) > fx + c1*t*ḟx:
-            β = t
-            t = 0.5*(α+β)
-        elif ḟ(x_td) < c2*ḟx:
-            α = t
-            if β == np.inf:
-                t = 2*α
-            else:
-                t = 0.5*(α+β)
-        else:
-            if α==0:
-                print("line search failed")
-                return 0.3
-            print("line search", time.perf_counter()-perftime, α)
-            return α
 
 def GI(old_img, new_img):
     p1 = np.array([(old_img[1:,:-1]-old_img[:-1,:-1]).flatten(),(old_img[:-1,1:]-old_img[:-1,:-1]).flatten()]).T
@@ -773,16 +514,29 @@ def calcObjectiveStd(data_old, old_img, new_img, comp, feature_params):
     if len(good_new) <5:
         return 1000000
 
-    if comp==1:
+    return calcObjectiveStdPoints(comp, good_new, good_old)
+
+def calcObjectiveStdPoints(comp, good_new, good_old):
+    if comp==0:
         if len(good_new.shape)==1:
-            f = np.var( np.array( [n.pt[0]-o.pt[0] for n,o in zip(good_new,good_old)] ) )
+            f = np.median( np.array( [n.pt[0]-o.pt[0] for n,o in zip(good_new,good_old)] ) )
         else:
-            f = np.var( good_new[:,0]-good_old[:,0] )
+            f = np.median( good_new[:,0]-good_old[:,0] )
+    elif comp==1:
+        if len(good_new.shape)==1:
+            f = np.median( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
+        else:
+            f = np.median( good_new[:,1]-good_old[:,1] )
     elif comp==2:
         if len(good_new.shape)==1:
-            f = np.var( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
+            #f = np.var( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
+            ϕ_new = np.array([np.arctan2(p.pt[1], p.pt[0]) for p in good_new])
+            ϕ_old = np.array([np.arctan2(p.pt[1], p.pt[0]) for p in good_old])
         else:
-            f = np.var( good_new[:,1]-good_old[:,1] )
+            #f = np.var( good_new[:,1]-good_old[:,1] )
+            ϕ_new = np.arctan2(good_new[:,1], good_new[:,0])
+            ϕ_old = np.arctan2(good_old[:,1], good_old[:,0])
+        f = np.median(ϕ_new*180/np.pi-ϕ_old*180/np.pi)
     #print(comp, f, len(good_new), int(100*np.count_nonzero(valid)/len(valid)))
     return f
 
