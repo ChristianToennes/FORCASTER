@@ -93,6 +93,61 @@ def Ax_vecs_astra(out_shape, detector_shape, x):
     run_Ax.free = free
     return run_Ax
 
+def Ax_param_asta(out_shape, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing, x):
+    vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
+    vol_id = astra.data3d.create('-vol', vol_geom, x)
+    iterations = 1
+    freed = False
+    def free():
+        nonlocal freed
+        astra.data3d.delete(vol_id)
+        freed = True
+    def create_coords(params):
+        if len(params.shape) == 1:
+            params = np.array([params])
+        coord_systems = np.zeros((len(params), 3, 4), dtype=float)
+        for i, (x,y,z,α,β,γ) in enumerate(params):
+            α, β, γ = α*np.pi/180, β*np.pi/180, γ*np.pi/180
+            cα, cβ, cγ = np.cos(α), np.cos(β), np.cos(γ)
+            sα, sβ, sγ = np.sin(α), np.sin(β), np.sin(γ)
+            R = np.array([
+                [cα*cβ, cα*sβ*sγ-sα*cγ, cα*sβ*cγ+sα*sγ],
+                [sα*cβ, sα*sβ*sγ+cα*cγ, sα*sβ*cγ-cα*sγ],
+                [-sβ, cβ*sγ, cβ*cγ]
+            ])
+            coord_systems[i,:,:3] = R
+            coord_systems[i,0,3] = x
+            coord_systems[i,1,3] = y
+            coord_systems[i,2,3] = z
+        return coord_systems
+    def create_vecs(params):
+        return coord_systems2vecs(create_coords(params), detector_spacing, dist_source_origin, dist_origin_detector, image_spacing)
+    def create_geo(params):
+        return create_astra_geo_coords(create_coords(params), detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing)
+    def run_Ax(params, free_memory=False):
+        nonlocal freed
+        if freed:
+            print("data structures and algorithm already deleted")
+            return 0
+        proj_geom = create_geo(params)
+        proj_id = astra.data3d.create('-proj3d', proj_geom)
+        cfg = astra.astra_dict('FP3D_CUDA')
+        cfg['ProjectionDataId'] = proj_id
+        cfg['VolumeDataId'] = vol_id
+        alg_id = astra.algorithm.create(cfg)
+        astra.algorithm.run(alg_id, iterations)
+        result = astra.data3d.get(proj_id)
+        astra.data3d.delete(proj_id)
+        astra.algorithm.delete(alg_id)
+        if free_memory:
+            free()
+        return result
+    run_Ax.free = free
+    run_Ax.create_coords = create_coords
+    run_Ax.create_vecs = create_vecs
+    run_Ax.create_geo = create_geo
+    return run_Ax
+
 def Ax2_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
     vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
@@ -416,12 +471,12 @@ def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin
 
     #print(np.linalg.norm([vX, vY, vZ]), np.linalg.norm([uX, uY, uZ]), np.linalg.norm([dX, dY, dZ]), np.linalg.norm([srcX, srcY, srcZ]), dist_source_origin, dist_origin_detector)
 
-    filt = np.ones(vectors.shape[0], dtype=bool)
     # Parameters: #rows, #columns, vectors
     proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors)
-    return proj_geom, filt
+    return proj_geom
 
-def rotMat(θ, u):
+def rotMat(θ, u_not_normed):
+    u = u_not_normed / np.linalg.norm(u_not_normed)
     cT = np.cos(θ/180*np.pi)
     sT = np.sin(θ/180*np.pi)
     return np.array([
@@ -430,19 +485,18 @@ def rotMat(θ, u):
                 [u[2]*u[0]*(1-cT)-u[1]*sT, u[2]*u[1]*(1-cT)+u[0]*sT, cT+u[2]*u[2]*(1-cT)]
             ])
 
-def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing, flips=False):
+def coord_systems2vecs(coord_systems, detector_spacing, dist_source_origin, dist_origin_detector, image_spacing):
     vectors = np.zeros((len(coord_systems), 12))
     prims = []
     secs = []
+    
+    #shift = np.array([0,0,0.63])
 
-    filt = np.ones(vectors.shape[0], dtype=bool)
-    shift = np.array([0,0,0.63])
     for i in range(len(coord_systems)):
         x_axis = np.array(coord_systems[i, :,0])
         y_axis = np.array(coord_systems[i, :,1])
         z_axis = np.array(coord_systems[i, :,2])
         iso = (coord_systems[i, :,3]-coord_systems[0,:,3])
-        iso += np.array([0,0,5])
       
         x_axis /= np.linalg.norm(x_axis)
         y_axis /= np.linalg.norm(y_axis)
@@ -456,9 +510,9 @@ def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist
                 z_axis = rotMat(180, y_axis).dot(z_axis)
             else:
                 z_axis = rotMat(180, y_axis).dot(z_axis)
-            iso -= shift
-        else:
-            iso += shift
+            #iso -= shift
+        #else:
+        #    iso += shift
             
         x_axis *= detector_spacing[0]*image_spacing
         vX, vY, vZ = x_axis
@@ -468,17 +522,22 @@ def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist
         prims.append(np.arctan2(z_axis[1], z_axis[2]))
         secs.append(np.arctan2(z_axis[0], z_axis[2]))
 
-        v_detector = z_axis * dist_origin_detector[i]*image_spacing + iso*image_spacing
-        v_source = -z_axis * dist_source_origin[i]*image_spacing + iso*image_spacing
+        v_detector = z_axis * dist_origin_detector*image_spacing + iso*image_spacing
+        v_source = -z_axis * dist_source_origin*image_spacing + iso*image_spacing
 
         srcX, srcY, srcZ = v_source
         dX, dY, dZ = v_detector
 
         vectors[i] = srcX, srcY, srcZ, dX, dY, dZ, uX, uY, uZ, vX, vY, vZ
+        
+    return vectors
 
+def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing, flips=False):
+    vectors = coord_systems2vecs(coord_systems, detector_spacing, dist_source_origin, dist_origin_detector, image_spacing)
+    
     np.savetxt("coords.csv", vectors, delimiter=",")
-    proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors[filt])
-    return proj_geom, (np.array(prims),np.array(secs)), filt
+    proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors)
+    return proj_geom
 
 test_data = "044802004201113212fa0002f96ffbfeff4c04fe06fa00ae0431039600980000000000008000000000ffff0402040002010080008000800080008000800080008000800c000080008000800080008000800080ffffffffff0200800400ffff5aff1000cd0300000101060900000202020276008aff5aff10000000ff0cd3ffee0000800080000000807f0988009d0400800080008011030080add20000f62a32000000000014baffff01000000c40900000600000059d2ffff070000009d2a000008000000eaffffff09000000000000002a000000f8ffffff2b0000002c0000002c000000fdffffff36000000dfffffff370000000be3ffff38000000e1220000390000001419f3ff3a0000001bfcffff3b000000b87d0c00e80300002d0200003e000000000000003f00000000000000d007000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a02c673f43e3a4bad0f2dbbe420991c4662011bc5cf57fbf568c80bc68250fbc15e7dbbe2241933cbf2367bf007b89440000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f0000c07f01fe7f3fce02b73a52a9fb3b778bafc45988b7baedff7f3f7a71063af48554c13ea3fbbb1e4209ba0ffe7f3f5de675443ea3fb3b1e42093a0ffe7fbf778bafc401fe7f3fce02b73a52a9fb3bf48554c15988b73aedff7fbf7a7106ba5de67544c3f5a8be8f4294c27b94b242ec1d04c61f851fc148d1ff45000000000000000000"
 
