@@ -106,14 +106,19 @@ def Ax_param_asta(out_shape, detector_spacing, detector_size, dist_source_origin
         if len(params.shape) == 1:
             params = np.array([params])
         coord_systems = np.zeros((len(params), 3, 4), dtype=float)
-        for i, (x,y,z,α,β,γ) in enumerate(params):
+        for i, (x,y,z,γ,β,α) in enumerate(params):
             α, β, γ = α*np.pi/180, β*np.pi/180, γ*np.pi/180
-            cα, cβ, cγ = np.cos(α), np.cos(β), np.cos(γ)
-            sα, sβ, sγ = np.sin(α), np.sin(β), np.sin(γ)
+            cα, cβ, cγ = np.cos(α), np.cos(-β), np.cos(-γ)
+            sα, sβ, sγ = np.sin(α), np.sin(-β), np.sin(-γ)
+            #R = np.array([
+            #    [cα*cβ, cα*sβ*sγ-sα*cγ, cα*sβ*cγ+sα*sγ],
+            #    [sα*cβ, sα*sβ*sγ+cα*cγ, sα*sβ*cγ-cα*sγ],
+            #    [-sβ, cβ*sγ, cβ*cγ]
+            #])
             R = np.array([
-                [cα*cβ, cα*sβ*sγ-sα*cγ, cα*sβ*cγ+sα*sγ],
-                [sα*cβ, sα*sβ*sγ+cα*cγ, sα*sβ*cγ-cα*sγ],
-                [-sβ, cβ*sγ, cβ*cγ]
+                [cβ, sβ*sγ, cγ*sβ],
+                [sα*sβ, cα*cγ-cβ*sα*sγ, -cα*sγ-cβ*cγ*sα],
+                [-cα*sβ, cγ*sα+cα*cβ*sγ, cα*cβ*cγ-sα*sγ],
             ])
             coord_systems[i,:,:3] = R
             coord_systems[i,0,3] = x

@@ -296,17 +296,17 @@ def read_dicoms(indir, max_ims=np.inf):
 
     return ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods
 
-def reg_rough(ims, params, Ax, feature_params):
+def reg_rough(ims, params, Ax, feature_params, c=0):
     corrs = []
     for i in range(len(ims)):
         print(i, end=",", flush=True)
         cur = params[i]
         real_img = forcast.Projection_Preprocessing(ims[i])
-        for si in range(5):
+        for si in range(1):
             proj_d = forcast.Projection_Preprocessing(Ax(np.array([cur])))[:,0]
             try:
                 old_cur = np.array(cur)
-                cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax)
+                cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax, c=c)
             except Exception as ex:
                 print(ex)
                 raise
@@ -324,6 +324,7 @@ def reg_lessrough(ims, params, Ax, feature_params):
     for i in range(len(ims)):
         print(i, end=",", flush=True)
         cur = params[i]
+        #print(cur)
         real_img = forcast.Projection_Preprocessing(ims[i])
         proj_d = forcast.Projection_Preprocessing(Ax(np.array([cur])))[:,0]
         try:
@@ -338,13 +339,15 @@ def reg_lessrough(ims, params, Ax, feature_params):
     corrs = np.array(corrs)
     global_cor = np.median(corrs, axis=0)
 
+    print(corrs)
+
     for i in range(len(ims)):
         print(i, end=" ", flush=True)
         try:
             cur = corrs[i]
             proj_d = forcast.Projection_Preprocessing(Ax(np.array([cur])))[:,0]
             real_img = forcast.Projection_Preprocessing(ims[i])
-            cur = forcast.lessRoughRegistration(np.array([0,0,0,0,0,0.0]), real_img, proj_d, feature_params, Ax)
+            cur = forcast.lessRoughRegistration(cur, real_img, proj_d, feature_params, Ax)
             corrs[i] = cur
         except Exception as ex:
             print(ex)
@@ -368,8 +371,9 @@ def reg_bfgs(ims, params, Ax, feature_params, eps = [1,1,1,0.1,0.1,0.1]):
     
     return corrs
 
-def reg_and_reco(real_image, ims, params, Ax, name, method=0):
+def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
     print(name)
+    params = np.array(in_params[:])
     if not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
         sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
 
@@ -544,7 +548,78 @@ def reg_and_reco(real_image, ims, params, Ax, name, method=0):
             #rec = sitk.GetImageFromArray(rec)*100
             #sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-lessrough-smooth.nrrd"))
             #del rec
-            
+    elif method==3:
+        perftime = time.perf_counter()
+        
+        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=1)
+
+        vecs = Ax.create_vecs(corrs)
+        write_vectors(name+"-rough-corr", corrs)
+        write_vectors(name+"-rough", vecs)
+
+        perftime = time.perf_counter()-perftime
+        print("rough reg done ", perftime)
+
+        reg_geo = Ax.create_geo(corrs)
+        sino = Ax(corrs)
+        sino = sitk.GetImageFromArray(sino)
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
+        del sino
+        rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+        rec = np.swapaxes(rec, 0, 2)
+        rec = np.swapaxes(rec, 1,2)
+        rec = rec[::-1, ::-1]
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
+        del rec
+    elif method==4:
+        perftime = time.perf_counter()
+        
+        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=2)
+
+        vecs = Ax.create_vecs(corrs)
+        write_vectors(name+"-rough-corr", corrs)
+        write_vectors(name+"-rough", vecs)
+
+        perftime = time.perf_counter()-perftime
+        print("rough reg done ", perftime)
+
+        reg_geo = Ax.create_geo(corrs)
+        sino = Ax(corrs)
+        sino = sitk.GetImageFromArray(sino)
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
+        del sino
+        rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+        rec = np.swapaxes(rec, 0, 2)
+        rec = np.swapaxes(rec, 1,2)
+        rec = rec[::-1, ::-1]
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
+        del rec
+    elif method==5:
+        perftime = time.perf_counter()
+        
+        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=3)
+
+        vecs = Ax.create_vecs(corrs)
+        write_vectors(name+"-rough-corr", corrs)
+        write_vectors(name+"-rough", vecs)
+
+        perftime = time.perf_counter()-perftime
+        print("rough reg done ", perftime)
+
+        reg_geo = Ax.create_geo(corrs)
+        sino = Ax(corrs)
+        sino = sitk.GetImageFromArray(sino)
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
+        del sino
+        rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+        rec = np.swapaxes(rec, 0, 2)
+        rec = np.swapaxes(rec, 1,2)
+        rec = rec[::-1, ::-1]
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
+        del rec
     #Ax.free()
 
     return vecs, corrs

@@ -21,7 +21,7 @@ def bfgs(index, proj, params, Ax, cali, eps):
     data_real = findInitialFeatures(real_img, feature_params)
 
     #eps = np.array([10,10,10,.5,.5])
-    cur = params[index]
+    cur = np.array(params[index])
     
     def f(x):
         proj_d = Projection_Preprocessing(Ax( np.array([x]) ) ) [:,0]
@@ -52,7 +52,8 @@ def bfgs(index, proj, params, Ax, cali, eps):
     proj_d = Projection_Preprocessing(Ax(np.array([ret.x])))[:,0]
     return ret.x, ret.fun, np.sum((real_img-proj_d)**2)
 
-def correctXY(cur, vec, points_real, points_new):
+def correctXY(in_cur, vec, points_real, points_new):
+    cur = np.array(in_cur)
     #print("xy")
     if len(points_new.shape) == 1:
         diff = np.array([[n.pt[0]-r.pt[0], n.pt[1]-r.pt[1]]  for n,r in zip(points_new,points_real)])
@@ -68,7 +69,8 @@ def correctXY(cur, vec, points_real, points_new):
         cur[0:3] += np.median(diff, axis=0)[1] * ydir# / np.linalg.norm(vec[9:12])
     return cur
 
-def correctZ(cur, vec, points_real, points_new):
+def correctZ(in_cur, vec, points_real, points_new):
+    cur = np.array(in_cur)
     #print("z")
     #print(points_new.shape, points_real.shape)
     if len(points_new.shape)==1:
@@ -87,7 +89,8 @@ def correctZ(cur, vec, points_real, points_new):
         cur[0:3] += scale * zdir #* np.linalg.norm(vec[3:6])
     return cur
 
-def correctRot(cur, points_real, points_new, Ax, real_img, data_real, eps=0.01):
+def correctRot(in_cur, points_real, points_new, Ax, real_img, data_real, eps=0.01):
+    cur = np.array(in_cur)
     dcur = calcJacVectors(cur, np.array([0,0,0,eps,eps,eps]))
     dcur.append(cur)
     dcur = np.array(dcur)
@@ -119,15 +122,23 @@ def correctRot(cur, points_real, points_new, Ax, real_img, data_real, eps=0.01):
     return cur
 
 
-def correctRot_(cur, points_real, points_new, Ax, real_img, data_real, eps=0.1):
+def correctRot_(in_cur, points_real, points_new, Ax, real_img, data_real, eps=0.5, comp=0):
     #print(len(points_new), len(points_real))
-    old_cur = np.array(cur)
+    cur = np.array(in_cur)
     if len(points_new) > 1:
         diff = np.array([calcObjectiveStdPoints(i, points_new, points_real) for i in range(3)])
         dcur = np.array(calcJacVectors(cur, np.array([0,0,0,eps,eps,eps])))
         #print(dcur)
         proj_d = Projection_Preprocessing(Ax(dcur))
+        #sitk.WriteImage(sitk.GetImageFromArray(proj_d), "jac.nrrd")
         
+        #plt.figure()
+        #plt.imshow(proj_d[:,2])
+        #plt.figure()
+        #plt.imshow(proj_d[:,3])
+        #plt.show()
+        #plt.close()
+
         points=[]
         valid=[]
         
@@ -149,24 +160,24 @@ def correctRot_(cur, points_real, points_new, Ax, real_img, data_real, eps=0.1):
         #print([calcObjectiveStdPoints(2, points[i][valid[i]], data_real[0][valid[i]] ) for i in range(len(points))])
 
         if np.count_nonzero(valid[0])!=0 and np.count_nonzero(valid[1])!=0:
-            diff1 = calcObjectiveStdPoints(0, points[0][valid[0]], data_real[0][valid[0]] )
-            diff2 = calcObjectiveStdPoints(0, points[1][valid[1]], data_real[0][valid[1]] )
+            diff1 = calcObjectiveStdPoints(comp+0, points[0][valid[0]], data_real[0][valid[0]] )
+            diff2 = calcObjectiveStdPoints(comp+0, points[1][valid[1]], data_real[0][valid[1]] )
             jac1 = (diff2-2*diff[0]+diff1) / (eps**2)
         else:
             #print("no jac")
             jac1=0
 
         if np.count_nonzero(valid[2])!=0 and np.count_nonzero(valid[3])!=0:
-            diff1 = calcObjectiveStdPoints(1, points[2][valid[2]], data_real[0][valid[2]] )
-            diff2 = calcObjectiveStdPoints(1, points[3][valid[3]], data_real[0][valid[3]] )
+            diff1 = calcObjectiveStdPoints(comp+1, points[2][valid[2]], data_real[0][valid[2]] )
+            diff2 = calcObjectiveStdPoints(comp+1, points[3][valid[3]], data_real[0][valid[3]] )
             jac2 = (diff2-2*diff[1]+diff1) / (eps**2)
         else:
             #print("no jac")
             jac2 = 0
 
         if np.count_nonzero(valid[4])!=0 and np.count_nonzero(valid[5])!=0:
-            diff1 = calcObjectiveStdPoints(2, points[4][valid[4]], data_real[0][valid[4]] )
-            diff2 = calcObjectiveStdPoints(2, points[5][valid[5]], data_real[0][valid[5]] )
+            diff1 = calcObjectiveStdPoints(comp+2, points[4][valid[4]], data_real[0][valid[4]] )
+            diff2 = calcObjectiveStdPoints(comp+2, points[5][valid[5]], data_real[0][valid[5]] )
             jac3 = (diff2-2*diff[2]+diff1) / (eps**2)
         else:
             #print("no jac")
@@ -194,8 +205,9 @@ opt_opts = {"L-BFGS-B": {'gtol':1e-16,'ftol':1e-16,'maxiter':10,"eps":0.001,'max
             "trust-krylov":{"gtol":1e-8}
             }
 
-def correctR(cur, Ax, data_real, real_img, eps, feature_params={}, method='L-BFGS-B', α1=1, α2=100):
+def correctR(in_cur, Ax, data_real, real_img, eps, feature_params={}, method='L-BFGS-B', α1=1, α2=100):
     GIoldold = GI(real_img,real_img)
+    cur = np.array(in_cur)
     def f(x):
         cur_x = cur
         cur_x[3:] = x
@@ -339,7 +351,7 @@ def lessRoughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real
         #cur = correctZ(cur, vec, data_real[0][valid], points[valid])
         proj_img = Projection_Preprocessing(Ax(np.array([cur])))[:,0]
         #print(np.count_nonzero(valid), end=',', flush=True)
-    print(cur, flush=True)
+    #print(cur, flush=True)
     #exit(0)
     for i1 in range(1):
         if len(data_real[0].shape)==1:
@@ -351,7 +363,7 @@ def lessRoughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real
         proj_img = Projection_Preprocessing(Ax(np.array([cur])))[:,0]
     return cur
 
-def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None):
+def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None, c=0):
     #print("rough")
     if data_real is None:
         data_real = findInitialFeatures(real_img, feature_params)
@@ -364,13 +376,43 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
     #plt.show()
     #plt.close()
 
+    #cur[5] = correctRot(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.1)[5]
+
+    if c==0:
+        for _ in range(5):
+            cur[3:6] = correctRot(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.1)[3:6]
+        for _ in range(5):
+            cur[3:6] = correctRot(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.05)[3:6]
+        for _ in range(5):
+            cur[3:6] = correctRot(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.01)[3:6]
+    elif c==1:
+        for _ in range(5):
+            cur[3:6] = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.1)[3:6]
+        for _ in range(5):
+            cur[3:6] = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.05)[3:6]
+        for _ in range(5):
+            cur[3:6] = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.01)[3:6]
+    elif c==2:
+        for _ in range(5):
+            cur[3:6] = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.1, comp=3)[3:6]
+        for _ in range(5):
+            cur[3:6] = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.05, comp=3)[3:6]
+        for _ in range(5):
+            cur[3:6] = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.01, comp=3)[3:6]
+    elif c==3:
+        for _ in range(5):
+            cur[3:6] = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.1, comp=6)[3:6]
+        for _ in range(5):
+            cur[3:6] = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.05, comp=6)[3:6]
+        for _ in range(5):
+            cur[3:6] = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.01, comp=6)[3:6]
+    #print(scale)
+
     #print(len(data_real[0]), np.count_nonzero(valid))
     cur = correctXY(cur, Ax.create_vecs(np.array([cur]))[0], data_real[0][valid], points[valid])
     cur = correctZ(cur, Ax.create_vecs(np.array([cur]))[0], data_real[0][valid], points[valid])
-    
-    cur = correctRot_(cur, data_real[0][valid], points[valid], Ax, real_img, data_real)
-    cur = correctRot(cur, data_real[0][valid], points[valid], Ax, real_img, data_real)
-    #print(scale)
+    #if c==0:
+    #    print(cur)
     
     #minX, minY, maxX, maxY = getBoundingBox(data_real[0][valid])
     #print(minX, minY, maxX, maxY)
@@ -519,14 +561,14 @@ def calcObjectiveStd(data_old, old_img, new_img, comp, feature_params):
 def calcObjectiveStdPoints(comp, good_new, good_old):
     if comp==0:
         if len(good_new.shape)==1:
-            f = np.median( np.array( [n.pt[0]-o.pt[0] for n,o in zip(good_new,good_old)] ) )
+            f = np.var( np.array( [n.pt[0]-o.pt[0] for n,o in zip(good_new,good_old)] ) )
         else:
-            f = np.median( good_new[:,0]-good_old[:,0] )
+            f = np.var( good_new[:,0]-good_old[:,0] )
     elif comp==1:
         if len(good_new.shape)==1:
-            f = np.median( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
+            f = np.var( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
         else:
-            f = np.median( good_new[:,1]-good_old[:,1] )
+            f = np.var( good_new[:,1]-good_old[:,1] )
     elif comp==2:
         if len(good_new.shape)==1:
             #f = np.var( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
@@ -536,8 +578,50 @@ def calcObjectiveStdPoints(comp, good_new, good_old):
             #f = np.var( good_new[:,1]-good_old[:,1] )
             ϕ_new = np.arctan2(good_new[:,1], good_new[:,0])
             ϕ_old = np.arctan2(good_old[:,1], good_old[:,0])
+        f = np.var(ϕ_new*180/np.pi-ϕ_old*180/np.pi)
+    elif comp==3:
+        if len(good_new.shape)==1:
+            f = np.median( np.array( [n.pt[0]-o.pt[0] for n,o in zip(good_new,good_old)] ) )
+        else:
+            f = np.median( good_new[:,0]-good_old[:,0] )
+    elif comp==4:
+        if len(good_new.shape)==1:
+            f = np.median( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
+        else:
+            f = np.median( good_new[:,1]-good_old[:,1] )
+    elif comp==5:
+        if len(good_new.shape)==1:
+            #f = np.var( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
+            ϕ_new = np.array([np.arctan2(p.pt[1], p.pt[0]) for p in good_new])
+            ϕ_old = np.array([np.arctan2(p.pt[1], p.pt[0]) for p in good_old])
+        else:
+            #f = np.var( good_new[:,1]-good_old[:,1] )
+            ϕ_new = np.arctan2(good_new[:,1], good_new[:,0])
+            ϕ_old = np.arctan2(good_old[:,1], good_old[:,0])
         f = np.median(ϕ_new*180/np.pi-ϕ_old*180/np.pi)
+    elif comp==6:
+        if len(good_new.shape)==1:
+            f = np.mean( np.array( [n.pt[0]-o.pt[0] for n,o in zip(good_new,good_old)] ) )
+        else:
+            f = np.mean( good_new[:,0]-good_old[:,0] )
+    elif comp==7:
+        if len(good_new.shape)==1:
+            f = np.mean( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
+        else:
+            f = np.mean( good_new[:,1]-good_old[:,1] )
+    elif comp==8:
+        if len(good_new.shape)==1:
+            #f = np.var( np.array( [n.pt[1]-o.pt[1] for n,o in zip(good_new,good_old)] ) )
+            ϕ_new = np.array([np.arctan2(p.pt[1], p.pt[0]) for p in good_new])
+            ϕ_old = np.array([np.arctan2(p.pt[1], p.pt[0]) for p in good_old])
+        else:
+            #f = np.var( good_new[:,1]-good_old[:,1] )
+            ϕ_new = np.arctan2(good_new[:,1], good_new[:,0])
+            ϕ_old = np.arctan2(good_old[:,1], good_old[:,0])
+        f = np.mean(ϕ_new*180/np.pi-ϕ_old*180/np.pi)
     #print(comp, f, len(good_new), int(100*np.count_nonzero(valid)/len(valid)))
+    else:
+        f = 0
     return f
 
 def calcObjectiveDist(data_old, old_img, new_img, feature_params):
@@ -676,8 +760,8 @@ def findInitialFeatures(img, feature_params, use_cpu=True):
     if use_cpu:
         #detector = cv2.xfeatures2d_SURF.create(100, 4, 3, False, True)
         #detector = cv2.SIFT_create()
-        detector = cv2.AKAZE_create(threshold=0.0001, nOctaves=4, nOctaveLayers=4)
-        #detector = cv2.ORB_create(nfeatures=300, scaleFactor=1.4, nlevels=4, edgeThreshold=41, patchSize=41, fastThreshold=5)
+        #detector = cv2.AKAZE_create(threshold=0.0001, nOctaves=4, nOctaveLayers=4)
+        detector = cv2.ORB_create(nfeatures=300, scaleFactor=1.4, nlevels=4, edgeThreshold=41, patchSize=41, fastThreshold=5)
         points, features = detector.detectAndCompute(img, mask)
         points = np.array(points)
         

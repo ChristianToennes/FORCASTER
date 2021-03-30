@@ -28,7 +28,8 @@ cube += [np.zeros_like(phant) for _ in range(10)]
 cube = np.array(cube)
 
 cube = sitk.GetArrayFromImage(sitk.ReadImage("3D_Shepp_Logan.nrrd"))
-origin, size, spacing, image = utils.read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+#origin, size, spacing, image = utils.read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+origin, size, spacing, image = utils.read_cbct_info(r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
 #_origin, _size, _spacing, prior_image = utils.read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
 cube = utils.fromHU(sitk.GetArrayFromImage(image))
 #prior_cube = utils.fromHU(sitk.GetArrayFromImage(prior_image))
@@ -74,7 +75,7 @@ print(cube_astra.shape, cube_tigre.shape)
 
 vol_geom = astra.create_vol_geom(cube_astra.shape[1], cube_astra.shape[2], cube_astra.shape[0])
 
-angles = np.linspace(0, 2*np.pi, 25, False)
+angles = np.linspace(0, 2*np.pi, 10, False)
 angles_zero = np.zeros_like(angles)
 angles_one = np.ones_like(angles)
 
@@ -302,7 +303,7 @@ def cmp_vecs(name, real, new):
         d[d<-np.pi] += 2*np.pi
 
     d *= 180/np.pi
-    print(np.sum(d**2), np.sum(np.abs(d)), np.mean(d), np.std(d))
+    print(name, np.sum(d**2), np.sum(np.abs(d)), np.mean(d), np.std(d))
     #print(d)
 
 def cmp_corrs(name, real, new):
@@ -312,6 +313,8 @@ def cmp_corrs(name, real, new):
     while (d<-180).any():
         d[d<-180] += 360
     print(name, real-new)
+    #print(real)
+    #print(new)
     print(np.sum(d[:,0]**2), np.sum(np.abs(d[:,0])), np.mean(d[:,0]), np.std(d[:,0]))
     print(np.sum(d[:,1]**2), np.sum(np.abs(d[:,1])), np.mean(d[:,1]), np.std(d[:,1]))
     print(np.sum(d[:,2]**2), np.sum(np.abs(d[:,2])), np.mean(d[:,2]), np.std(d[:,2]))
@@ -339,10 +342,25 @@ sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input
 cmp_corrs("err", params_clean, params)
 
 vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 0)
-cmp_vecs("rough", real_geo['Vectors'], vecs)
+cmp_vecs("rough0", real_geo['Vectors'], vecs)
 #cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
-cmp_corrs("rough", params_clean, corrs)
+cmp_corrs("rough0", params_clean, corrs)
 
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 3)
+cmp_vecs("rough1", real_geo['Vectors'], vecs)
+#cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
+cmp_corrs("rough1", params_clean, corrs)
+
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 4)
+cmp_vecs("rough2", real_geo['Vectors'], vecs)
+#cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
+cmp_corrs("rough2", params_clean, corrs)
+
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 5)
+cmp_vecs("rough3", real_geo['Vectors'], vecs)
+#cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
+cmp_corrs("rough3", params_clean, corrs)
+exit(0)
 vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 1)
 cmp_vecs("less", real_geo['Vectors'], vecs)
 #cmp_vecs("less-smooth", real_geo['Vectors'], vecs_smooth)
