@@ -28,8 +28,10 @@ cube += [np.zeros_like(phant) for _ in range(10)]
 cube = np.array(cube)
 
 cube = sitk.GetArrayFromImage(sitk.ReadImage("3D_Shepp_Logan.nrrd"))
-#origin, size, spacing, image = utils.read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
-origin, size, spacing, image = utils.read_cbct_info(r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+if os.path.exists(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"):
+    origin, size, spacing, image = utils.read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
+else:
+    origin, size, spacing, image = utils.read_cbct_info(r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
 #_origin, _size, _spacing, prior_image = utils.read_cbct_info(r"D:\lumbal_spine_13.10.2020\output\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV")
 cube = utils.fromHU(sitk.GetArrayFromImage(image))
 #prior_cube = utils.fromHU(sitk.GetArrayFromImage(prior_image))
