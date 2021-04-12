@@ -471,7 +471,8 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
-    GIoldold = GI(real_img, real_img)
+    if not my:
+        GIoldold = GI(real_img, real_img)
 
     make_εs = lambda size, count: np.array([-size/(2**i) for i in range(count)] + [0] + [size/(2**i) for i in range(count)][::-1])
     εs = make_εs(1,5)
@@ -513,17 +514,17 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True):
             
             #print(points.shape, points_real.shape)
             values = np.array([calcObjectiveStdPoints(axis, points, points_real[v]) for points,v in zip(points,valid)])
-            #values1 = np.array([calcObjective(data_real, real_img, projs[:,i], {}, None) for i in range(projs.shape[1])])
+            #values1 = np.array([calcObjective(data_real, real_img, projs[:,i], {}, GIoldold) for i in range(projs.shape[1])])
             p = np.polyfit(εs, values, 2)
             #p1 = np.polyfit(εs, values1, 2)
         else:
             values = np.array([calcObjective(data_real, real_img, projs[:,i], {}, GIoldold) for i in range(projs.shape[1])])
             p = np.polyfit(εs, values, 2)
         #plt.figure()
-        #plt.plot(np.linspace(-1.2,1.2), np.polyval(p, np.linspace(-1.2,1.2)))
+        #plt.plot(np.linspace(1.2*εs[0],1.2*εs[-1]), np.polyval(p, np.linspace(1.2*εs[0],1.2*εs[-1])))
         #plt.scatter(εs, values)
         #plt.figure()
-        #plt.plot(np.linspace(-1.2,1.2), np.polyval(p1, np.linspace(-1.2,1.2)))
+        #plt.plot(np.linspace(1.2*εs[0],1.2*εs[-1]), np.polyval(p1, np.linspace(1.2*εs[0],1.2*εs[-1])))
         #plt.scatter(εs, values1)
         #plt.show()
         #plt.close()
@@ -931,12 +932,19 @@ def calcObjectiveStdPoints(comp, good_new, good_old):
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
         #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
         f = np.var( fd )
-    elif comp==2:
+    elif comp==12:
         #f = np.var( good_new[:,1]-good_old[:,1] )
         mid_n_x, mid_n_y = np.mean(good_new, axis=0)
         mid_o_x, mid_o_y = np.mean(good_old, axis=0)
         ϕ_new = np.arctan2(good_new[:,1]-mid_n_y, good_new[:,0]-mid_n_x)
         ϕ_old = np.arctan2(good_old[:,1]-mid_o_y, good_old[:,0]-mid_o_x)
+
+        ϕ_new[ϕ_new<-np.pi] += 2*np.pi
+        ϕ_new[ϕ_new>np.pi] -= 2*np.pi
+
+        ϕ_old[ϕ_old<-np.pi] += 2*np.pi
+        ϕ_old[ϕ_old>np.pi] -= 2*np.pi
+
         d = ϕ_new*180/np.pi-ϕ_old*180/np.pi
         d[d<-180] += 360
         d[d>180] -= 360
@@ -945,7 +953,16 @@ def calcObjectiveStdPoints(comp, good_new, good_old):
         mean = np.mean(d)
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
 
+
         f = np.var( fd )
+    elif comp==2:
+        d = np.linalg.norm(good_new-good_old, axis=1)
+
+        std = np.std(d)
+        mean = np.mean(d)
+        fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+
+        f = np.var(d)
     elif comp==3:
         f = np.median( good_new[:,0]-good_old[:,0] )
     elif comp==4:
