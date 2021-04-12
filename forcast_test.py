@@ -328,7 +328,7 @@ def reg_lessrough(ims, params, Ax, feature_params):
         real_img = forcast.Projection_Preprocessing(ims[i])
         proj_d = forcast.Projection_Preprocessing(Ax(np.array([cur])))[:,0]
         try:
-            cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax)
+            cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax, c=-1)
             #print(cur)
         except Exception as ex:
             print(ex)
@@ -336,10 +336,11 @@ def reg_lessrough(ims, params, Ax, feature_params):
         corrs.append(cur)
         
     
-    corrs = np.array(corrs)
+    #corrs = np.array(corrs)
+    corrs = np.array(params)
     global_cor = np.median(corrs, axis=0)
 
-    print(corrs)
+    #print(corrs)
 
     for i in range(len(ims)):
         print(i, end=" ", flush=True)
@@ -357,8 +358,8 @@ def reg_lessrough(ims, params, Ax, feature_params):
 
 def reg_bfgs(ims, params, Ax, feature_params, eps = [1,1,1,0.1,0.1,0.1]):
    
-    corrs = reg_rough(ims, params, Ax, feature_params)
-
+    #corrs = reg_rough(ims, params, Ax, feature_params)
+    corrs = np.array(params)
     for i in range(len(ims)):
         print(i, end=" ", flush=True)
         try:
@@ -393,23 +394,23 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
 
     #print(angles, prims, secs)
 
-    input_sino = np.swapaxes(ims,0,1)
-    input_sino = sitk.GetImageFromArray(input_sino)
-    sitk.WriteImage(input_sino, os.path.join("recos", "forcast_"+name+"_input.nrrd"))
-    del input_sino
+    #input_sino = np.swapaxes(ims,0,1)
+    #input_sino = sitk.GetImageFromArray(input_sino)
+    #sitk.WriteImage(input_sino, os.path.join("recos", "forcast_"+name+"_input.nrrd"))
+    #del input_sino
 
     #Ax = utils.Ax_param_asta(real_image.shape, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing, real_image)
-    sino = Ax(params)
-    sino = sitk.GetImageFromArray(sino)
-    sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino.nrrd"))
-    del sino
-    rec = utils.FDK_astra(real_image.shape, Ax.create_geo(params))(np.swapaxes(ims, 0,1))
-    rec = np.swapaxes(rec, 0, 2)
-    rec = np.swapaxes(rec, 1,2)
-    rec = rec[::-1, ::-1]
-    rec = sitk.GetImageFromArray(rec)*100
-    sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-uncorrected.nrrd"))
-    del rec
+    #sino = Ax(params)
+    #sino = sitk.GetImageFromArray(sino)
+    #sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino.nrrd"))
+    #del sino
+    #rec = utils.FDK_astra(real_image.shape, Ax.create_geo(params))(np.swapaxes(ims, 0,1))
+    #rec = np.swapaxes(rec, 0, 2)
+    #rec = np.swapaxes(rec, 1,2)
+    #rec = rec[::-1, ::-1]
+    #rec = sitk.GetImageFromArray(rec)*100
+    #sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-uncorrected.nrrd"))
+    #del rec
     
     np.seterr(all='raise') 
     if method==0:
@@ -430,9 +431,9 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
         del sino
         rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
-        rec = np.swapaxes(rec, 0, 2)
-        rec = np.swapaxes(rec, 1,2)
-        rec = rec[::-1, ::-1]
+        #rec = np.swapaxes(rec, 0, 2)
+        #rec = np.swapaxes(rec, 1,2)
+        #rec = rec[::-1, ::-1]
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
         del rec
@@ -472,9 +473,9 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-lessrough.nrrd"))
         del sino
         rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
-        rec = np.swapaxes(rec, 0, 2)
-        rec = np.swapaxes(rec, 1,2)
-        rec = rec[::-1, ::-1]
+        #rec = np.swapaxes(rec, 0, 2)
+        #rec = np.swapaxes(rec, 1,2)
+        #rec = rec[::-1, ::-1]
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-lessrough.nrrd"))
         del rec
@@ -505,7 +506,7 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
             #[7,0.2,0.01],
             #[1,1,0.1],
             [1,7,0.1],
-            [1,7,0.5],
+            #[1,7,0.5],
             #[0.2,1,0.08],
             #[5,7.33333333,0.05],
             #[5,17,0.05],
@@ -527,9 +528,9 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
             sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join("recos", "forcast_"+name+"_sino-"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
             del sino
             rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
-            rec = np.swapaxes(rec, 0, 2)
-            rec = np.swapaxes(rec, 1,2)
-            rec = rec[::-1, ::-1]
+            #rec = np.swapaxes(rec, 0, 2)
+            #rec = np.swapaxes(rec, 1,2)
+            #rec = rec[::-1, ::-1]
             sitk.WriteImage(sitk.GetImageFromArray(rec)*100, os.path.join("recos", "forcast_"+name+"_reco-"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
             del rec
                 
@@ -566,9 +567,9 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
         del sino
         rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
-        rec = np.swapaxes(rec, 0, 2)
-        rec = np.swapaxes(rec, 1,2)
-        rec = rec[::-1, ::-1]
+        #rec = np.swapaxes(rec, 0, 2)
+        #rec = np.swapaxes(rec, 1,2)
+        #rec = rec[::-1, ::-1]
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
         del rec
@@ -590,9 +591,9 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
         del sino
         rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
-        rec = np.swapaxes(rec, 0, 2)
-        rec = np.swapaxes(rec, 1,2)
-        rec = rec[::-1, ::-1]
+        #rec = np.swapaxes(rec, 0, 2)
+        #rec = np.swapaxes(rec, 1,2)
+        #rec = rec[::-1, ::-1]
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
         del rec
@@ -614,9 +615,9 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
         del sino
         rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
-        rec = np.swapaxes(rec, 0, 2)
-        rec = np.swapaxes(rec, 1,2)
-        rec = rec[::-1, ::-1]
+        #rec = np.swapaxes(rec, 0, 2)
+        #rec = np.swapaxes(rec, 1,2)
+        #rec = rec[::-1, ::-1]
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
         del rec

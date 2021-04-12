@@ -106,24 +106,29 @@ def Ax_param_asta(out_shape, detector_spacing, detector_size, dist_source_origin
         if len(params.shape) == 1:
             params = np.array([params])
         coord_systems = np.zeros((len(params), 3, 4), dtype=float)
-        for i, (x,y,z,γ,β,α) in enumerate(params):
-            α, β, γ = α*np.pi/180, β*np.pi/180, γ*np.pi/180
-            cα, cβ, cγ = np.cos(α), np.cos(-β), np.cos(-γ)
-            sα, sβ, sγ = np.sin(α), np.sin(-β), np.sin(-γ)
+        for i, (t,u,v) in enumerate(params):
+            #α, β, γ = α*np.pi/180, β*np.pi/180, γ*np.pi/180
+            #cα, cβ, cγ = np.cos(α), np.cos(-β), np.cos(-γ)
+            #sα, sβ, sγ = np.sin(α), np.sin(-β), np.sin(-γ)
             #R = np.array([
             #    [cα*cβ, cα*sβ*sγ-sα*cγ, cα*sβ*cγ+sα*sγ],
             #    [sα*cβ, sα*sβ*sγ+cα*cγ, sα*sβ*cγ-cα*sγ],
             #    [-sβ, cβ*sγ, cβ*cγ]
             #])
-            R = np.array([
-                [cβ, sβ*sγ, cγ*sβ],
-                [sα*sβ, cα*cγ-cβ*sα*sγ, -cα*sγ-cβ*cγ*sα],
-                [-cα*sβ, cγ*sα+cα*cβ*sγ, cα*cβ*cγ-sα*sγ],
-            ])
-            coord_systems[i,:,:3] = R
-            coord_systems[i,0,3] = x
-            coord_systems[i,1,3] = y
-            coord_systems[i,2,3] = z
+            #R = np.array([
+            #    [cβ, sβ*sγ, cγ*sβ],
+            #    [sα*sβ, cα*cγ-cβ*sα*sγ, -cα*sγ-cβ*cγ*sα],
+            #    [-cα*sβ, cγ*sα+cα*cβ*sγ, cα*cβ*cγ-sα*sγ],
+            #])
+            #Rα = rotMat(α, np.array([0,0,1]))
+            #Rβ = rotMat(β, Rα.dot(np.array([1,0,0])))
+            #Rγ = rotMat(γ, Rα.dot(Rβ.dot(np.array([0,1,0]))))
+            #R = Rα.dot(Rβ.dot(Rγ))
+            det = np.cross(u, v)
+            coord_systems[i,:,0] = v
+            coord_systems[i,:,1] = u
+            coord_systems[i,:,2] = det
+            coord_systems[i,:,3] = t
         return coord_systems
     def create_vecs(params):
         return coord_systems2vecs(create_coords(params), detector_spacing, dist_source_origin, dist_origin_detector, image_spacing)
@@ -454,26 +459,48 @@ def create_default_astra_geo():
     astra_zoom = 1
     return create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
 
+def rotation_matrix_from_vectors(vec1, vec2):
+    """ Find the rotation matrix that aligns vec1 to vec2
+    :param vec1: A 3d "source" vector
+    :param vec2: A 3d "destination" vector
+    :return mat: A transform matrix (3x3) which when applied to vec1, aligns it with vec2.
+    """
+    a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
+    v = np.cross(a, b)
+    c = np.dot(a, b)
+    s = np.linalg.norm(v)
+    if s==0:
+        return np.eye(3)
+    kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+    return rotation_matrix
 
 def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing):
     vectors = np.zeros((len(angles), 12))
 
     for i in range(len(angles)):
         α, β, γ = angles[i]
-        cα, cβ, cγ = np.cos(α), np.cos(-β), np.cos(-γ)
-        sα, sβ, sγ = np.sin(α), np.sin(-β), np.sin(-γ)
+        cα, cβ, cγ = np.cos(α), np.cos(-β), np.cos(-0)
+        sα, sβ, sγ = np.sin(α), np.sin(-β), np.sin(-0)
         R = np.array([
             [cα*cβ, cα*sβ*sγ-sα*cγ, cα*sβ*cγ+sα*sγ],
             [sα*cβ, sα*sβ*sγ+cα*cγ, sα*sβ*cγ-cα*sγ],
             [-sβ, cβ*sγ, cβ*cγ]
         ])
+
+        #spher = lambda r: np.array([r*cβ*sα,r*sβ*sα,r*cα])
+        #srcX, srcY, srcZ = spher(-dist_source_origin*image_spacing)
+        #dX, dY, dZ = spher(dist_origin_detector*image_spacing)
+        #R = rotation_matrix_from_vectors(np.array([0,0,1]), np.array([dX,dY,dZ]))
         srcX, srcY, srcZ = R.dot([0,0,-dist_source_origin*image_spacing])
         dX, dY, dZ = R.dot([0,0,dist_origin_detector*image_spacing])
+
+        R = rotMat(γ*180/np.pi, [dX,dY,dZ]).dot(R)
+
         vX, vY, vZ = R.dot([detector_spacing[0]*image_spacing, 0, 0])
         uX, uY, uZ = R.dot([0,detector_spacing[1]*image_spacing, 0])
         
         vectors[i] = srcX, srcY, srcZ, dX, dY, dZ, uX, uY, uZ, vX, vY, vZ
-
     #print(np.linalg.norm([vX, vY, vZ]), np.linalg.norm([uX, uY, uZ]), np.linalg.norm([dX, dY, dZ]), np.linalg.norm([srcX, srcY, srcZ]), dist_source_origin, dist_origin_detector)
 
     # Parameters: #rows, #columns, vectors
@@ -484,11 +511,11 @@ def rotMat(θ, u_not_normed):
     u = u_not_normed / np.linalg.norm(u_not_normed)
     cT = np.cos(θ/180*np.pi)
     sT = np.sin(θ/180*np.pi)
-    return np.array([
+    return np.squeeze(np.array([
                 [cT+u[0]*u[0]*(1-cT), u[0]*u[1]*(1-cT)-u[2]*sT, u[0]*u[2]*(1-cT)+u[1]*sT],
                 [u[1]*u[0]*(1-cT)+u[2]*sT, cT+u[1]*u[1]*(1-cT), u[1]*u[2]*(1-cT)-u[0]*sT],
                 [u[2]*u[0]*(1-cT)-u[1]*sT, u[2]*u[1]*(1-cT)+u[0]*sT, cT+u[2]*u[2]*(1-cT)]
-            ])
+            ]))
 
 def coord_systems2vecs(coord_systems, detector_spacing, dist_source_origin, dist_origin_detector, image_spacing):
     vectors = np.zeros((len(coord_systems), 12))

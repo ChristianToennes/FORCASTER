@@ -37,18 +37,20 @@ cube = utils.fromHU(sitk.GetArrayFromImage(image))
 #prior_cube = utils.fromHU(sitk.GetArrayFromImage(prior_image))
 #cube = scipy.ndimage.zoom(np.swapaxes(sitk.GetArrayFromImage(sitk.ReadImage("StanfordBunny.nrrd")), 0, 1), 0.5, order=2)
 #print(cube.shape)
-cube_tigre = np.array(cube, dtype=np.float32)
+#cube_tigre = np.array(cube, dtype=np.float32)
 sitk.WriteImage(sitk.GetImageFromArray(cube*image_out_mult), os.path.join("recos", "target.nrrd"))
 image_shape = np.array(cube.shape)
 image_spacing = np.array([1,1,1])
 #astra_zoom = np.array([256,256,256])/image_shape
 astra_zoom = 1
-cube_astra = scipy.ndimage.zoom(cube, astra_zoom, order=2)/np.mean(astra_zoom)
+#cube_astra = scipy.ndimage.zoom(cube, astra_zoom, order=2)/np.mean(astra_zoom)
+cube_astra = np.array(cube)
+del cube
 #astra_spacing = np.array(cube_astra.shape) / image_shape
 astra_spacing = image_shape / np.array(cube_astra.shape)
 #cube_astra = cube
-detector_shape = np.array([768, 1024])
-detector_spacing = np.array([0.5,0.5])
+detector_shape = np.array([768, 1024])*1
+detector_spacing = np.array([0.5,0.5])/1
 dist_source_origin = 2000
 dist_detector_origin = 400
 rec_mult = image_spacing[0]*image_spacing[1]*image_spacing[2]
@@ -73,11 +75,11 @@ def WriteTigreImage(im, path):
 
 WriteAstraImage(cube_astra, os.path.join("recos", "astra_target.nrrd"))
 #WriteTigreImage(cube_tigre, os.path.join("recos", "tigre_target.nrrd"))
-print(cube_astra.shape, cube_tigre.shape)
+#print(cube_astra.shape, cube_tigre.shape)
 
 vol_geom = astra.create_vol_geom(cube_astra.shape[1], cube_astra.shape[2], cube_astra.shape[0])
 
-angles = np.linspace(0, 2*np.pi, 10, False)
+angles = np.linspace(0, 2*np.pi, 400, False)
 angles_zero = np.zeros_like(angles)
 angles_one = np.ones_like(angles)
 
@@ -200,33 +202,34 @@ def reco_astra(angles_astra, name):
     proj_data = proj_astra(angles_astra, cube_astra*cube_mult)
     return reco_astra2(proj_data, angles_astra, name)
 
-angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
-name = "circ"
-reco_astra(angles_astra, name)
+if False:
+    angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
+    name = "circ"
+    reco_astra(angles_astra, name)
 
-angles_astra=np.vstack((angles, angles_zero, angles_zero)).T
-name = "rot1"
-reco_astra(angles_astra, name)
+    angles_astra=np.vstack((angles, angles_zero, angles_zero)).T
+    name = "rot1"
+    reco_astra(angles_astra, name)
 
-angles_astra=np.vstack((angles_zero, angles, angles_zero)).T
-name = "rot2"
-reco_astra(angles_astra, name)
+    angles_astra=np.vstack((angles_zero, angles, angles_zero)).T
+    name = "rot2"
+    reco_astra(angles_astra, name)
 
-angles_astra=np.vstack((angles_zero, angles_zero, angles)).T
-name = "rot3"
-reco_astra(angles_astra, name)
+    angles_astra=np.vstack((angles_zero, angles_zero, angles)).T
+    name = "rot3"
+    reco_astra(angles_astra, name)
 
-angles_astra=np.vstack((angles, angles, angles)).T
-name = "rotA"
-reco_astra(angles_astra, name)
+    angles_astra=np.vstack((angles, angles, angles)).T
+    name = "rotA"
+    reco_astra(angles_astra, name)
 
-angles_astra=np.vstack((angles, np.sin(3*angles)*(30/180*np.pi)+angles_one*0.5*np.pi, angles_one*np.pi)).T
-name = "3sin"
-reco_astra(angles_astra, name)
+    angles_astra=np.vstack((angles, np.sin(3*angles)*(30/180*np.pi)+angles_one*0.5*np.pi, angles_one*np.pi)).T
+    name = "3sin"
+    reco_astra(angles_astra, name)
 
-angles_astra=np.vstack((angles, np.sin(2*angles)*(30/180*np.pi)+angles_one*0.5*np.pi, angles_one*np.pi)).T
-name = "2sin"
-reco_astra(angles_astra, name)
+    angles_astra=np.vstack((angles, np.sin(2*angles)*(30/180*np.pi)+angles_one*0.5*np.pi, angles_one*np.pi)).T
+    name = "2sin"
+    reco_astra(angles_astra, name)
 
 
 import mlem
@@ -267,27 +270,29 @@ def reco(algo, name, angles_astra, proj_data, stat_iter):
     return rec[2]
 
 angles_astra_clean = np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
+#angles_astra_clean[:,1:3] += 0.5*np.pi/180
 image_shape = cube_astra.shape
 initial = np.zeros(image_shape)
 astra_iter = 100
 
+random = np.random.default_rng(23)
 proj_data_clean = proj_astra(angles_astra_clean, cube_astra)
 lam = 0.01*np.ones_like(proj_data_clean)*np.max(proj_data_clean, axis=(0,2))[np.newaxis,:,np.newaxis]
-noise = np.array(np.random.poisson(lam=lam, size=proj_data_clean.shape), dtype=float)
-proj_data = proj_data_clean + noise
-g = np.random.uniform(low=1, high=10, size=len(angles_astra_clean))
+noise = np.array(random.poisson(lam=lam, size=proj_data_clean.shape), dtype=float)
+proj_data = proj_data_clean# + noise
+del noise
+g = random.uniform(low=1, high=10, size=len(angles_astra_clean))
 
 sitk.WriteImage(sitk.GetImageFromArray(proj_data_clean), os.path.join("recos", "input_proj_data_clean.nrrd"))
-sitk.WriteImage(sitk.GetImageFromArray(forcast.Projection_Preprocessing(proj_data_clean)), os.path.join("recos", "input_proj_data.nrrd"))
-#angles_astra += np.random.uniform(low=0, high=0.05, size=angles_astra.shape)
+#sitk.WriteImage(sitk.GetImageFromArray(forcast.Projection_Preprocessing(proj_data_clean)), os.path.join("recos", "input_proj_data.nrrd"))
+del proj_data_clean
+#angles_astra += random.uniform(low=0, high=0.05, size=angles_astra.shape)
 real_geo = utils.create_astra_geo(angles_astra_clean, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
 angles_astra = np.array(angles_astra_clean)
-#angles_astra[:,0:3] += np.random.normal(loc=0, scale=1.0*np.pi/180.0, size=angles_astra_clean[:,0:3].shape)
-angles_astra[:,0:3] += 0.5*np.pi/180
+#angles_noise = random.normal(loc=0, scale=1.0*np.pi/180.0, size=angles_astra_clean.shape)
+angles_noise = np.ones_like(angles_astra)*0.5*np.pi/180
 
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-
-np.set_printoptions(precision=3, floatmode="fixed", suppress=True)
+#np.set_printoptions(precision=3, floatmode="fixed", suppress=True)
 
 def vec2angle(vecs):
     sec = np.arctan2(np.sqrt(vecs[:,6]**2+vecs[:,7]**2), vecs[:,8])
@@ -296,83 +301,207 @@ def vec2angle(vecs):
     return np.array([prim, sec, thrd]).T
 
 def cmp_vecs(name, real, new):
-    ra = vec2angle(real)
-    na = vec2angle(new)
-    d = ra-na
-    while (d>np.pi).any():
-        d[d>np.pi] -= 2*np.pi
-    while (d<-np.pi).any():
-        d[d<-np.pi] += 2*np.pi
-
+    print(real.shape, new.shape)
+    d = np.array([(np.arccos(real[6:9].dot(new[6:9]) / (np.linalg.norm(real[6:9])*np.linalg.norm(new[6:9]) )),
+        np.arccos(real[9:12].dot(new[9:12]) / (np.linalg.norm(real[9:12])*np.linalg.norm(new[9:12]))) ) for real,new in zip(real,new)])
     d *= 180/np.pi
     print(name, np.sum(d**2), np.sum(np.abs(d)), np.mean(d), np.std(d))
     #print(d)
 
 def cmp_corrs(name, real, new):
-    d = (real-new)[:,3:6]
+    r_dets = np.array([np.cross(r[2], r[1]) for r in real])
+    n_dets = np.array([np.cross(n[2], n[1]) for n in new])
+    #print(np.linalg.norm(real[:,1], axis=1), np.linalg.norm(real[:,2], axis=1), np.linalg.norm(r_dets, axis=1))
+    #print(np.linalg.norm(new[:,1], axis=1), np.linalg.norm(new[:,2], axis=1), np.linalg.norm(n_dets, axis=1))
+    d = np.array([
+        (
+        np.arccos(real[1].dot(new[1]) / (np.linalg.norm(real[1])*np.linalg.norm(new[1]))),
+        np.arccos(real[2].dot(new[2]) / (np.linalg.norm(real[2])*np.linalg.norm(new[2]))),
+        np.arccos(rdet.dot(ndet) / (np.linalg.norm(rdet)*np.linalg.norm(ndet))),
+        np.arccos(real[1].dot(np.array([0,0,1]))/np.linalg.norm(real[1]))-np.arccos(new[1].dot(np.array([0,0,1]))/np.linalg.norm(new[1])),
+        np.arccos(real[2].dot(np.array([0,0,1]))/np.linalg.norm(real[2]))-np.arccos(new[2].dot(np.array([0,0,1]))/np.linalg.norm(new[2])),
+        np.arccos(rdet.dot(np.array([0,0,1]))/np.linalg.norm(rdet))-np.arccos(ndet.dot(np.array([0,0,1]))/np.linalg.norm(ndet)),
+        np.arccos(real[1].dot(np.array([0,1,0]))/np.linalg.norm(real[1]))-np.arccos(new[1].dot(np.array([0,1,0]))/np.linalg.norm(new[1])),
+        np.arccos(real[2].dot(np.array([0,1,0]))/np.linalg.norm(real[2]))-np.arccos(new[2].dot(np.array([0,1,0]))/np.linalg.norm(new[2])),
+        np.arccos(rdet.dot(np.array([0,1,0]))/np.linalg.norm(rdet))-np.arccos(ndet.dot(np.array([0,1,0]))/np.linalg.norm(ndet)),
+        np.arccos(real[1].dot(np.array([1,0,0]))/np.linalg.norm(real[1]))-np.arccos(new[1].dot(np.array([1,0,0]))/np.linalg.norm(new[1])),
+        np.arccos(real[2].dot(np.array([1,0,0]))/np.linalg.norm(real[2]))-np.arccos(new[2].dot(np.array([1,0,0]))/np.linalg.norm(new[2])),
+        np.arccos(rdet.dot(np.array([1,0,0]))/np.linalg.norm(rdet))-np.arccos(ndet.dot(np.array([1,0,0]))/np.linalg.norm(ndet)),
+        ) for real,new,rdet,ndet in zip(real,new,r_dets,n_dets)])
+    d *= 180/np.pi
     while (d>180).any():
         d[d>180] -= 360
     while (d<-180).any():
         d[d<-180] += 360
-    print(name, real-new)
+    #print(name, real[:,:3]-new[:,:3])
+    #print(name, d)
     #print(real)
     #print(new)
-    print(np.sum(d[:,0]**2), np.sum(np.abs(d[:,0])), np.mean(d[:,0]), np.std(d[:,0]))
-    print(np.sum(d[:,1]**2), np.sum(np.abs(d[:,1])), np.mean(d[:,1]), np.std(d[:,1]))
-    print(np.sum(d[:,2]**2), np.sum(np.abs(d[:,2])), np.mean(d[:,2]), np.std(d[:,2]))
+    [ print(np.sum(d[:,i]**2), np.sum(np.abs(d[:,i])), np.mean(d[:,i]), np.std(d[:,i])) for i in range(d.shape[1]) ]
     print(np.sum(d**2), np.sum(np.abs(d)), np.mean(d), np.std(d))
 
 #print("err", vec2angle(real_geo['Vectors'])-vec2angle(geo['Vectors']))
 #print("err", np.sum( (vec2angle(real_geo['Vectors'])-vec2angle(geo['Vectors']) )**2 ))
-cmp_vecs("err", real_geo['Vectors'], geo['Vectors'])
+#cmp_vecs("err", real_geo['Vectors'], geo['Vectors'])
 
 Ax = utils.Ax_param_asta(cube_astra.shape, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_spacing, cube_astra)
 
-params_clean = np.zeros((len(angles_astra_clean), 6), dtype=float)
-params_clean[:,3:6] = angles_astra_clean*180/np.pi
-params_clean[:,4] *= -1
-params_clean[:,5] *= -1
+params_clean = np.zeros((len(angles_astra_clean), 3, 3), dtype=float)
+params_clean[:, 1] = real_geo['Vectors'][:, 6:9]
+params_clean[:, 2] = real_geo['Vectors'][:, 9:12]
 
-params = np.zeros((len(angles_astra), 6), dtype=float)
-params[:,3:6] = angles_astra*180/np.pi
-params[:,4] *= -1
-params[:,5] *= -1
+angles_astra = np.array(angles_astra_clean)
+#angles_astra[:,2] += 0.5*np.pi/180
+angles_astra[:,2] += angles_noise[:,2]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r2.nrrd"))
+
+angles_astra = np.array(angles_astra_clean)
+#angles_astra[:,1] += 0.5*np.pi/180
+angles_astra[:,1] += angles_noise[:,1]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r1.nrrd"))
+
+angles_astra = np.array(angles_astra_clean)
+#angles_astra[:,0] += 0.5*np.pi/180
+angles_astra[:,0] += angles_noise[:,0]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r0.nrrd"))
+
+angles_astra = np.array(angles_astra_clean)
+#angles_astra[:,0:2] += 0.5*np.pi/180
+angles_astra[:,0:2] += angles_noise[:,0:2]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r01.nrrd"))
+
+angles_astra = np.array(angles_astra_clean)
+#angles_astra[:,0] += 0.5*np.pi/180
+#angles_astra[:,2] += 0.5*np.pi/180
+angles_astra[:,0] += angles_noise[:,0]
+angles_astra[:,2] += angles_noise[:,2]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r02.nrrd"))
+
+angles_astra = np.array(angles_astra_clean)
+#angles_astra[:,1:3] += 0.5*np.pi/180
+angles_astra[:,1:3] += angles_noise[:,1:3]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r12.nrrd"))
+
+angles_astra = np.array(angles_astra_clean)
+#angles_astra[:,0:3] += 0.5*np.pi/180
+angles_astra[:,0:3] += angles_noise[:,0:3]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r012.nrrd"))
+
+angles_astra = np.array(angles_astra_clean)
+angles_astra[:,0:3] += angles_noise[:,0:3]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
 
 sitk.WriteImage(sitk.GetImageFromArray(Ax(params_clean)), os.path.join("recos", "input_params_clean.nrrd"))
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params.nrrd"))
+sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_target.nrrd"))
 
-cmp_corrs("err", params_clean, params)
+rec = utils.FDK_astra(cube_astra.shape, real_geo)(proj_data)
+sitk.WriteImage(sitk.GetImageFromArray(rec*100), os.path.join("recos", "input_reco-correct.nrrd"))
+del rec
+rec = utils.FDK_astra(cube_astra.shape, geo)(proj_data)
+sitk.WriteImage(sitk.GetImageFromArray(rec*100), os.path.join("recos", "input_reco-target.nrrd"))
+del rec
 
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 0)
-cmp_vecs("rough0", real_geo['Vectors'], vecs)
+#angles_astra[:,2] += angles_noise[:,2]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+
+sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_incorrect.nrrd"))
+rec = utils.FDK_astra(cube_astra.shape, geo)(proj_data)
+sitk.WriteImage(sitk.GetImageFromArray(rec*100), os.path.join("recos", "input_reco-incorrect.nrrd"))
+del rec
+
+#cmp_corrs("err", params_clean, params)
+#vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0", 0)
+#cmp_vecs("rough0", real_geo['Vectors'], vecs)
 #cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
-cmp_corrs("rough0", params_clean, corrs)
+#cmp_corrs("rough0", params_clean, corrs)
 
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 3)
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1", 3)
 cmp_vecs("rough1", real_geo['Vectors'], vecs)
 #cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
-cmp_corrs("rough1", params_clean, corrs)
+#cmp_corrs("rough1", params_clean, corrs)
 
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 4)
-cmp_vecs("rough2", real_geo['Vectors'], vecs)
+#vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough2", 4)
+#cmp_vecs("rough2", real_geo['Vectors'], vecs)
 #cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
-cmp_corrs("rough2", params_clean, corrs)
+#cmp_corrs("rough2", params_clean, corrs)
 
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 5)
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough3", 5)
 cmp_vecs("rough3", real_geo['Vectors'], vecs)
 #cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
-cmp_corrs("rough3", params_clean, corrs)
-exit(0)
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 1)
+#cmp_corrs("rough3", params_clean, corrs)
+
+angles_noise = random.normal(loc=0, scale=1.0*np.pi/180.0, size=angles_astra_clean.shape)
+angles_astra = np.array(angles_astra_clean)
+angles_astra[:,0:3] += angles_noise[:,0:3]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1-noise", 3)
+cmp_vecs("rough1-noise", real_geo['Vectors'], vecs)
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough3-noise", 5)
+cmp_vecs("rough3-noise", real_geo['Vectors'], vecs)
+
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "less-noise", 1)
+cmp_vecs("less", real_geo['Vectors'], vecs)
+#cmp_vecs("less-smooth", real_geo['Vectors'], vecs_smooth)
+#cmp_corrs("less", params_clean, corrs)
+
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "bfgs-noise", 2)
+cmp_vecs("bfgs", real_geo['Vectors'], vecs)
+#cmp_vecs("bfgs-smooth", real_geo['Vectors'], vecs_smooth)
+#cmp_corrs("bfgs", params_clean, corrs)
+
+angles_noise = np.ones_like(angles_astra)*0.5*np.pi/180
+angles_astra = np.array(angles_astra_clean)
+angles_astra[:,0:3] += angles_noise[:,0:3]
+geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,1] = geo['Vectors'][:, 6:9]
+params[:,2] = geo['Vectors'][:, 9:12]
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "less", 1)
 cmp_vecs("less", real_geo['Vectors'], vecs)
 #cmp_vecs("less-smooth", real_geo['Vectors'], vecs_smooth)
 cmp_corrs("less", params_clean, corrs)
 
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "cube", 2)
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "bfgs", 2)
 cmp_vecs("bfgs", real_geo['Vectors'], vecs)
 #cmp_vecs("bfgs-smooth", real_geo['Vectors'], vecs_smooth)
 cmp_corrs("bfgs", params_clean, corrs)
-exit(0)
 
 #initial = reco_astra(angles_astra, "initial")
 from PotentialFilter import potential_filter as c_ψ
