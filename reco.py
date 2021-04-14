@@ -6,9 +6,10 @@ import utils
 import SimpleITK as sitk
 import os.path
 import time
-import test
+#import test
 import forcast_test
-import forcast
+#import forcast
+import matplotlib.pyplot as plt
 
 tigre_iter = 0
 astra_iter = 0
@@ -79,7 +80,7 @@ WriteAstraImage(cube_astra, os.path.join("recos", "astra_target.nrrd"))
 
 vol_geom = astra.create_vol_geom(cube_astra.shape[1], cube_astra.shape[2], cube_astra.shape[0])
 
-angles = np.linspace(0, 2*np.pi, 400, False)
+angles = np.linspace(0, 2*np.pi, 100, False)
 angles_zero = np.zeros_like(angles)
 angles_one = np.ones_like(angles)
 
@@ -231,10 +232,6 @@ if False:
     name = "2sin"
     reco_astra(angles_astra, name)
 
-
-import mlem
-import matplotlib.pyplot as plt
-
 def save_plot(data, prefix, title):
     data = np.array(data)
     plt.figure()
@@ -289,8 +286,8 @@ del proj_data_clean
 #angles_astra += random.uniform(low=0, high=0.05, size=angles_astra.shape)
 real_geo = utils.create_astra_geo(angles_astra_clean, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
 angles_astra = np.array(angles_astra_clean)
-#angles_noise = random.normal(loc=0, scale=1.0*np.pi/180.0, size=angles_astra_clean.shape)
-angles_noise = np.ones_like(angles_astra)*0.5*np.pi/180
+angles_noise = random.normal(loc=0, scale=1.0*np.pi/180.0, size=angles_astra_clean.shape)
+#angles_noise = np.ones_like(angles_astra)*0.5*np.pi/180
 
 #np.set_printoptions(precision=3, floatmode="fixed", suppress=True)
 
@@ -301,11 +298,12 @@ def vec2angle(vecs):
     return np.array([prim, sec, thrd]).T
 
 def cmp_vecs(name, real, new):
-    print(real.shape, new.shape)
+    #print(real.shape, new.shape)
     d = np.array([(np.arccos(real[6:9].dot(new[6:9]) / (np.linalg.norm(real[6:9])*np.linalg.norm(new[6:9]) )),
         np.arccos(real[9:12].dot(new[9:12]) / (np.linalg.norm(real[9:12])*np.linalg.norm(new[9:12]))) ) for real,new in zip(real,new)])
     d *= 180/np.pi
-    print(name, np.sum(d**2), np.sum(np.abs(d)), np.mean(d), np.std(d))
+    print(name)
+    print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
     #print(d)
 
 def cmp_corrs(name, real, new):
@@ -437,18 +435,49 @@ geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dis
 params = np.zeros((len(angles_astra), 3, 3), dtype=float)
 params[:,1] = geo['Vectors'][:, 6:9]
 params[:,2] = geo['Vectors'][:, 9:12]
+cmp_vecs("noise", real_geo['Vectors'], geo['Vectors'])
 
 sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_incorrect.nrrd"))
 rec = utils.FDK_astra(cube_astra.shape, geo)(proj_data)
 sitk.WriteImage(sitk.GetImageFromArray(rec*100), os.path.join("recos", "input_reco-incorrect.nrrd"))
 del rec
 
-#cmp_corrs("err", params_clean, params)
-#vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0", 0)
-#cmp_vecs("rough0", real_geo['Vectors'], vecs)
-#cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
-#cmp_corrs("rough0", params_clean, corrs)
+Ax.free()
+Ax = utils.Ax_param_asta(cube_astra.shape, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_spacing, cube_astra, 1)
+import cProfile, io, pstats
+#for grad_sub in [3,4,5,6,7,8,9]:
+#    for grad_max in [1,2,3]:
+#        grad_width = (grad_max, grad_sub)
+for grad_width in [(3,9), (3,8), (2,8), (3,6), (2,5), (1,5), (3,3)]:
+        profiler = cProfile.Profile()
+        profiler.enable()
+        #cmp_corrs("err", params_clean, params)
+        vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 3, grad_width=grad_width, perf=True)
+        profiler.disable()
+        s = io.StringIO()
+        sortby = pstats.SortKey.TIME
+        ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
+        ps.print_stats(5)
+        #print(s.getvalue())
 
+        cmp_vecs("rough0 - my - "+str(grad_width), real_geo['Vectors'], vecs)
+
+        if False:
+            profiler = cProfile.Profile()
+            profiler.enable()
+            #cmp_corrs("err", params_clean, params)
+            vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0-gi-"+str(grad_width[0])+"-"+str(grad_width[1]), 5, grad_width=grad_width, perf=True)
+            profiler.disable()
+            s = io.StringIO()
+            sortby = pstats.SortKey.TIME
+            ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
+            ps.print_stats(5)
+            print(s.getvalue())
+
+            cmp_vecs("rough0 - gi - "+str(grad_width), real_geo['Vectors'], vecs)#cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
+
+#cmp_corrs("rough0", params_clean, corrs)
+exit(0)
 vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1", 3)
 cmp_vecs("rough1", real_geo['Vectors'], vecs)
 #cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)

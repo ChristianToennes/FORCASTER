@@ -93,7 +93,7 @@ def Ax_vecs_astra(out_shape, detector_shape, x):
     run_Ax.free = free
     return run_Ax
 
-def Ax_param_asta(out_shape, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing, x):
+def Ax_param_asta(out_shape, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing, x, super_sampling=1):
     vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     vol_id = astra.data3d.create('-vol', vol_geom, x)
     iterations = 1
@@ -144,6 +144,7 @@ def Ax_param_asta(out_shape, detector_spacing, detector_size, dist_source_origin
         cfg = astra.astra_dict('FP3D_CUDA')
         cfg['ProjectionDataId'] = proj_id
         cfg['VolumeDataId'] = vol_id
+        cfg['Option'] = {'DetectorSuperSampling', super_sampling}
         alg_id = astra.algorithm.create(cfg)
         astra.algorithm.run(alg_id, iterations)
         result = astra.data3d.get(proj_id)
@@ -165,7 +166,7 @@ def Ax2_astra(out_shape, proj_geom):
     cfg = astra.astra_dict('FP3D_CUDA')
     cfg['ProjectionDataId'] = proj_id
     cfg['VolumeDataId'] = vol_id
-    cfg['option'] = {"SquaredWeights": True}
+    cfg['Option'] = {"SquaredWeights": True}
     alg_id = astra.algorithm.create(cfg)
     iterations = 1
     freed = False
@@ -226,7 +227,7 @@ def At2b_astra(out_shape, proj_geom):
     cfg = astra.astra_dict('BP3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['option'] = {"SquaredWeights": True}
+    cfg['Option'] = {"SquaredWeights": True}
     alg_id = astra.algorithm.create(cfg)
     iterations = 1
     freed = False
@@ -257,7 +258,7 @@ def FDK_astra(out_shape, proj_geom):
     cfg = astra.astra_dict('FDK_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['option'] = {"VoxelSuperSampling": 3}
+    cfg['Option'] = {"VoxelSuperSampling": 3}
     alg_id = astra.algorithm.create(cfg)
     iterations = 1
     freed = False
@@ -290,7 +291,7 @@ def CGLS_astra(out_shape, proj_geom):
     cfg = astra.astra_dict('CGLS3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['option'] = {"VoxelSuperSampling": 3}
+    cfg['Option'] = {"VoxelSuperSampling": 3}
     alg_id = astra.algorithm.create(cfg)
     freed = False
     def free():
@@ -324,7 +325,7 @@ def SIRT_astra(out_shape, proj_geom):
     cfg = astra.astra_dict('SIRT3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['option'] = {"VoxelSuperSampling": 3}
+    cfg['Option'] = {"VoxelSuperSampling": 3}
     alg_id = astra.algorithm.create(cfg)
     freed = False
     def free():
