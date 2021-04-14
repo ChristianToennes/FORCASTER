@@ -328,7 +328,7 @@ def reg_lessrough(ims, params, Ax, feature_params):
         real_img = forcast.Projection_Preprocessing(ims[i])
         proj_d = forcast.Projection_Preprocessing(Ax(np.array([cur])))[:,0]
         try:
-            cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax, c=-1)
+            cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax, c=0)
             #print(cur)
         except Exception as ex:
             print(ex)
@@ -505,7 +505,7 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0):
         good_values= [
             #[7,0.2,0.01],
             #[1,1,0.1],
-            [1,7,0.1],
+            [1,7,0.001],
             #[1,7,0.5],
             #[0.2,1,0.08],
             #[5,7.33333333,0.05],

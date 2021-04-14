@@ -46,7 +46,7 @@ def bfgs(index, proj, params, Ax, cali, eps):
     proj_d = Projection_Preprocessing(Ax( np.array([cur]) ) )[:,0]
     #cur = roughRegistration(cur, real_img, proj_d, feature_params, Ax, data_real=data_real)
     #print("rough reg f", f(cur))
-    ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]), args=cur, method='L-BFGS-B', options={'maxiter': 30})
+    ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]), args=cur, method='BFGS', options={'maxiter': 30})
     cur = applyRot(cur, ret.x[3], ret.x[4], ret.x[5])
     cur[0] = ret.x[0:3]
     #print(ret)
