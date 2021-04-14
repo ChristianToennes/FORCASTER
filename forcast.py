@@ -1,13 +1,11 @@
-from math import e
 import numpy as np
-from numpy.lib.function_base import quantile
-import clahe
+#import clahe
 import cv2
 import utils
 import matplotlib.pyplot as plt
-import astra
-import SimpleITK as sitk
-import time
+#import astra
+#import SimpleITK as sitk
+#import time
 import scipy.optimize
 
 def bfgs(index, proj, params, Ax, cali, eps):
@@ -467,7 +465,7 @@ def lessRoughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real
         proj_img = Projection_Preprocessing(Ax(np.array([cur])))[:,0]
     return cur
 
-def binsearch(in_cur, data_real, real_img, Ax, axis, my=True):
+def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5)):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
@@ -475,11 +473,11 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True):
         GIoldold = GI(real_img, real_img)
 
     make_εs = lambda size, count: np.array([-size/(2**i) for i in range(count)] + [0] + [size/(2**i) for i in range(count)][::-1])
-    εs = make_εs(1,5)
+    εs = make_εs(*grad_width)
     change = 0
     selected_εs = []
     cur = np.array(in_cur)
-    failed_count = 1
+    failed_count = grad_width[0]
     osci_count = 0
     min_ε = 0
     while(True):
@@ -509,8 +507,7 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True):
             combined_valid = valid[0]
             for v in valid:
                 combined_valid = np.bitwise_and(combined_valid, v)
-            points = np.array([p[v] for p, v in zip(points, valid)])
-            valid = np.array(valid)
+            points = [p[v] for p, v in zip(points, valid)]
             
             #print(points.shape, points_real.shape)
             values = np.array([calcObjectiveStdPoints(axis, points, points_real[v]) for points,v in zip(points,valid)])
@@ -557,24 +554,24 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True):
                     nearest_index = i
             #print(nearest_index, εs[nearest_index], min_ε)
             if nearest_index > 0 and nearest_index < len(εs)-1:
-                εs = make_εs(εs[nearest_index+1]-εs[nearest_index-1], 5)
+                εs = make_εs(εs[nearest_index+1]-εs[nearest_index-1], grad_width[1])
             else:
                 if nearest_index == 0:
-                    εs = make_εs(2*(εs[nearest_index+1]-εs[nearest_index]), 5)
+                    εs = make_εs(2*(εs[nearest_index+1]-εs[nearest_index]), grad_width[1])
                 else:
-                    εs = make_εs(2*(εs[nearest_index]-εs[nearest_index-1]), 5)
+                    εs = make_εs(2*(εs[nearest_index]-εs[nearest_index-1]), grad_width[1])
         if np.abs(min_ε) <= 0.0001:
             break
         if np.abs(change) > failed_count:
             #print("reset", axis, change)
-            failed_count += 1
+            failed_count += grad_width[0]
             osci_count = 0
-            εs = make_εs(1, 5)
+            εs = make_εs(*grad_width)
             cur = np.array(in_cur)
             #min_ε = i*np.random.random(1)[0]-0.5*i
             min_ε = εs[np.argmin(values)]
             change = min_ε
-        if failed_count > 5:
+        if failed_count > grad_width[0]*5:
             print("failed", end=",")
             break
         selected_εs.append(min_ε)
@@ -591,7 +588,7 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True):
     return cur
 
 
-def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None, c=0):
+def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None, c=0, grad_width=(1,5)):
     #print("rough")
     if data_real is None:
         data_real = findInitialFeatures(real_img, feature_params)
@@ -707,30 +704,27 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
         old_change.append(list(change))
         print(np.sum(old_change, axis=0))
     elif c==0:
-        cur = binsearch(cur, data_real, real_img, Ax, 2)
-        cur = binsearch(cur, data_real, real_img, Ax, 0)
-        cur = binsearch(cur, data_real, real_img, Ax, 1)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
     elif c==1:
-        cur = binsearch(cur, data_real, real_img, Ax, 2)
-        cur = binsearch(cur, data_real, real_img, Ax, 0)
-        cur = binsearch(cur, data_real, real_img, Ax, 1)
-        cur = binsearch(cur, data_real, real_img, Ax, 2)
-        cur = binsearch(cur, data_real, real_img, Ax, 0)
-        cur = binsearch(cur, data_real, real_img, Ax, 1)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
     elif c==2:
-        cur = binsearch(cur, data_real, real_img, Ax, 0)
-        cur = binsearch(cur, data_real, real_img, Ax, 1)
-        cur = binsearch(cur, data_real, real_img, Ax, 2)
-        cur = binsearch(cur, data_real, real_img, Ax, 0)
-        cur = binsearch(cur, data_real, real_img, Ax, 1)
-        cur = binsearch(cur, data_real, real_img, Ax, 2)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
     elif c==3:
-        cur = binsearch(cur, data_real, real_img, Ax, 0, False)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, False)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, False)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, False)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, False)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, False)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, False, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, False, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, False, grad_width=grad_width)
     #print(scale)
 
     #print(len(data_real[0]), np.count_nonzero(valid))
