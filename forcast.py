@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 #import time
 import scipy.optimize
 
-def bfgs(index, proj, params, Ax, cali, eps):
+def bfgs(index, proj, params, Ax, cali, eps, my=True):
     feat_thres=cali['feat_thres']
     real_img = proj[index]
     
@@ -35,16 +35,78 @@ def bfgs(index, proj, params, Ax, cali, eps):
             print(e)
             print(x)
             raise e
-        
-    def gradf(x):
-        proj_d = Projection_Preprocessing(Ax( np.array([x]) ) )[:,0]
-        ret = estimateJac(np.array([0,0,1]), x, eps, Ax, data_real, real_img, proj_d, feature_params)
+
+    grad_width = [1,5]
+    make_εs = lambda size, count: np.array([-size/(2**i) for i in range(count)] + [0] + [size/(2**i) for i in range(count)][::-1])
+    εs = make_εs(*grad_width)
+    points_real, features_real = data_real
+    points_real = normalize_points(points_real, real_img)
+
+    def f2(x, cur):
+        cur_x = applyRot(cur, x[3], x[4], x[5])
+        cur_x[0] = x[0:3]
+        proj_d = Projection_Preprocessing(Ax( np.array([cur_x]) ) ) [:,0]
+        try:
+            ret = calcObjectiveStd(data_real, real_img, proj_d, 0, feature_params) \
+                + calcObjectiveStd(data_real, real_img, proj_d, 1, feature_params) \
+                + calcObjectiveStd(data_real, real_img, proj_d, 2, feature_params)
+            return ret
+        except Exception as e:
+            print(e)
+            print(x)
+            raise e
+
+    def gradf(x, cur):
+        cur_x = applyRot(cur, x[3], x[4], x[5])
+        cur_x[0] = x[0:3]
+        ret = np.zeros_like(x)
+        εs = make_εs(*grad_width)
+        grad_width[0] = grad_width[0]*0.9
+        for axis in [0,1,2]:
+            dvec = []
+            for ε in εs:
+                if axis==0:
+                    dvec.append(applyRot(cur_x, ε, 0, 0))
+                elif axis==1:
+                    dvec.append(applyRot(cur_x, 0, ε, 0))
+                elif axis==2:
+                    dvec.append(applyRot(cur_x, 0, 0, ε))
+            dvec = np.array(dvec)
+            projs = Projection_Preprocessing(Ax(dvec))
+
+            points = []
+            valid = []
+            if len(data_real[0].shape)==1:
+                    for (p,v), proj in [(trackFeatures_(real_img, projs[:,i], data_real, {}), projs[:,i]) for i in range(projs.shape[1])]:
+                        points.append(normalize_points(p, proj))
+                        valid.append(v==1)
+            else:
+                for (p,v),proj in [(trackFeatures(real_img, projs[:,i], data_real, {}), projs[:,i]) for i in range(projs.shape[1])]:
+                    points.append(normalize_points(p, proj))
+                    valid.append(v==1)
+            combined_valid = valid[0]
+            for v in valid:
+                combined_valid = np.bitwise_and(combined_valid, v)
+            points = [p[v] for p, v in zip(points, valid)]
+            
+            #print(points.shape, points_real.shape)
+            values = np.array([calcObjectiveStdPoints(axis, points, points_real[v]) for points,v in zip(points,valid)])
+            #values1 = np.array([calcObjective(data_real, real_img, projs[:,i], {}, GIoldold) for i in range(projs.shape[1])])
+            p = np.polyfit(εs, values, 2)
+            #p1 = np.polyfit(εs, values1, 2)
+
+            δp = np.polyder(p)
+            ret[3+axis] = np.polyval(δp, 0)
+            
         return ret
 
     proj_d = Projection_Preprocessing(Ax( np.array([cur]) ) )[:,0]
     #cur = roughRegistration(cur, real_img, proj_d, feature_params, Ax, data_real=data_real)
     #print("rough reg f", f(cur))
-    ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]), args=cur, method='BFGS', options={'maxiter': 30})
+    if my:
+        ret = scipy.optimize.minimize(f2, np.array([0,0,0,0,0,0]), args=cur, method='L-BFGS-B', jac=gradf, options={'maxiter': 30})
+    else:
+        ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]), args=cur, method='L-BFGS-B', options={'maxiter': 30})
     cur = applyRot(cur, ret.x[3], ret.x[4], ret.x[5])
     cur[0] = ret.x[0:3]
     #print(ret)

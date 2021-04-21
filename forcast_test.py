@@ -299,7 +299,8 @@ def read_dicoms(indir, max_ims=np.inf):
 def reg_rough(ims, params, Ax, feature_params, c=0, grad_width=(1,5)):
     corrs = []
     for i in range(len(ims)):
-        #print(i, end=",", flush=True)
+    #for i in [29]:
+        print(i, end=",", flush=True)
         cur = params[i]
         real_img = forcast.Projection_Preprocessing(ims[i])
         for si in range(1):
@@ -308,7 +309,7 @@ def reg_rough(ims, params, Ax, feature_params, c=0, grad_width=(1,5)):
                 old_cur = np.array(cur)
                 cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax, c=c, grad_width=grad_width)
             except Exception as ex:
-                print(ex)
+                print(i, ex, cur)
                 raise
             #if (np.abs(old_cur-cur)<1e-8).all():
             #    print(si, end=" ", flush=True)
@@ -356,7 +357,7 @@ def reg_lessrough(ims, params, Ax, feature_params):
     
     return corrs
 
-def reg_bfgs(ims, params, Ax, feature_params, eps = [1,1,1,0.1,0.1,0.1]):
+def reg_bfgs(ims, params, Ax, feature_params, eps = [1,1,1,0.1,0.1,0.1], my = True):
    
     #corrs = reg_rough(ims, params, Ax, feature_params)
     corrs = np.array(params)
@@ -364,7 +365,7 @@ def reg_bfgs(ims, params, Ax, feature_params, eps = [1,1,1,0.1,0.1,0.1]):
         print(i, end=" ", flush=True)
         try:
             for _ in range(1):
-                bfgs_corrs, fun, err = forcast.bfgs(i, ims, corrs, Ax, feature_params, np.array(eps))
+                bfgs_corrs, fun, err = forcast.bfgs(i, ims, corrs, Ax, feature_params, np.array(eps), my=my)
                 corrs[i] = bfgs_corrs
         except Exception as ex:
             print(ex)
@@ -481,6 +482,42 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5
             perftime = time.perf_counter()
             
             corrs = reg_bfgs(ims, params, Ax, {'feat_thres': cali['feat_thres']}, eps = [xy,xy,z,r,r,r])
+                
+            perftime = time.perf_counter()-perftime
+            print("reg done ", xy, z, r, perftime)
+            
+            if not perf:
+                vecs = Ax.create_vecs(corrs)
+                write_vectors(name+"-bfgs-"+str(xy)+"_"+str(z)+"_"+str(r), vecs)
+                write_vectors(name+"-bfgs-"+str(xy)+"_"+str(z)+"_"+str(r)+"-corrs", corrs)
+
+                reg_geo = Ax.create_geo(corrs)
+                sino = Ax(corrs)
+                sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join("recos", "forcast_"+name+"_sino-"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
+                del sino
+                rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+                #rec = np.swapaxes(rec, 0, 2)
+                #rec = np.swapaxes(rec, 1,2)
+                #rec = rec[::-1, ::-1]
+                sitk.WriteImage(sitk.GetImageFromArray(rec)*100, os.path.join("recos", "forcast_"+name+"_reco-"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
+                del rec
+
+    elif method==6:
+        perftime = time.perf_counter()
+        
+        good_values= [
+            #[7,0.2,0.01],
+            #[1,1,0.1],
+            [1,7,0.001],
+            #[1,7,0.5],
+            #[0.2,1,0.08],
+            #[5,7.33333333,0.05],
+            #[5,17,0.05],
+        ]
+        for xy,z,r in good_values:
+            perftime = time.perf_counter()
+            
+            corrs = reg_bfgs(ims, params, Ax, {'feat_thres': cali['feat_thres']}, eps = [xy,xy,z,r,r,r], my = False)
                 
             perftime = time.perf_counter()-perftime
             print("reg done ", xy, z, r, perftime)
