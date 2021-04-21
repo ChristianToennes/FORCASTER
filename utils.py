@@ -157,6 +157,7 @@ def Ax_param_asta(out_shape, detector_spacing, detector_size, dist_source_origin
     run_Ax.create_coords = create_coords
     run_Ax.create_vecs = create_vecs
     run_Ax.create_geo = create_geo
+    run_Ax.distance_source_origin = dist_source_origin
     return run_Ax
 
 def Ax2_astra(out_shape, proj_geom):
@@ -476,13 +477,13 @@ def rotation_matrix_from_vectors(vec1, vec2):
     rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
     return rotation_matrix
 
-def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing):
+def create_astra_geo(angles, translation, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing):
     vectors = np.zeros((len(angles), 12))
 
     for i in range(len(angles)):
         α, β, γ = angles[i]
-        cα, cβ, cγ = np.cos(α), np.cos(-β), np.cos(-0)
-        sα, sβ, sγ = np.sin(α), np.sin(-β), np.sin(-0)
+        cα, cβ, cγ = np.cos(α), np.cos(β), np.cos(-0)
+        sα, sβ, sγ = np.sin(α), np.sin(β), np.sin(-0)
         R = np.array([
             [cα*cβ, cα*sβ*sγ-sα*cγ, cα*sβ*cγ+sα*sγ],
             [sα*cβ, sα*sβ*sγ+cα*cγ, sα*sβ*cγ-cα*sγ],
@@ -500,7 +501,25 @@ def create_astra_geo(angles, detector_spacing, detector_size, dist_source_origin
 
         vX, vY, vZ = R.dot([detector_spacing[0]*image_spacing, 0, 0])
         uX, uY, uZ = R.dot([0,detector_spacing[1]*image_spacing, 0])
-        
+
+        if translation is not None:
+            if len(translation.shape) == 2:
+                srcX += translation[i][0]
+                srcY += translation[i][1]
+                srcZ += translation[i][2]
+
+                dX += translation[i][0]
+                dY += translation[i][1]
+                dZ += translation[i][2]
+            elif len(translation.shape) == 1:
+                srcX += translation[i]
+                srcY += translation[i]
+                srcZ += translation[i]
+
+                dX += translation[i]
+                dY += translation[i]
+                dZ += translation[i]
+                
         vectors[i] = srcX, srcY, srcZ, dX, dY, dZ, uX, uY, uZ, vX, vY, vZ
     #print(np.linalg.norm([vX, vY, vZ]), np.linalg.norm([uX, uY, uZ]), np.linalg.norm([dX, dY, dZ]), np.linalg.norm([srcX, srcY, srcZ]), dist_source_origin, dist_origin_detector)
 
@@ -529,7 +548,7 @@ def coord_systems2vecs(coord_systems, detector_spacing, dist_source_origin, dist
         x_axis = np.array(coord_systems[i, :,0])
         y_axis = np.array(coord_systems[i, :,1])
         z_axis = np.array(coord_systems[i, :,2])
-        iso = (coord_systems[i, :,3]-coord_systems[0,:,3])
+        iso = coord_systems[i, :,3]#-coord_systems[0,:,3]
       
         x_axis /= np.linalg.norm(x_axis)
         y_axis /= np.linalg.norm(y_axis)
@@ -568,7 +587,7 @@ def coord_systems2vecs(coord_systems, detector_spacing, dist_source_origin, dist
 def create_astra_geo_coords(coord_systems, detector_spacing, detector_size, dist_source_origin, dist_origin_detector, image_spacing, flips=False):
     vectors = coord_systems2vecs(coord_systems, detector_spacing, dist_source_origin, dist_origin_detector, image_spacing)
     
-    np.savetxt("coords.csv", vectors, delimiter=",")
+    #np.savetxt("coords.csv", vectors, delimiter=",")
     proj_geom = astra.create_proj_geom('cone_vec', detector_size[0], detector_size[1], vectors)
     return proj_geom
 
@@ -790,6 +809,85 @@ def unpack_sh_stparm(data, f = "12h5h6ch8hcc5h2h6c5h2h4chc3c4h3cc17hh50i12f12f12
 
     return data_dict
 
+def vecs2angles_(v1, v2):
+    vectors = np.cross(v1, v2)
+    dots1 = np.array([np.dot(v, np.array([1,0,0])) for v in vectors])
+    dots2 = np.array([np.dot(v, np.array([0,1,0])) for v in vectors])
+    dots3 = np.array([np.dot(v, np.array([0,0,1])) for v in vectors])
+    l = np.linalg.norm(vectors, axis=1)
+    a = np.arccos(dots1/np.linalg.norm(vectors, axis=1))#*180/np.pi
+    b = np.arccos(dots2/np.linalg.norm(vectors, axis=1))#*180/np.pi
+    c = np.arccos(dots3/np.linalg.norm(vectors, axis=1))#*180/np.pi
+    return np.array([a,b,c]).T
+
+def get_iso(vectors, sid, did, image_spacing):
+    ns = np.cross(vectors[:,9:12], vectors[:,6:9])
+    ns = ns / np.linalg.norm(ns, axis=1)[:,np.newaxis]
+    iso1 = (vectors[:,0:3]+ns*sid) / image_spacing
+    #iso2 = (vectors[:,3:6]-ns*did) / image_spacing
+    return iso1#, iso2
+
+def vecs2angles(v1, v2):
+    vectors = np.cross(v2, v1)
+    θ = np.arctan2(np.sqrt(vectors[:,0]**2+vectors[:,1]**2), vectors[:,2])+np.pi
+    θ[θ>np.pi] -= 2*np.pi
+    ϕ = np.arctan2(vectors[:,1], vectors[:,0])
+
+    n = np.array([v / np.linalg.norm(v) for v in vectors])
+    
+    a = v1 - np.array([n*(n.dot(v)) for v,n in zip(v1, n)])
+    b = []
+    for α, β in zip(ϕ,θ):
+        cα, cβ, sα, sβ = np.cos(α), np.cos(β), np.sin(α), np.sin(β)
+        R = np.array([
+            [cα*cβ, sα, cα*sβ],
+            [sα*cβ, cα, sα*sβ],
+            [-sβ, 0, cβ]
+        ])
+        dX, dY, dZ = R.dot([0,0,-1])
+        R = rotMat(0, [dX,dY,dZ]).dot(R)
+
+        b.append(R.dot([1, 0, 0]))
+    b = np.array(b)
+    #γ = np.arccos(np.array([np.dot(a,b) / (np.linalg.norm(a)*np.linalg.norm(b) ) for a,b in zip(a,b)]) )
+
+    #cross = np.cross(a, b)
+    #dots = np.array([n.dot(cross) for n,cross in zip(n,cross)])
+    #γ[dots < 0] *= -1
+
+    γ = np.array([np.arctan2(np.cross(a,b).dot(n), a.dot(b) ) for a,b,n in zip(a,b,n)])
+    
+    γ[γ>np.pi] -= 2*np.pi
+    γ[γ<-np.pi] += 2*np.pi
+
+    return np.array([ϕ,θ,γ]).T
+
+
+def get_data(g):
+    detector_shape = np.array([768, 1024])*1
+    detector_spacing = np.array([0.5,0.5])/1
+    dist_source_origin = 2000
+    dist_detector_origin = 400
+    astra_zoom = 1
+    angles = np.linspace(0, 2*np.pi, 400, False)
+    angles_zero = np.zeros_like(angles)
+    angles_one = np.ones_like(angles)
+    random = np.random.default_rng(23)
+    angles_astra_clean = np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
+    real_geo = create_astra_geo(angles_astra_clean, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    angles_astra = np.array(angles_astra_clean)
+    params_clean = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params_clean[:,1] = real_geo['Vectors'][:, 6:9]
+    params_clean[:,2] = real_geo['Vectors'][:, 9:12]
+    angles_noise = random.normal(loc=0, scale=1.0*np.pi/180.0, size=angles_astra_clean.shape)
+    angles_astra = np.array(angles_astra_clean)
+    angles_astra[:,0:3] += angles_noise[:,0:3]
+    geo = create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params[:,1] = geo['Vectors'][:, 6:9]
+    params[:,2] = geo['Vectors'][:, 9:12]
+    for v in list(locals()):
+        g[v] = locals()[v]
 
 def read_cbct_info(path):
 

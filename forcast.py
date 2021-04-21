@@ -759,6 +759,21 @@ def applyRot(in_params, α, β, γ):
         params[2] = R.dot(params[2])
     return params
 
+def applyTrans(in_params, x, y, z):
+    cur = np.array(in_params)
+    if x != 0:
+        xdir = cur[1]
+        cur[0] += x * xdir
+    if y != 0:
+        ydir = cur[2]
+        cur[0] += y * ydir
+    if z != 0:
+        zdir = np.cross(cur[2], cur[1])
+        zdir = zdir / np.linalg.norm(zdir)
+        cur[0] += z * zdir
+    return cur
+
+
 def getBoundingBox(points):
     minX = points[0].pt[0]
     minY = points[0].pt[1]

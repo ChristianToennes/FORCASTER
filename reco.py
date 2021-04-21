@@ -160,7 +160,7 @@ if False:
     print("Astra Cone: ", time.perf_counter()-perftime, np.sum(np.abs(cube_astra-rec)))
 
 def proj_astra(angles_astra, volume):
-    proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_zoom)
+    proj_geom_v = utils.create_astra_geo(angles_astra, np.zeros(len(angles_astra)), detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_zoom)
     volume_id = astra.data3d.create('-vol', vol_geom, volume)
     proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
     algString = 'FP3D_CUDA'
@@ -178,7 +178,7 @@ def reco_astra2(proj_data, angles_astra, name, prior=0):
     if astra_iter == 0: return np.zeros_like(cube_astra)
     perftime = time.perf_counter()
     #angles_astra=np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
-    proj_geom_v = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_zoom)
+    proj_geom_v = utils.create_astra_geo(angles_astra, np.zeros(len(angles_astra)), detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_zoom)
     proj_id = astra.data3d.create('-sino', proj_geom_v, proj_data)
 
     sitk.WriteImage(sitk.GetImageFromArray(proj_data*sino_mult), os.path.join("recos", "astra_"+name+"_sino.nrrd"))
@@ -246,7 +246,7 @@ def save_plot(data, prefix, title):
 def reco(algo, name, angles_astra, proj_data, stat_iter):
     if stat_iter == 0: return
     perftime = time.perf_counter()
-    proj_geom_v, _filt = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    proj_geom_v, _filt = utils.create_astra_geo(angles_astra, np.zeros(len(angles_astra)), detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
     #sitk.WriteImage(sitk.GetImageFromArray(proj_data), os.path.join("recos", name+"_sino.nrrd"))
     for i, rec in enumerate(algo(proj_data, proj_geom_v)):
         if type(rec) is list:
@@ -266,7 +266,24 @@ def reco(algo, name, angles_astra, proj_data, stat_iter):
     astra.clear()
     return rec[2]
 
-angles_astra_clean = np.vstack((angles, angles_one*0.5*np.pi, angles_one*np.pi)).T
+
+def save_angles(data, prefix, title):
+    data = np.array(data)
+    #data[data>np.pi] -= 2*np.pi
+    #data[data<-np.pi] += 2*np.pi
+    plt.figure()
+    plt.plot(np.array(list(range(len(data[:, 0])))), data[:, 0], color="r")
+    plt.plot(np.array(list(range(len(data[:, 0])))), data[:, 1], color="b")
+    plt.plot(np.array(list(range(len(data[:, 0])))), data[:, 2], color="g")
+    plt.title(title)
+    plt.tight_layout()
+    plt.savefig(os.path.join("recos", prefix + title + "_plot.png"))
+    with open(os.path.join("recos", prefix + title + "_plot.csv"), "w") as f:
+        f.writelines([str(i)+";"+str(a)+";"+str(b)+";"+str(c)+"\n" for i,(a,b,c) in enumerate(data)])
+    plt.close()
+
+
+angles_astra_clean = np.vstack((angles, -angles_one*0.5*np.pi, angles_one*np.pi)).T
 #angles_astra_clean[:,1:3] += 0.5*np.pi/180
 image_shape = cube_astra.shape
 initial = np.zeros(image_shape)
@@ -284,10 +301,29 @@ sitk.WriteImage(sitk.GetImageFromArray(proj_data_clean), os.path.join("recos", "
 #sitk.WriteImage(sitk.GetImageFromArray(forcast.Projection_Preprocessing(proj_data_clean)), os.path.join("recos", "input_proj_data.nrrd"))
 del proj_data_clean
 #angles_astra += random.uniform(low=0, high=0.05, size=angles_astra.shape)
-real_geo = utils.create_astra_geo(angles_astra_clean, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+real_geo = utils.create_astra_geo(angles_astra_clean, np.zeros((len(angles),3)), detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
 angles_astra = np.array(angles_astra_clean)
 angles_noise = random.normal(loc=0, scale=1.0*np.pi/180.0, size=angles_astra_clean.shape)
+trans_noise = random.normal(loc=0, scale=10, size=(len(angles), 3))
+#trans_noise = np.zeros((len(angles), 3))
+#trans_noise[:,:] = 10
+
+ds = np.array(angles_noise)
+#ds[ds<-np.pi] += 2*np.pi
+#ds[ds>np.pi] -= 2*np.pi
+ds *= 180/np.pi
+d = ds[:,0]
+print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+d = ds[:,1]
+print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+d = ds[:,2]
+print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+
 #angles_noise = np.ones_like(angles_astra)*0.5*np.pi/180
+
+save_angles(angles_astra_clean, "", "angles")
+save_angles(angles_noise, "", "noise")
+save_angles(angles_astra+angles_noise, "", "noise-angles")
 
 #np.set_printoptions(precision=3, floatmode="fixed", suppress=True)
 
@@ -296,15 +332,6 @@ def vec2angle(vecs):
     prim = np.arctan2(vecs[:,7], vecs[:,6])+np.pi
     thrd = np.arctan2(vecs[:,10], vecs[:,9])
     return np.array([prim, sec, thrd]).T
-
-def cmp_vecs(name, real, new):
-    #print(real.shape, new.shape)
-    d = np.array([(np.arccos(real[6:9].dot(new[6:9]) / (np.linalg.norm(real[6:9])*np.linalg.norm(new[6:9]) )),
-        np.arccos(real[9:12].dot(new[9:12]) / (np.linalg.norm(real[9:12])*np.linalg.norm(new[9:12]))) ) for real,new in zip(real,new)])
-    d *= 180/np.pi
-    print(name)
-    print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
-    #print(d)
 
 def cmp_corrs(name, real, new):
     r_dets = np.array([np.cross(r[2], r[1]) for r in real])
@@ -348,91 +375,130 @@ params_clean = np.zeros((len(angles_astra_clean), 3, 3), dtype=float)
 params_clean[:, 1] = real_geo['Vectors'][:, 6:9]
 params_clean[:, 2] = real_geo['Vectors'][:, 9:12]
 
-angles_astra = np.array(angles_astra_clean)
-#angles_astra[:,2] += 0.5*np.pi/180
-angles_astra[:,2] += angles_noise[:,2]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-params = np.zeros((len(angles_astra), 3, 3), dtype=float)
-params[:,1] = geo['Vectors'][:, 6:9]
-params[:,2] = geo['Vectors'][:, 9:12]
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r2.nrrd"))
+def cmp_vecs(name, real, new):
+    if real.shape[1] == 12:
+        iso_real = utils.get_iso(real, dist_source_origin, dist_detector_origin, image_spacing)
+        real = np.moveaxis(np.array([iso_real, real[:,6:9], real[:,9:12]]), 0,1)
+    if new.shape[1] == 12:
+        iso_new = utils.get_iso(new, dist_source_origin, dist_detector_origin, image_spacing)
+        new = np.moveaxis(np.array([iso_new, new[:,6:9], new[:,9:12]]), 0,1)
+
+    d = np.array([(np.arccos(real[1].dot(new[1]) / (np.linalg.norm(real[1])*np.linalg.norm(new[1]) )),
+        np.arccos(real[2].dot(new[2]) / (np.linalg.norm(real[2])*np.linalg.norm(new[2]))) ) for real,new in zip(real,new)])
+    d *= 180/np.pi
+    print(name)
+    print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+
+    ds = utils.vecs2angles(new[:,2],new[:,1])-utils.vecs2angles(real[:,2],real[:,1])
+    save_angles(utils.vecs2angles(real[:,2], real[:,1]), "", "angles-real-"+name)
+    save_angles(utils.vecs2angles(new[:,2],new[:,1]), "", "angles-new-"+name)
+    ds[ds<-np.pi] += 2*np.pi
+    ds[ds>np.pi] -= 2*np.pi
+    save_angles(ds, "", "angles-"+name)
+    ds *= 180/np.pi
+    d = ds[:,0]
+    print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+    d = ds[:,1]
+    print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+    d = ds[:,2]
+    print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+    
+    d = np.linalg.norm(new[:,0]-real[:,0], axis=1)
+    print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))    
+    #dist = np.linalg.norm(d, axis=1)
+    #print(np.argsort(dist)[:3], dist[np.argsort(dist)[:3]], d[np.argsort(dist)[:3], 0])
+    print(np.argsort(d)[-3:], d[np.argsort(d)[-3:]])
+    #print(d)
+
+if False:
+    angles_astra = np.array(angles_astra_clean)
+    #angles_astra[:,2] += 0.5*np.pi/180
+    angles_astra[:,2] += angles_noise[:,2]
+    geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params[:,1] = geo['Vectors'][:, 6:9]
+    params[:,2] = geo['Vectors'][:, 9:12]
+    sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r2.nrrd"))
+
+    angles_astra = np.array(angles_astra_clean)
+    #angles_astra[:,1] += 0.5*np.pi/180
+    angles_astra[:,1] += angles_noise[:,1]
+    geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params[:,1] = geo['Vectors'][:, 6:9]
+    params[:,2] = geo['Vectors'][:, 9:12]
+    sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r1.nrrd"))
+
+    angles_astra = np.array(angles_astra_clean)
+    #angles_astra[:,0] += 0.5*np.pi/180
+    angles_astra[:,0] += angles_noise[:,0]
+    geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params[:,1] = geo['Vectors'][:, 6:9]
+    params[:,2] = geo['Vectors'][:, 9:12]
+    sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r0.nrrd"))
+
+    angles_astra = np.array(angles_astra_clean)
+    #angles_astra[:,0:2] += 0.5*np.pi/180
+    angles_astra[:,0:2] += angles_noise[:,0:2]
+    geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params[:,1] = geo['Vectors'][:, 6:9]
+    params[:,2] = geo['Vectors'][:, 9:12]
+    sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r01.nrrd"))
+
+    angles_astra = np.array(angles_astra_clean)
+    #angles_astra[:,0] += 0.5*np.pi/180
+    #angles_astra[:,2] += 0.5*np.pi/180
+    angles_astra[:,0] += angles_noise[:,0]
+    angles_astra[:,2] += angles_noise[:,2]
+    geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params[:,1] = geo['Vectors'][:, 6:9]
+    params[:,2] = geo['Vectors'][:, 9:12]
+    sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r02.nrrd"))
+
+    angles_astra = np.array(angles_astra_clean)
+    #angles_astra[:,1:3] += 0.5*np.pi/180
+    angles_astra[:,1:3] += angles_noise[:,1:3]
+    geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params[:,1] = geo['Vectors'][:, 6:9]
+    params[:,2] = geo['Vectors'][:, 9:12]
+    sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r12.nrrd"))
+
+    angles_astra = np.array(angles_astra_clean)
+    #angles_astra[:,0:3] += 0.5*np.pi/180
+    angles_astra[:,0:3] += angles_noise[:,0:3]
+    geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params[:,1] = geo['Vectors'][:, 6:9]
+    params[:,2] = geo['Vectors'][:, 9:12]
+    sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r012.nrrd"))
+
+    angles_astra = np.array(angles_astra_clean)
+    angles_astra[:,0:3] += angles_noise[:,0:3]
+    geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+    params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+    params[:,1] = geo['Vectors'][:, 6:9]
+    params[:,2] = geo['Vectors'][:, 9:12]
+
+    sitk.WriteImage(sitk.GetImageFromArray(Ax(params_clean)), os.path.join("recos", "input_params_clean.nrrd"))
+    sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_target.nrrd"))
+
+    rec = utils.FDK_astra(cube_astra.shape, real_geo)(proj_data)
+    sitk.WriteImage(sitk.GetImageFromArray(rec*100), os.path.join("recos", "input_reco-correct.nrrd"))
+    del rec
+    rec = utils.FDK_astra(cube_astra.shape, geo)(proj_data)
+    sitk.WriteImage(sitk.GetImageFromArray(rec*100), os.path.join("recos", "input_reco-target.nrrd"))
+    del rec
 
 angles_astra = np.array(angles_astra_clean)
-#angles_astra[:,1] += 0.5*np.pi/180
-angles_astra[:,1] += angles_noise[:,1]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-params = np.zeros((len(angles_astra), 3, 3), dtype=float)
-params[:,1] = geo['Vectors'][:, 6:9]
-params[:,2] = geo['Vectors'][:, 9:12]
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r1.nrrd"))
-
-angles_astra = np.array(angles_astra_clean)
-#angles_astra[:,0] += 0.5*np.pi/180
-angles_astra[:,0] += angles_noise[:,0]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-params = np.zeros((len(angles_astra), 3, 3), dtype=float)
-params[:,1] = geo['Vectors'][:, 6:9]
-params[:,2] = geo['Vectors'][:, 9:12]
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r0.nrrd"))
-
-angles_astra = np.array(angles_astra_clean)
-#angles_astra[:,0:2] += 0.5*np.pi/180
-angles_astra[:,0:2] += angles_noise[:,0:2]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-params = np.zeros((len(angles_astra), 3, 3), dtype=float)
-params[:,1] = geo['Vectors'][:, 6:9]
-params[:,2] = geo['Vectors'][:, 9:12]
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r01.nrrd"))
-
-angles_astra = np.array(angles_astra_clean)
-#angles_astra[:,0] += 0.5*np.pi/180
-#angles_astra[:,2] += 0.5*np.pi/180
-angles_astra[:,0] += angles_noise[:,0]
-angles_astra[:,2] += angles_noise[:,2]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-params = np.zeros((len(angles_astra), 3, 3), dtype=float)
-params[:,1] = geo['Vectors'][:, 6:9]
-params[:,2] = geo['Vectors'][:, 9:12]
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r02.nrrd"))
-
-angles_astra = np.array(angles_astra_clean)
-#angles_astra[:,1:3] += 0.5*np.pi/180
-angles_astra[:,1:3] += angles_noise[:,1:3]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-params = np.zeros((len(angles_astra), 3, 3), dtype=float)
-params[:,1] = geo['Vectors'][:, 6:9]
-params[:,2] = geo['Vectors'][:, 9:12]
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r12.nrrd"))
-
-angles_astra = np.array(angles_astra_clean)
-#angles_astra[:,0:3] += 0.5*np.pi/180
 angles_astra[:,0:3] += angles_noise[:,0:3]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-params = np.zeros((len(angles_astra), 3, 3), dtype=float)
-params[:,1] = geo['Vectors'][:, 6:9]
-params[:,2] = geo['Vectors'][:, 9:12]
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_r012.nrrd"))
-
-angles_astra = np.array(angles_astra_clean)
-angles_astra[:,0:3] += angles_noise[:,0:3]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-params = np.zeros((len(angles_astra), 3, 3), dtype=float)
-params[:,1] = geo['Vectors'][:, 6:9]
-params[:,2] = geo['Vectors'][:, 9:12]
-
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params_clean)), os.path.join("recos", "input_params_clean.nrrd"))
-sitk.WriteImage(sitk.GetImageFromArray(Ax(params)), os.path.join("recos", "input_params_target.nrrd"))
-
-rec = utils.FDK_astra(cube_astra.shape, real_geo)(proj_data)
-sitk.WriteImage(sitk.GetImageFromArray(rec*100), os.path.join("recos", "input_reco-correct.nrrd"))
-del rec
-rec = utils.FDK_astra(cube_astra.shape, geo)(proj_data)
-sitk.WriteImage(sitk.GetImageFromArray(rec*100), os.path.join("recos", "input_reco-target.nrrd"))
-del rec
-
 #angles_astra[:,2] += angles_noise[:,2]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+geo = utils.create_astra_geo(angles_astra, trans_noise, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
 params = np.zeros((len(angles_astra), 3, 3), dtype=float)
+params[:,0] = utils.get_iso(geo['Vectors'], dist_source_origin, dist_detector_origin, image_spacing)
 params[:,1] = geo['Vectors'][:, 6:9]
 params[:,2] = geo['Vectors'][:, 9:12]
 cmp_vecs("noise", real_geo['Vectors'], geo['Vectors'])
@@ -496,7 +562,7 @@ cmp_vecs("rough3", real_geo['Vectors'], vecs)
 angles_noise = random.normal(loc=0, scale=1.0*np.pi/180.0, size=angles_astra_clean.shape)
 angles_astra = np.array(angles_astra_clean)
 angles_astra[:,0:3] += angles_noise[:,0:3]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+geo = utils.create_astra_geo(angles_astra, trans_noise, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
 params = np.zeros((len(angles_astra), 3, 3), dtype=float)
 params[:,1] = geo['Vectors'][:, 6:9]
 params[:,2] = geo['Vectors'][:, 9:12]
@@ -518,7 +584,7 @@ cmp_vecs("bfgs", real_geo['Vectors'], vecs)
 angles_noise = np.ones_like(angles_astra)*0.5*np.pi/180
 angles_astra = np.array(angles_astra_clean)
 angles_astra[:,0:3] += angles_noise[:,0:3]
-geo = utils.create_astra_geo(angles_astra, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
+geo = utils.create_astra_geo(angles_astra, trans_noise, detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
 params = np.zeros((len(angles_astra), 3, 3), dtype=float)
 params[:,1] = geo['Vectors'][:, 6:9]
 params[:,2] = geo['Vectors'][:, 9:12]
