@@ -521,7 +521,7 @@ for grad_width in [(3,8), (2,8), (1,5)]:
     #profiler = cProfile.Profile()
     #profiler.enable()
     #cmp_corrs("err", params_clean, params)
-    vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 3, grad_width=grad_width)
+    #vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 3, grad_width=grad_width)
     #profiler.disable()
     #s = io.StringIO()
     #sortby = pstats.SortKey.TIME
@@ -529,7 +529,7 @@ for grad_width in [(3,8), (2,8), (1,5)]:
     #ps.print_stats(5)
     #print(s.getvalue())
 
-    cmp_vecs("rough1 - my - "+str(grad_width), real_geo['Vectors'], vecs)
+    #cmp_vecs("rough1 - my - "+str(grad_width), real_geo['Vectors'], vecs)
     
     #vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 0, grad_width=grad_width)
     #cmp_vecs("rough0 - my - "+str(grad_width), real_geo['Vectors'], vecs)
