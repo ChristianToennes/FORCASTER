@@ -57,41 +57,83 @@ def bfgs(index, proj, params, Ax, cali, eps):
     proj_d = Projection_Preprocessing(Ax(np.array([cur])))[:,0]
     return cur, ret.fun, np.sum((real_img-proj_d)**2)
 
-def correctXY(in_cur, vec, points_real, points_new):
+def correctXY(in_cur, data_real, real_img, Ax):
     cur = np.array(in_cur)
-    #print("xy")
-    if len(points_new.shape) == 1:
-        diff = np.array([[n.pt[0]-r.pt[0], n.pt[1]-r.pt[1]]  for n,r in zip(points_new,points_real)])
-        #print(diff)
-    else:
-        diff = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points_new,points_real)])
-    if len(diff)>1:
-        xdir = vec[6:9]#/np.linalg.norm(vec[6:9])
-        ydir = vec[9:12]#/np.linalg.norm(vec[9:12])
-        #cur[0] += np.median(diff, axis=0)[0] / np.linalg.norm(vec[6:9])
-        #cur[1] += np.median(diff, axis=0)[1] / np.linalg.norm(vec[9:12])
-        cur[0] += np.median(diff, axis=0)[0] * xdir# / np.linalg.norm(vec[6:9])
-        cur[0] += np.median(diff, axis=0)[1] * ydir# / np.linalg.norm(vec[9:12])
+    points_real, features_real = data_real
+    points_real = normalize_points(points_real, real_img)
+    real_img = Projection_Preprocessing(real_img)
+
+    for i in range(20):
+        projs = Projection_Preprocessing(Ax(np.array([cur])))
+        if len(data_real[0].shape)==1:
+            p,v = trackFeatures_(real_img, projs[:,0], data_real, {})
+            points = normalize_points(p, projs[:,0])
+            valid = v==1
+        else:
+            p,v = trackFeatures(real_img, projs[:,0], data_real, {})
+            points = normalize_points(p, projs[:,0])
+            valid = v==1
+        points = points[valid]
+        
+        diff = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points,points_real)])
+        if len(diff)>1:
+            
+            xdir = cur[1]#/np.linalg.norm(vec[6:9])
+            ydir = cur[2]#/np.linalg.norm(vec[9:12])
+            m = np.mean(diff, axis=0)
+            std = np.std(diff, axis=0)
+            diff = diff[np.bitwise_and(np.bitwise_and(diff[:,0]>m[0]-3*std[0], diff[:,0]<m[0]+3*std[0]), np.bitwise_and(diff[:,1]>m[1]-3*std[1], diff[:,1]<m[1]+3*std[1]))]
+            
+            med = np.median(diff, axis=0)
+            cur[0] += med[0] * xdir# / np.linalg.norm(xdir)
+            cur[0] += med[1] * ydir# / np.linalg.norm(ydir)
+            if (np.abs(med[0]*xdir) > 100).any() or (np.abs(med[1]*ydir) > 100).any():
+                print(in_cur, cur)
+                print(med[0], xdir)
+                print(med[1], ydir)
+                raise Exception("xy change to large")
+            if (np.abs(med[0]*xdir) < 0.1).all() and (np.abs(med[1]*ydir) < 0.1).all():
+                break
     return cur
 
-def correctZ(in_cur, vec, points_real, points_new):
+def correctZ(in_cur, data_real, real_img, Ax):
+    print("z", end=" ")
     cur = np.array(in_cur)
-    #print("z")
-    #print(points_new.shape, points_real.shape)
-    if len(points_new.shape)==1:
-        dist_new = np.array([ np.sqrt((n.pt[0]-r.pt[0])**2 + (n.pt[1]-r.pt[1])**2) for n in points_new for r in points_new])
-        dist_real = np.array([ np.sqrt((n.pt[0]-r.pt[0])**2 + (n.pt[1]-r.pt[1])**2) for n in points_real for r in points_real])
-    else:
-        dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_new for r in points_new])
-        dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real for r in points_real])
-    #dist_new[np.bitwise_and(dist_real==0,dist_new==0)] = 1
-    if np.count_nonzero(dist_new) > 5:
-        #scale = 1-np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])
-        scale = np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1
-        #print(scale, len(dist_new[dist_new!=0]), len(dist_real[dist_new!=0]))
-        zdir = vec[3:6]/np.linalg.norm(vec[3:6])
-        #cur[2] += scale * np.linalg.norm(vec[0:3])
-        cur[0] += scale * zdir #* np.linalg.norm(vec[3:6])
+    points_real, features_real = data_real
+    points_real = normalize_points(points_real, real_img)
+    real_img = Projection_Preprocessing(real_img)
+    for i in range(20):
+        projs = Projection_Preprocessing(Ax(np.array([cur])))
+        if len(data_real[0].shape)==1:
+            p,v = trackFeatures_(real_img, projs[:,0], data_real, {})
+            points = normalize_points(p, projs[:,0])
+            valid = v==1
+        else:
+            p,v = trackFeatures(real_img, projs[:,0], data_real, {})
+            points = normalize_points(p, projs[:,0])
+            valid = v==1
+        #points = points[valid]
+    
+        dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points[valid] for r in points[valid]])
+        dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real[valid] for r in points_real[valid]])
+        #dist_new[np.bitwise_and(dist_real==0,dist_new==0)] = 1
+        #print(dist_new.shape, dist_real.shape, points.shape, points_real.shape, valid.shape, np.count_nonzero(valid), np.count_nonzero(dist_new!=0))
+        if np.count_nonzero(dist_new) > 5:
+            scale = Ax.distance_source_origin*(np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
+            zdir = np.cross(cur[2], cur[1])
+            zdir = zdir / np.linalg.norm(zdir)
+            cur[0] += scale * zdir
+            if np.linalg.norm(cur[0]-in_cur[0])>500:
+                print("large z", end=" ")
+                #print(scale, zdir)
+                #print(np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0]), np.mean(dist_real[dist_new!=0]/dist_new[dist_new!=0]))
+                #print(dist_new[dist_new!=0].shape, np.min(dist_new[dist_new!=0]), np.min(np.abs(dist_new[dist_new!=0])))
+                #raise Exception("z change to large")
+                return np.array(in_cur)
+            if (np.abs(scale*zdir)<0.1).all():
+                break
+        else:
+            cur = np.array(in_cur)
     return cur
 
 def correctRot(in_cur, points_real, points_new, Ax, real_img, data_real, eps=0.01, change=None):
@@ -580,10 +622,13 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5)):
             break
         if axis==0:
             cur = applyRot(cur, min_ε, 0, 0)
+            #cur = applyTrans(cur, med_x, 0, 0)
         if axis==1:
             cur = applyRot(cur, 0, min_ε, 0)
+            #cur = applyTrans(cur, 0, med_y, 0)
         if axis==2:
             cur = applyRot(cur, 0, 0, min_ε)    
+            #cur = applyTrans(cur, 0, 0, scale)
     #print(change)
     return cur
 
@@ -704,27 +749,47 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
         old_change.append(list(change))
         print(np.sum(old_change, axis=0))
     elif c==0:
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        #cur = correctZ(cur, data_real, real_img, Ax)
         cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
     elif c==1:
+        cur = correctXY(cur, data_real, real_img, Ax)
+        #cur = correctZ(cur, data_real, real_img, Ax)
         cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        #cur = correctZ(cur, data_real, real_img, Ax)
         cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
     elif c==2:
+        cur = correctXY(cur, data_real, real_img, Ax)
+        #cur = correctZ(cur, data_real, real_img, Ax)
         cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        #cur = correctZ(cur, data_real, real_img, Ax)
         cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
     elif c==3:
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
         cur = binsearch(cur, data_real, real_img, Ax, 2, False, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 0, False, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 1, False, grad_width=grad_width)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
     #print(scale)
 
     #print(len(data_real[0]), np.count_nonzero(valid))
@@ -925,6 +990,13 @@ def normalize_points(points, img):
         ret[:,0] *= 1000.0/xdim
         ret[:,1] *= 1000.0/ydim
         return ret
+
+def unnormalize_points(points, img):
+    xdim, ydim = img.shape
+    ret = np.array(points)
+    ret[:,0] *= xdim/1000.0
+    ret[:,1] *= ydim/1000.0
+    return ret
 
 def calcObjectiveStdPoints(comp, good_new, good_old):
     if comp==0:
