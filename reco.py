@@ -80,7 +80,7 @@ WriteAstraImage(cube_astra, os.path.join("recos", "astra_target.nrrd"))
 
 vol_geom = astra.create_vol_geom(cube_astra.shape[1], cube_astra.shape[2], cube_astra.shape[0])
 
-angles = np.linspace(0, 2*np.pi, 50, False)
+angles = np.linspace(0, np.pi + np.arctan2(detector_shape[0]*detector_spacing[0]*0.5, dist_detector_origin)*2, 400, False)
 angles_zero = np.zeros_like(angles)
 angles_one = np.ones_like(angles)
 
