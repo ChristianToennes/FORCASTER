@@ -80,7 +80,7 @@ WriteAstraImage(cube_astra, os.path.join("recos", "astra_target.nrrd"))
 
 vol_geom = astra.create_vol_geom(cube_astra.shape[1], cube_astra.shape[2], cube_astra.shape[0])
 
-angles = np.linspace(0, 2*np.pi, 100, False)
+angles = np.linspace(0, 2*np.pi, 50, False)
 angles_zero = np.zeros_like(angles)
 angles_one = np.ones_like(angles)
 
@@ -514,38 +514,46 @@ import cProfile, io, pstats
 #for grad_sub in [3,4,5,6,7,8,9]:
 #    for grad_max in [1,2,3]:
 #        grad_width = (grad_max, grad_sub)
-for grad_width in [(3,9), (3,8), (2,8), (3,6), (2,5), (1,5), (3,3)]:
-        profiler = cProfile.Profile()
-        profiler.enable()
-        #cmp_corrs("err", params_clean, params)
-        vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 3, grad_width=grad_width, perf=True)
-        profiler.disable()
-        s = io.StringIO()
-        sortby = pstats.SortKey.TIME
-        ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
-        ps.print_stats(5)
-        #print(s.getvalue())
+#for grad_width in [(3,9), (3,8), (2,8), (3,6), (2,5), (1,5), (3,3)]:
+for grad_width in [(3,8), (2,8), (1,5)]:
+#for grad_width in [(2,8)]:
+    #grad_width = (1,5)
+    #profiler = cProfile.Profile()
+    #profiler.enable()
+    #cmp_corrs("err", params_clean, params)
+    vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 3, grad_width=grad_width)
+    #profiler.disable()
+    #s = io.StringIO()
+    #sortby = pstats.SortKey.TIME
+    #ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
+    #ps.print_stats(5)
+    #print(s.getvalue())
 
-        cmp_vecs("rough0 - my - "+str(grad_width), real_geo['Vectors'], vecs)
+    cmp_vecs("rough1 - my - "+str(grad_width), real_geo['Vectors'], vecs)
+    
+    #vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 0, grad_width=grad_width)
+    #cmp_vecs("rough0 - my - "+str(grad_width), real_geo['Vectors'], vecs)
+    vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough2-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 4, grad_width=grad_width)
+    cmp_vecs("rough2 - my - "+str(grad_width), real_geo['Vectors'], vecs)
+exit(0)
+if False:
+    profiler = cProfile.Profile()
+    profiler.enable()
+    #cmp_corrs("err", params_clean, params)
+    vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0-gi-"+str(grad_width[0])+"-"+str(grad_width[1]), 5, grad_width=grad_width, perf=True)
+    profiler.disable()
+    s = io.StringIO()
+    sortby = pstats.SortKey.TIME
+    ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
+    ps.print_stats(5)
+    print(s.getvalue())
 
-        if False:
-            profiler = cProfile.Profile()
-            profiler.enable()
-            #cmp_corrs("err", params_clean, params)
-            vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0-gi-"+str(grad_width[0])+"-"+str(grad_width[1]), 5, grad_width=grad_width, perf=True)
-            profiler.disable()
-            s = io.StringIO()
-            sortby = pstats.SortKey.TIME
-            ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
-            ps.print_stats(5)
-            print(s.getvalue())
-
-            cmp_vecs("rough0 - gi - "+str(grad_width), real_geo['Vectors'], vecs)#cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
+    cmp_vecs("rough0 - gi - "+str(grad_width), real_geo['Vectors'], vecs)#cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
 
 #cmp_corrs("rough0", params_clean, corrs)
-exit(0)
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1", 3)
-cmp_vecs("rough1", real_geo['Vectors'], vecs)
+
+#vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1", 3)
+#cmp_vecs("rough1", real_geo['Vectors'], vecs)
 #cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
 #cmp_corrs("rough1", params_clean, corrs)
 
@@ -554,8 +562,8 @@ cmp_vecs("rough1", real_geo['Vectors'], vecs)
 #cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
 #cmp_corrs("rough2", params_clean, corrs)
 
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough3", 5)
-cmp_vecs("rough3", real_geo['Vectors'], vecs)
+#vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough3", 5)
+#cmp_vecs("rough3", real_geo['Vectors'], vecs)
 #cmp_vecs("rough-smooth", real_geo['Vectors'], vecs_smooth)
 #cmp_corrs("rough3", params_clean, corrs)
 
@@ -566,21 +574,23 @@ geo = utils.create_astra_geo(angles_astra, trans_noise, detector_spacing, detect
 params = np.zeros((len(angles_astra), 3, 3), dtype=float)
 params[:,1] = geo['Vectors'][:, 6:9]
 params[:,2] = geo['Vectors'][:, 9:12]
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1-noise", 3)
-cmp_vecs("rough1-noise", real_geo['Vectors'], vecs)
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough3-noise", 5)
-cmp_vecs("rough3-noise", real_geo['Vectors'], vecs)
+#vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1-noise", 3)
+#cmp_vecs("rough1-noise", real_geo['Vectors'], vecs)
+#vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough3-noise", 5)
+#cmp_vecs("rough3-noise", real_geo['Vectors'], vecs)
 
-vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "less-noise", 1)
-cmp_vecs("less", real_geo['Vectors'], vecs)
+#vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "less-noise", 1)
+#cmp_vecs("less", real_geo['Vectors'], vecs)
 #cmp_vecs("less-smooth", real_geo['Vectors'], vecs_smooth)
 #cmp_corrs("less", params_clean, corrs)
 
 vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "bfgs-noise", 2)
 cmp_vecs("bfgs", real_geo['Vectors'], vecs)
+vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "bfgs-gi", 6)
+cmp_vecs("bfgs-gi", real_geo['Vectors'], vecs)
 #cmp_vecs("bfgs-smooth", real_geo['Vectors'], vecs_smooth)
 #cmp_corrs("bfgs", params_clean, corrs)
-
+exit(0)
 angles_noise = np.ones_like(angles_astra)*0.5*np.pi/180
 angles_astra = np.array(angles_astra_clean)
 angles_astra[:,0:3] += angles_noise[:,0:3]
