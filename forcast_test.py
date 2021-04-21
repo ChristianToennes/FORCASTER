@@ -566,7 +566,7 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5
     elif method==4:
         perftime = time.perf_counter()
         
-        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=2)
+        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=2, grad_width=grad_width)
 
         vecs = Ax.create_vecs(corrs)
         write_vectors(name+"-rough-corr", corrs)

@@ -80,7 +80,7 @@ WriteAstraImage(cube_astra, os.path.join("recos", "astra_target.nrrd"))
 
 vol_geom = astra.create_vol_geom(cube_astra.shape[1], cube_astra.shape[2], cube_astra.shape[0])
 
-angles = np.linspace(0, 2*np.pi, 50, False)
+angles = np.linspace(0, np.pi + np.arctan2(detector_shape[0]*detector_spacing[0]*0.5, dist_detector_origin)*2, 400, False)
 angles_zero = np.zeros_like(angles)
 angles_one = np.ones_like(angles)
 
@@ -521,7 +521,7 @@ for grad_width in [(3,8), (2,8), (1,5)]:
     #profiler = cProfile.Profile()
     #profiler.enable()
     #cmp_corrs("err", params_clean, params)
-    vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 3, grad_width=grad_width)
+    #vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough1-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 3, grad_width=grad_width)
     #profiler.disable()
     #s = io.StringIO()
     #sortby = pstats.SortKey.TIME
@@ -529,7 +529,7 @@ for grad_width in [(3,8), (2,8), (1,5)]:
     #ps.print_stats(5)
     #print(s.getvalue())
 
-    cmp_vecs("rough1 - my - "+str(grad_width), real_geo['Vectors'], vecs)
+    #cmp_vecs("rough1 - my - "+str(grad_width), real_geo['Vectors'], vecs)
     
     #vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 0, grad_width=grad_width)
     #cmp_vecs("rough0 - my - "+str(grad_width), real_geo['Vectors'], vecs)
