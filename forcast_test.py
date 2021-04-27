@@ -296,7 +296,7 @@ def read_dicoms(indir, max_ims=np.inf):
 
     return ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods
 
-def reg_rough(ims, params, Ax, feature_params, c=0, grad_width=(1,5)):
+def reg_rough(ims, params, Ax, feature_params, c=0, grad_width=(1,5), noise=None):
     corrs = []
     for i in range(len(ims)):
     #for i in [29]:
@@ -307,7 +307,10 @@ def reg_rough(ims, params, Ax, feature_params, c=0, grad_width=(1,5)):
             proj_d = forcast.Projection_Preprocessing(Ax(np.array([cur])))[:,0]
             try:
                 old_cur = np.array(cur)
-                cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax, c=c, grad_width=grad_width)
+                if noise is not None:
+                    cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax, c=c, grad_width=grad_width, noise=(noise[0][i], noise[1][i]))
+                else:
+                    cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax, c=c, grad_width=grad_width)
             except Exception as ex:
                 print(i, ex, cur)
                 raise
@@ -315,6 +318,7 @@ def reg_rough(ims, params, Ax, feature_params, c=0, grad_width=(1,5)):
             #    print(si, end=" ", flush=True)
             #    break
         corrs.append(cur)
+        print(flush=True)
         
     corrs = np.array(corrs)
     #print(corrs)
@@ -373,7 +377,7 @@ def reg_bfgs(ims, params, Ax, feature_params, eps = [1,1,1,0.1,0.1,0.1], my = Tr
     
     return corrs
 
-def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5), perf=False):
+def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5), perf=False, noise=None):
     print(name, grad_width)
     params = np.array(in_params[:])
     if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
@@ -417,7 +421,7 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5
     if method==0:
         perftime = time.perf_counter()
         
-        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, grad_width=grad_width)
+        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, grad_width=grad_width, noise=noise)
 
         vecs = Ax.create_vecs(corrs)
         write_vectors(name+"-rough-corr", corrs)
@@ -541,7 +545,7 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5
     elif method==3:
         perftime = time.perf_counter()
         
-        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=1, grad_width=grad_width)
+        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=1, grad_width=grad_width, noise=noise)
 
         vecs = Ax.create_vecs(corrs)
         write_vectors(name+"-rough-corr", corrs)
@@ -566,7 +570,7 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5
     elif method==4:
         perftime = time.perf_counter()
         
-        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=2, grad_width=grad_width)
+        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=2, grad_width=grad_width, noise=noise)
 
         vecs = Ax.create_vecs(corrs)
         write_vectors(name+"-rough-corr", corrs)
@@ -591,7 +595,7 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5
     elif method==5:
         perftime = time.perf_counter()
         
-        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=3, grad_width=grad_width)
+        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=3, grad_width=grad_width, noise=noise)
 
         vecs = Ax.create_vecs(corrs)
         write_vectors(name+"-rough-corr", corrs)
