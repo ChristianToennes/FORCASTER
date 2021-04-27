@@ -74,15 +74,67 @@ def WriteTigreImage(im, path):
     sim = sitk.GetImageFromArray(im*image_out_mult)
     sitk.WriteImage(sim, path)
 
+def proj_astra(angles_astra, volume):
+    proj_geom_v = utils.create_astra_geo(angles_astra, np.zeros(len(angles_astra)), detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_zoom)
+    volume_id = astra.data3d.create('-vol', vol_geom, volume)
+    proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
+    algString = 'FP3D_CUDA'
+    cfg = astra.astra_dict(algString)
+    cfg['ProjectionDataId'] = proj_id
+    cfg['VolumeDataId'] = volume_id
+    alg_id = astra.algorithm.create(cfg)
+    astra.algorithm.run(alg_id)
+    astra.algorithm.delete(alg_id)
+    astra.data3d.delete(volume_id)
+    proj_data = astra.data3d.get(proj_id)
+    return proj_data
+
 WriteAstraImage(cube_astra, os.path.join("recos", "astra_target.nrrd"))
 #WriteTigreImage(cube_tigre, os.path.join("recos", "tigre_target.nrrd"))
 #print(cube_astra.shape, cube_tigre.shape)
 
 vol_geom = astra.create_vol_geom(cube_astra.shape[1], cube_astra.shape[2], cube_astra.shape[0])
 
-angles = np.linspace(0, np.pi + np.arctan2(detector_shape[0]*detector_spacing[0]*0.5, dist_detector_origin)*2, 400, False)
+angles = np.linspace(0, np.pi + np.arctan2(detector_shape[0]*detector_spacing[0]*0.5, dist_detector_origin)*2, 200, False)
+filt = np.ones(angles.shape, dtype=bool)
+#for i in [50, 67, 72, 76, 78, 82, 96, 97, 99, 127, 196]:
+for i in [0,34,76]:
+    filt[i] = True
+
+random = np.random.default_rng(23)
+g = random.uniform(low=1, high=10, size=len(filt))
+angles_noise = random.normal(loc=0, scale=0.5*np.pi/180.0, size=(len(filt), 3))
+trans_noise = random.normal(loc=0, scale=10, size=(len(filt), 3))
+
+#print(np.arange(len(filt))[np.max(np.abs(angles_noise), axis=1)>2*np.pi/180])
+
+#filt = np.max(np.abs(angles_noise), axis=1)>2*np.pi/180
+
+angles = angles[filt]
+angles_noise = angles_noise[filt,:]
+trans_noise = trans_noise[filt,:]
 angles_zero = np.zeros_like(angles)
 angles_one = np.ones_like(angles)
+
+angles_astra_clean = np.vstack((angles, -angles_one*0.5*np.pi, angles_one*np.pi)).T
+#angles_astra += random.uniform(low=0, high=0.05, size=angles_astra.shape)
+angles_astra = np.array(angles_astra_clean)
+#trans_noise = np.zeros((len(angles), 3))
+#trans_noise[:,:] = 10
+
+
+image_shape = cube_astra.shape
+initial = np.zeros(image_shape)
+astra_iter = 100
+
+proj_data_clean = proj_astra(angles_astra_clean, cube_astra)
+lam = 0.01*np.ones_like(proj_data_clean)*np.max(proj_data_clean, axis=(0,2))[np.newaxis,:,np.newaxis]
+noise = np.array(random.poisson(lam=lam, size=proj_data_clean.shape), dtype=float)
+proj_data = proj_data_clean# + noise
+del noise
+sitk.WriteImage(sitk.GetImageFromArray(proj_data_clean), os.path.join("recos", "input_proj_data_clean.nrrd"))
+del proj_data_clean
+real_geo = utils.create_astra_geo(angles_astra_clean, np.zeros((len(angles),3)), detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
 
 proj_geom_p = astra.create_proj_geom('parallel3d', detector_spacing[0]/image_zoom, detector_spacing[1]/image_zoom, detector_shape[0], detector_shape[1], angles-angles_one*0.5*np.pi)
 proj_geom_c = astra.create_proj_geom('cone', detector_spacing[0]/image_zoom, detector_spacing[1]/image_zoom, detector_shape[0], detector_shape[1], angles-angles_one*0.5*np.pi, dist_source_origin/image_zoom, dist_detector_origin/image_zoom)
@@ -158,21 +210,6 @@ if False:
     astra.data3d.delete(rec_id)
     astra.data3d.delete(proj_id)
     print("Astra Cone: ", time.perf_counter()-perftime, np.sum(np.abs(cube_astra-rec)))
-
-def proj_astra(angles_astra, volume):
-    proj_geom_v = utils.create_astra_geo(angles_astra, np.zeros(len(angles_astra)), detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, image_zoom)
-    volume_id = astra.data3d.create('-vol', vol_geom, volume)
-    proj_id = astra.data3d.create('-sino', proj_geom_v, 0)
-    algString = 'FP3D_CUDA'
-    cfg = astra.astra_dict(algString)
-    cfg['ProjectionDataId'] = proj_id
-    cfg['VolumeDataId'] = volume_id
-    alg_id = astra.algorithm.create(cfg)
-    astra.algorithm.run(alg_id)
-    astra.algorithm.delete(alg_id)
-    astra.data3d.delete(volume_id)
-    proj_data = astra.data3d.get(proj_id)
-    return proj_data
 
 def reco_astra2(proj_data, angles_astra, name, prior=0):
     if astra_iter == 0: return np.zeros_like(cube_astra)
@@ -283,31 +320,6 @@ def save_angles(data, prefix, title):
     plt.close()
 
 
-angles_astra_clean = np.vstack((angles, -angles_one*0.5*np.pi, angles_one*np.pi)).T
-#angles_astra_clean[:,1:3] += 0.5*np.pi/180
-image_shape = cube_astra.shape
-initial = np.zeros(image_shape)
-astra_iter = 100
-
-random = np.random.default_rng(23)
-proj_data_clean = proj_astra(angles_astra_clean, cube_astra)
-lam = 0.01*np.ones_like(proj_data_clean)*np.max(proj_data_clean, axis=(0,2))[np.newaxis,:,np.newaxis]
-noise = np.array(random.poisson(lam=lam, size=proj_data_clean.shape), dtype=float)
-proj_data = proj_data_clean# + noise
-del noise
-g = random.uniform(low=1, high=10, size=len(angles_astra_clean))
-
-sitk.WriteImage(sitk.GetImageFromArray(proj_data_clean), os.path.join("recos", "input_proj_data_clean.nrrd"))
-#sitk.WriteImage(sitk.GetImageFromArray(forcast.Projection_Preprocessing(proj_data_clean)), os.path.join("recos", "input_proj_data.nrrd"))
-del proj_data_clean
-#angles_astra += random.uniform(low=0, high=0.05, size=angles_astra.shape)
-real_geo = utils.create_astra_geo(angles_astra_clean, np.zeros((len(angles),3)), detector_spacing, detector_shape, dist_source_origin, dist_detector_origin, astra_zoom)
-angles_astra = np.array(angles_astra_clean)
-angles_noise = random.normal(loc=0, scale=1.0*np.pi/180.0, size=angles_astra_clean.shape)
-trans_noise = random.normal(loc=0, scale=10, size=(len(angles), 3))
-#trans_noise = np.zeros((len(angles), 3))
-#trans_noise[:,:] = 10
-
 ds = np.array(angles_noise)
 #ds[ds<-np.pi] += 2*np.pi
 #ds[ds>np.pi] -= 2*np.pi
@@ -325,7 +337,7 @@ save_angles(angles_astra_clean, "", "angles")
 save_angles(angles_noise, "", "noise")
 save_angles(angles_astra+angles_noise, "", "noise-angles")
 
-#np.set_printoptions(precision=3, floatmode="fixed", suppress=True)
+np.set_printoptions(precision=4, floatmode="fixed", suppress=True)
 
 def vec2angle(vecs):
     sec = np.arctan2(np.sqrt(vecs[:,6]**2+vecs[:,7]**2), vecs[:,8])
@@ -398,16 +410,26 @@ def cmp_vecs(name, real, new):
     ds *= 180/np.pi
     d = ds[:,0]
     print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+    #print(np.argsort(d[:])[-10:], d[np.argsort(d[:])[-10:]])
+    #print(np.argsort(d[:])[:10], d[np.argsort(d[:])[:10]])
+    #print(d)
     d = ds[:,1]
     print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+    #print(np.argsort(d[:])[-10:], d[np.argsort(d[:])[-10:]])
+    #print(np.argsort(d[:])[:10], d[np.argsort(d[:])[:10]])
+    #print(d)
     d = ds[:,2]
     print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))
+    #print(np.argsort(d[:])[-10:], d[np.argsort(d[:])[-10:]])
+    #print(np.argsort(d[:])[:10], d[np.argsort(d[:])[:10]])
+    #print(d)
     
     d = np.linalg.norm(new[:,0]-real[:,0], axis=1)
     print("{: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f} {: .10f}".format(np.sum(d**2), np.mean(d), np.std(d), np.min(d), np.quantile(d, 0.25), np.median(d), np.quantile(d, 0.75), np.max(d)))    
     #dist = np.linalg.norm(d, axis=1)
     #print(np.argsort(dist)[:3], dist[np.argsort(dist)[:3]], d[np.argsort(dist)[:3], 0])
-    print(np.argsort(d)[-3:], d[np.argsort(d)[-3:]])
+    #print(np.argsort(d)[-10:], d[np.argsort(d)[-10:]])
+    #print(d)
     #print(d)
 
 if False:
@@ -515,8 +537,8 @@ import cProfile, io, pstats
 #    for grad_max in [1,2,3]:
 #        grad_width = (grad_max, grad_sub)
 #for grad_width in [(3,9), (3,8), (2,8), (3,6), (2,5), (1,5), (3,3)]:
-for grad_width in [(3,8), (2,8), (1,5)]:
-#for grad_width in [(2,8)]:
+#for grad_width in [(3,8), (2,8), (1,5)]:
+for grad_width in [((1.5,6),(1,5))]:
     #grad_width = (1,5)
     #profiler = cProfile.Profile()
     #profiler.enable()
@@ -533,7 +555,7 @@ for grad_width in [(3,8), (2,8), (1,5)]:
     
     #vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough0-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 0, grad_width=grad_width)
     #cmp_vecs("rough0 - my - "+str(grad_width), real_geo['Vectors'], vecs)
-    vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough2-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 4, grad_width=grad_width)
+    vecs, corrs = forcast_test.reg_and_reco(cube_astra, np.swapaxes(proj_data,0,1), params, Ax, "rough2-my-"+str(grad_width[0])+"-"+str(grad_width[1]), 4, grad_width=grad_width, noise=(trans_noise, angles_noise*180/np.pi))
     cmp_vecs("rough2 - my - "+str(grad_width), real_geo['Vectors'], vecs)
 exit(0)
 if False:

@@ -4,7 +4,7 @@ import cv2
 import utils
 import matplotlib.pyplot as plt
 #import astra
-#import SimpleITK as sitk
+import SimpleITK as sitk
 #import time
 import scipy.optimize
 
@@ -570,6 +570,7 @@ def lessRoughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real
     return cur
 
 def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5)):
+def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5), noise=None):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
@@ -584,7 +585,7 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5)):
     failed_count = grad_width[0]
     osci_count = 0
     min_ε = 0
-    while(True):
+    for it in range(100):
         #print(εs, change)
         dvec = []
         for ε in εs:
@@ -667,20 +668,27 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5)):
         if np.abs(min_ε) <= 0.0001:
             break
         if np.abs(change) > failed_count:
-            #print("reset", axis, change)
+            #print("reset", axis, change, end=",")
             failed_count += grad_width[0]
             osci_count = 0
-            εs = make_εs(*grad_width)
             cur = np.array(in_cur)
-            #min_ε = i*np.random.random(1)[0]-0.5*i
-            min_ε = εs[np.argmin(values)]
+            if np.abs(change) < grad_width[0]*1:
+                #εs = make_εs(*grad_width)
+                #min_ε = i*np.random.random(1)[0]-0.5*i
+                min_ε = εs[np.argmin(values)]
+            else:
+                #εs = make_εs(grad_width[0]*(2**(failed_count/grad_width[0])), grad_width[0]+6*int(failed_count/grad_width[0]))
+                #min_ε = 0
+                min_ε = εs[np.argmin(values)]
+            min_ε = np.random.uniform(εs[2], εs[-3])
             change = min_ε
-        if failed_count > grad_width[0]*5:
-            print("failed", end=",")
+        if failed_count > grad_width[0]*6:
+            #print("failed", axis, grad_width, end=",")
+            cur = np.array(in_cur)
             break
         selected_εs.append(min_ε)
         if osci_count > 10:
-            print("osci", end=",")
+            #print("osci", axis, end=",")
             break
         if axis==0:
             cur = applyRot(cur, min_ε, 0, 0)
@@ -691,16 +699,28 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5)):
         if axis==2:
             cur = applyRot(cur, 0, 0, min_ε)    
             #cur = applyTrans(cur, 0, 0, scale)
-    #print(change)
+    if noise is not None:
+        print("{:3}".format(it), end=" : ")
+        print("{}{}{} {: .3f} {: .3f}".format(bcolors.BLUE, axis, bcolors.END, noise[axis], change), end=": ")
+        noise[axis] -= change
+        if np.abs(noise[axis]) > 1:
+            print("{}{: .3f}{}".format(bcolors.RED, noise[axis], bcolors.END), end=", ")
+        elif np.abs(noise[axis]) > 0.1:
+            print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis], bcolors.END), end=", ")
+        else:
+            print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis], bcolors.END), end=", ")
     return cur
 
 
-def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None, c=0, grad_width=(1,5)):
+def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None, c=0, grad_width=(1,5), noise=None):
     #print("rough")
     if data_real is None:
         data_real = findInitialFeatures(real_img, feature_params)
     if len(data_real[0].shape)==1:
         points, valid = trackFeatures_(real_img, proj_img, data_real, feature_params)
+    
+    if noise is not None:
+        trans_noise, angles_noise = noise
     #else:
     #    points, valid = trackFeatures(real_img, proj_img, data_real, feature_params)
     
@@ -832,16 +852,27 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
     elif c==2:
+        print()
         cur = correctXY(cur, data_real, real_img, Ax)
         #cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width[0], noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width[0], noise=angles_noise)
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width[0], noise=angles_noise)
+        #return cur
+        print()
         cur = correctXY(cur, data_real, real_img, Ax)
         #cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width[1], noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width[1], noise=angles_noise)
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width[1], noise=angles_noise)
+        #print()
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        #cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width[1], noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width[1], noise=angles_noise)
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        #cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width[1], noise=angles_noise)
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
     elif c==3:
@@ -1067,7 +1098,8 @@ def calcObjectiveStdPoints(comp, good_new, good_old):
         mean = np.mean(d)
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
         #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
-        f = np.var(fd)
+        #print(d.shape, fd.shape, mean, std)
+        f = np.var( fd )
     elif comp==1:
         d = good_new[:,1]-good_old[:,1]
         std = np.std(d)
