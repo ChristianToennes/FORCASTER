@@ -569,7 +569,100 @@ def lessRoughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real
         proj_img = Projection_Preprocessing(Ax(np.array([cur])))[:,0]
     return cur
 
-def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5)):
+class bcolors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    END = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+def linsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(4,5), noise=None):
+    points_real, features_real = data_real
+    points_real = normalize_points(points_real, real_img)
+    real_img = Projection_Preprocessing(real_img)
+    if not my:
+        GIoldold = GI(real_img, real_img)
+
+    make_εs = lambda size, count: np.hstack((np.linspace(-size, 0, count, False), [0], np.linspace(size, 0, count, False)[::-1] ))
+
+    εs = make_εs(*grad_width)
+    cur = np.array(in_cur)
+    dvec = []
+    for ε in εs:
+        if axis==0:
+            dvec.append(applyRot(cur, ε, 0, 0))
+        elif axis==1:
+            dvec.append(applyRot(cur, 0, ε, 0))
+        elif axis==2:
+            dvec.append(applyRot(cur, 0, 0, ε))
+    dvec = np.array(dvec)
+    projs = Projection_Preprocessing(Ax(dvec))
+    if my:
+        points = []
+        valid = []
+        if len(data_real[0].shape)==1:
+                for (p,v), proj in [(trackFeatures_(real_img, projs[:,i], data_real, {}), projs[:,i]) for i in range(projs.shape[1])]:
+                    points.append(normalize_points(p, proj))
+                    valid.append(v==1)
+        else:
+            for (p,v),proj in [(trackFeatures(real_img, projs[:,i], data_real, {}), projs[:,i]) for i in range(projs.shape[1])]:
+                points.append(normalize_points(p, proj))
+                valid.append(v==1)
+        combined_valid = valid[0]
+        for v in valid:
+            combined_valid = np.bitwise_and(combined_valid, v)
+        points = [p[v] for p, v in zip(points, valid)]
+        
+        values = np.array([calcObjectiveStdPoints(axis, points, points_real[v]) for points,v in zip(points,valid)])
+        p = np.polyfit(εs, values, 2)
+    else:
+        values = np.array([calcObjective(data_real, real_img, projs[:,i], {}, GIoldold) for i in range(projs.shape[1])])
+        p = np.polyfit(εs, values, 2)
+    
+    #plt.figure()
+    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[-1]), np.polyval(p, np.linspace(1.2*εs[0],1.2*εs[-1])))
+    #plt.scatter(εs, values)
+    #plt.show()
+    #plt.close()
+
+    mins = np.roots(np.polyder(p))
+    ε_pos1 = np.argmin(np.polyval(p, mins))
+    min_ε1 = mins[ε_pos1]
+    ε_pos = np.argmin(values)
+    if ε_pos > 0 and ε_pos < len(values)-1:
+        min_ε = εs[ε_pos]
+    else:
+        min_ε = 0
+
+    if axis==0:
+        cur = applyRot(cur, min_ε, 0, 0)
+    if axis==1:
+        cur = applyRot(cur, 0, min_ε, 0)
+    if axis==2:
+        cur = applyRot(cur, 0, 0, min_ε)
+    if noise is not None:
+        print("{}{}{} {: .3f} {: .3f}".format(bcolors.BLUE, axis, bcolors.END, noise[axis], min_ε), end=": ")
+
+        #if np.abs(noise[axis]-min_ε1) > 1:
+        #    print("{}{: .3f}{}".format(bcolors.RED, noise[axis]-min_ε1, bcolors.END), end=" / ")
+        #elif np.abs(noise[axis]-min_ε1) > 0.1:
+        #    print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis]-min_ε1, bcolors.END), end=" / ")
+        #else:
+        #    print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis]-min_ε1, bcolors.END), end=" / ")
+
+        noise[axis] -= min_ε
+        if np.abs(noise[axis]) > 1:
+            print("{}{: .3f}{}".format(bcolors.RED, noise[axis], bcolors.END), end=", ")
+        elif np.abs(noise[axis]) > 0.1:
+            print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis], bcolors.END), end=", ")
+        else:
+            print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis], bcolors.END), end=", ")
+    return cur
+
+
 def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5), noise=None):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
@@ -852,6 +945,11 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
     elif c==2:
+        print()
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(3,5), noise=angles_noise)
+        cur = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(3,5), noise=angles_noise)
+        cur = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(3,5), noise=angles_noise)
         print()
         cur = correctXY(cur, data_real, real_img, Ax)
         #cur = correctZ(cur, data_real, real_img, Ax)
