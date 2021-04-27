@@ -1307,9 +1307,9 @@ def trackFeatures(base_img, next_img, data, feature_params):
     base_points, f1 = data
     #if len(base_points.shape) == 1:
     #    base_points = np.array([[p.pt[0], p.pt[1]] for p in base_points], dtype=np.float32)
-    lk_params = dict( winSize  = (15,15),
-                  maxLevel = 2,
-                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+    lk_params = dict( winSize  = (31,31),
+                  maxLevel = 3,
+                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, 0.05))
     #print(base_img.shape, next_img.shape)
     p1, st, err = cv2.calcOpticalFlowPyrLK(base_img, next_img, base_points[:,np.newaxis,:], None, **lk_params)
     #print(p1.shape, st.shape)
@@ -1401,7 +1401,7 @@ def findInitialFeatures(img, feature_params, use_cpu=True):
         #points, features = detector.detectAndCompute(img, mask)
         #points = np.array(points)
         
-        feature_params = {"maxCorners": 200, "qualityLevel": 0.01, "minDistance": 7, "blockSize": 13}
+        feature_params = {"maxCorners": 200, "qualityLevel": 0.01, "minDistance": 19, "blockSize": 21}
         points = cv2.goodFeaturesToTrack(img, mask=mask, **feature_params)
         points = points[:,0]
         features = None
