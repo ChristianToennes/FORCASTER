@@ -382,6 +382,17 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5
     params = np.array(in_params[:])
     if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
         sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
+    if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
+        sino = Ax(params)
+        sino = sitk.GetImageFromArray(sino)
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-input.nrrd"))
+        del sino
+    if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+        reg_geo = Ax.create_geo(params)
+        rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input.nrrd"))
+        del rec
 
     #real_image = real_image[::-1, ::-1]
     #real_image = np.swapaxes(real_image, 1,2)
@@ -743,11 +754,11 @@ def reg_real_data():
     cbct_path = r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
     ('201020_imbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
-    ('201020_imbu_sin_', 'E:\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
-    ('201020_imbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
-    ('201020_imbu_circ_', 'E:\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
-    ('201020_imbureg_noimbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path),
-    ('201020_imbureg_noimbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
+    #('201020_imbu_sin_', 'E:\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
+    #('201020_imbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
+    #('201020_imbu_circ_', 'E:\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
+    #('201020_imbureg_noimbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path),
+    #('201020_imbureg_noimbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
     ]
     cbct_path = r"E:\output\CKM4Baltimore\CBCT_2021_01_11_16_04_12"
     projs += [
@@ -770,11 +781,12 @@ def reg_real_data():
             ims, _, _, _, _, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=200)
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
-            skip = int(len(ims)/100)
+            #skip = int(len(ims)/100)
+            skip = 5
             ims = ims[::skip]
             coord_systems = coord_systems[::skip]
-            sids = sids[::skip]
-            sods = sods[::skip]
+            sids = np.mean(sids[::skip])
+            sods = np.mean(sods[::skip])
 
             origin, size, spacing, image = utils.read_cbct_info(cbct_path)
 
@@ -787,25 +799,34 @@ def reg_real_data():
             del image
 
             Ax = utils.Ax_param_asta(real_image.shape, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing), real_image)
-            geo, _, _ = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+            geo = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+
+            r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
 
             params = np.zeros((len(geo['Vectors']), 3, 3), dtype=float)
-            params[:,1] = geo['Vectors'][:, 6:9]
-            params[:,2] = geo['Vectors'][:, 9:12]
+            params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
+            params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
 
-            reg_and_reco(real_image, ims, params, Ax, name, 3)
+            projs = Ax(params)
+            sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
+            sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ims,0,1)), "recos/ims.nrrd")
+
+            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(4), 4, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
+            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(3), 3, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
+            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(5), 5, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
+            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(0), 0, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
         except Exception as e:
             print(name, "cali failed", e)
             raise
 
 if __name__ == "__main__":
-    import cProfile, io, pstats
-    profiler = cProfile.Profile()
-    profiler.enable()
+    #import cProfile, io, pstats
+    #profiler = cProfile.Profile()
+    #profiler.enable()
     reg_real_data()
-    profiler.disable()
-    s = io.StringIO()
-    sortby = cProfile.SortKey.CUMULATIVE
-    ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
-    ps.print_stats()
-    print(s.getvalue())
+    #profiler.disable()
+    #s = io.StringIO()
+    #sortby = pstats.SortKey.TIME
+    #ps = pstats.Stats(profiler, stream=s).sort_stats(sortby)
+    #ps.print_stats(20)
+    #print(s.getvalue())

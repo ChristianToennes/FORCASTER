@@ -125,6 +125,7 @@ def correctXY(in_cur, data_real, real_img, Ax):
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
 
+
     for i in range(20):
         projs = Projection_Preprocessing(Ax(np.array([cur])))
         if len(data_real[0].shape)==1:
@@ -135,22 +136,24 @@ def correctXY(in_cur, data_real, real_img, Ax):
             p,v = trackFeatures(real_img, projs[:,0], data_real, {})
             points = normalize_points(p, projs[:,0])
             valid = v==1
+
         points = points[valid]
         
-        diff = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points,points_real)])
+        diff = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points,points_real[valid])])
         if len(diff)>1:
             
-            xdir = cur[1]#/np.linalg.norm(vec[6:9])
-            ydir = cur[2]#/np.linalg.norm(vec[9:12])
+            xdir = cur[1]#/np.linalg.norm(cur[1])
+            ydir = cur[2]#/np.linalg.norm(cur[2])
             m = np.mean(diff, axis=0)
             std = np.std(diff, axis=0)
             diff = diff[np.bitwise_and(np.bitwise_and(diff[:,0]>m[0]-3*std[0], diff[:,0]<m[0]+3*std[0]), np.bitwise_and(diff[:,1]>m[1]-3*std[1], diff[:,1]<m[1]+3*std[1]))]
-            
-            med = np.median(diff, axis=0)
+            med = np.median(diff, axis=0)*0.1
+            #print(m, std, med, med[0]*xdir, med[1]*ydir)
             cur[0] += med[0] * xdir# / np.linalg.norm(xdir)
             cur[0] += med[1] * ydir# / np.linalg.norm(ydir)
-            if (np.abs(med[0]*xdir) > 100).any() or (np.abs(med[1]*ydir) > 100).any():
-                print(in_cur, cur)
+            if (np.abs(med[0]*xdir) > 200).any() or (np.abs(med[1]*ydir) > 200).any():
+                #print(in_cur, cur)
+                print(m, std)
                 print(med[0], xdir)
                 print(med[1], ydir)
                 raise Exception("xy change to large")
@@ -579,7 +582,7 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-def linsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(4,5), noise=None):
+def linsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(4,5), noise=None, both=False):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
@@ -629,13 +632,20 @@ def linsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(4,5), 
     #plt.close()
 
     mins = np.roots(np.polyder(p))
-    ε_pos1 = np.argmin(np.polyval(p, mins))
-    min_ε1 = mins[ε_pos1]
-    ε_pos = np.argmin(values)
-    if ε_pos > 0 and ε_pos < len(values)-1:
-        min_ε = εs[ε_pos]
-    else:
-        min_ε = 0
+    ε_pos = np.argmin(np.polyval(p, mins))
+    min_ε = mins[ε_pos]
+    #ε_pos = np.argmin(values)
+    #if ε_pos > 0 and ε_pos < len(values)-1:
+    #    min_ε = εs[ε_pos]
+    #else:
+    #    min_ε = 0
+
+    #if np.abs(min_ε) > grad_width[0]:
+        #ε_pos = np.argmin(values)
+        #if ε_pos > 0 and ε_pos < len(values)-1:
+        #    min_ε = εs[ε_pos]
+        #else:
+    #        min_ε = -0.1 * np.sign(min_ε)
 
     if axis==0:
         cur = applyRot(cur, min_ε, 0, 0)
@@ -653,17 +663,19 @@ def linsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(4,5), 
         #else:
         #    print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis]-min_ε1, bcolors.END), end=" / ")
 
-        noise[axis] -= min_ε
-        if np.abs(noise[axis]) > 1:
-            print("{}{: .3f}{}".format(bcolors.RED, noise[axis], bcolors.END), end=", ")
-        elif np.abs(noise[axis]) > 0.1:
-            print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis], bcolors.END), end=", ")
+        if np.abs(noise[axis]) < np.abs(noise[axis]-min_ε)-0.1:
+            print("{}{: .3f}{}".format(bcolors.RED, noise[axis]-min_ε, bcolors.END), end=", ")
+        elif np.abs(noise[axis]) > np.abs(noise[axis]-min_ε):
+            print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis]-min_ε, bcolors.END), end=", ")
         else:
-            print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis], bcolors.END), end=", ")
+            print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis]-min_ε, bcolors.END), end=", ")
+        noise[axis] -= min_ε
+    if both:
+        return cur, min_ε
     return cur
 
 
-def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5), noise=None):
+def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5), noise=None, both=False):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
@@ -773,7 +785,7 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5), 
                 #εs = make_εs(grad_width[0]*(2**(failed_count/grad_width[0])), grad_width[0]+6*int(failed_count/grad_width[0]))
                 #min_ε = 0
                 min_ε = εs[np.argmin(values)]
-            min_ε = np.random.uniform(εs[2], εs[-3])
+            min_ε = np.random.uniform(εs[1], εs[-2])
             change = min_ε
         if failed_count > grad_width[0]*6:
             #print("failed", axis, grad_width, end=",")
@@ -802,10 +814,12 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5), 
             print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis], bcolors.END), end=", ")
         else:
             print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis], bcolors.END), end=", ")
+    if both:
+        return cur, change
     return cur
 
 
-def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None, c=0, grad_width=(1,5), noise=None):
+def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None, c=0, grad_width=((1.5,5),(1,5)), noise=None):
     #print("rough")
     if data_real is None:
         data_real = findInitialFeatures(real_img, feature_params)
@@ -823,6 +837,31 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
     #plt.imshow(proj_img)
     #plt.show()
     #plt.close()
+
+    def grad_img(img):
+        i = img[1:]-img[:-1]
+        i = i[:,1:]-i[:,:-1]
+        return i
+
+    def debug_projs(cur):
+        plt.figure()
+        plt.title("real")
+        plt.imshow(grad_img(real_img))
+        plt.figure()
+        plt.title("cur_proj")
+        cur_proj = Projection_Preprocessing(Ax(np.array([cur]))[:,0])
+        plt.imshow(grad_img(cur_proj))
+        plt.figure()
+        plt.title("diff_prev")
+        plt.imshow(grad_img(real_img)-grad_img(proj_img))
+        plt.figure()
+        plt.title("diff_cur")
+        plt.imshow(grad_img(real_img)-grad_img(cur_proj))
+        plt.figure()
+        plt.title("diff_proj")
+        plt.imshow(grad_img(proj_img)-grad_img(cur_proj))
+        plt.show()
+        plt.close()
 
     #cur[5] = correctRot(cur, data_real[0][valid], points[valid], Ax, real_img, data_real, eps=0.1)[5]
     #for _ in range(3):
@@ -924,53 +963,166 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
         old_change.append(list(change))
         print(np.sum(old_change, axis=0))
     elif c==0:
-        #cur = correctXY(cur, data_real, real_img, Ax)
-        #cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
         cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
     elif c==1:
         cur = correctXY(cur, data_real, real_img, Ax)
-        #cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
-        cur = correctXY(cur, data_real, real_img, Ax)
-        #cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
+        cur = correctZ(cur, data_real, real_img, Ax)
+        return cur
+    elif c==2:
+        # order 0 1 2
+        # order 2 0 1
+        # order 1 0 2
+        # order 2 1 0
+        print()
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
-    elif c==2:
-        print()
-        cur = correctXY(cur, data_real, real_img, Ax)
-        cur = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(3,5), noise=angles_noise)
-        cur = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(3,5), noise=angles_noise)
-        cur = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(3,5), noise=angles_noise)
-        print()
-        cur = correctXY(cur, data_real, real_img, Ax)
-        #cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width[0], noise=angles_noise)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width[0], noise=angles_noise)
-        #cur = correctXY(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width[0], noise=angles_noise)
         #return cur
+        #debug_projs(cur)
+
+        cur1, c1 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(2,25), noise=angles_noise, both=True)
+        cur2, c2 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(2,25), noise=angles_noise, both=True)
+        cur3, c3 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(2,25), noise=angles_noise, both=True)
+        if np.abs(c1) > 2:
+            angles_noise[0] += c1
+            c1 = 0.1*np.sign(c1)
+            angles_noise[0] -= c1
+        if np.abs(c2) > 2:
+            angles_noise[1] += c2
+            c2 = -0.1*np.sign(c2)
+            angles_noise[1] -= c2
+        if np.abs(c3) > 2:
+            angles_noise[2] += c3
+            c3 = -0.1*np.sign(c3)
+            angles_noise[2] -= c3
+        cur = applyRot(cur, c1, c2, c3)
+        #debug_projs(cur)
+        print()
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        #debug_projs(cur)
+        cur1, c11 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(2,25), noise=angles_noise, both=True)
+        cur2, c22 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(2,25), noise=angles_noise, both=True)
+        cur3, c33 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(2,25), noise=angles_noise, both=True)
+        if np.abs(c1+c11) > 2:
+            angles_noise[0] += c11
+            c11 = -c1 + 0.1*np.sign(c1+c11)
+            angles_noise[0] -= c11
+        if np.abs(c2+c22) > 2:
+            angles_noise[1] += c22
+            c22 = -c2 + 0.1*np.sign(c2+c22)
+            angles_noise[1] -= c22
+        if np.abs(c3+c33) > 2:
+            angles_noise[2] += c33
+            c33 = -c3 + 0.1*np.sign(c3+c33)
+            angles_noise[2] -= c33
+        cur = applyRot(cur, c11, c22, c33)
+        #debug_projs(cur)
+        print()
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        cur1, c111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(1,25), noise=angles_noise, both=True)
+        cur2, c222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(1,25), noise=angles_noise, both=True)
+        cur3, c333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(1,25), noise=angles_noise, both=True)
+        if np.abs(c1+c11+c111) > 1.5:
+            angles_noise[0] += c111
+            c111 = -c1 -c11 + 0.1*np.sign(c1+c11+c111)
+            angles_noise[0] -= c111
+        if np.abs(c2+c22+c222) > 1.5:
+            angles_noise[1] += c222
+            c222 = -c2 -c22 + 0.1*np.sign(c2+c22+c222)
+            angles_noise[1] -= c222
+        if np.abs(c3+c33+c333) > 1.5:
+            angles_noise[2] += c333
+            c333 = -c3 -c33 + 0.1*np.sign(c3+c33+c333)
+            angles_noise[2] -= c333
+        cur = applyRot(cur, c111, c222, c333)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
+        return cur
+        print()
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        cur1, c1111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(1,25), noise=angles_noise, both=True)
+        cur2, c2222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(1,25), noise=angles_noise, both=True)
+        cur3, c3333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(1,25), noise=angles_noise, both=True)
+        if np.abs(c1+c11+c111+c1111) > 1.5:
+            angles_noise[0] += c1111
+            c1111 = -c1 -c11 -c111 + 0.1*np.sign(c1+c11+c111+c1111)
+            angles_noise[0] -= c1111
+        if np.abs(c2+c22+c222+c2222) > 1.5:
+            angles_noise[1] += c2222
+            c2222 = -c2 -c22 -c222 + 0.1*np.sign(c2+c22+c222+c2222)
+            angles_noise[1] -= c2222
+        if np.abs(c3+c33+c333+c3333) > 1.5:
+            angles_noise[2] += c3333
+            c3333 = -c3 -c33 -c333 + 0.1*np.sign(c3+c33+c333+c3333)
+            angles_noise[2] -= c3333
+        cur = applyRot(cur, c1111, c2222, c3333)
+        print()
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        cur1, c11111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(0.75,25), noise=angles_noise, both=True)
+        cur2, c22222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(0.75,25), noise=angles_noise, both=True)
+        cur3, c33333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(0.75,25), noise=angles_noise, both=True)
+        if np.abs(c1+c11+c111+c1111+c11111) > 1.5:
+            angles_noise[0] += c11111
+            c11111 = -c1 -c11 -c111 -c1111 + 0.1*np.sign(c1+c11+c111+c1111+c11111)
+            angles_noise[0] -= c11111
+        if np.abs(c2+c22+c222+c2222+c22222) > 1.5:
+            angles_noise[1] += c22222
+            c22222 = -c2 -c22 -c222 -c2222 + 0.1*np.sign(c2+c22+c222+c2222+c22222)
+            angles_noise[1] -= c22222
+        if np.abs(c3+c33+c333+c3333+c33333) > 1.5:
+            angles_noise[2] += c33333
+            c33333 = -c3 -c33 -c333 -c3333 + 0.1*np.sign(c3+c33+c333+c3333+c33333)
+            angles_noise[2] -= c33333
+        cur = applyRot(cur, c11111, c22222, c33333)
+        print()
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        cur1, c111111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(0.5,25), noise=angles_noise, both=True)
+        cur2, c222222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(0.5,25), noise=angles_noise, both=True)
+        cur3, c333333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(0.5,25), noise=angles_noise, both=True)
+        if np.abs(c1+c11+c111+c1111+c11111+c111111) > 1.5:
+            angles_noise[0] += c111111
+            c111111 = -c1 -c11 -c111 -c1111 -c11111 + 0.1*np.sign(c1+c11+c111+c1111+c11111+c111111)
+            angles_noise[0] -= c111111
+        if np.abs(c2+c22+c222+c2222+c22222+c222222) > 1.5:
+            angles_noise[1] += c222222
+            c222222 = -c2 -c22 -c222 -c2222 -c22222 + 0.1*np.sign(c2+c22+c222+c2222+c22222+c222222)
+            angles_noise[1] -= c222222
+        if np.abs(c3+c33+c333+c3333+c33333+c333333) > 1.5:
+            angles_noise[2] += c333333
+            c333333 = -c3 -c33 -c333 -c3333 -c33333 + 0.1*np.sign(c3+c33+c333+c3333+c33333+c333333)
+            angles_noise[2] -= c333333
+        cur = applyRot(cur, c111111, c222222, c333333)
+        #debug_projs(cur)
+        cur = correctZ(cur, data_real, real_img, Ax)
+        return cur
         print()
         cur = correctXY(cur, data_real, real_img, Ax)
         #cur = correctZ(cur, data_real, real_img, Ax)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=(1.5,5), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=(1.5,5), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=(1.5,5), noise=angles_noise)
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        print()
+        cur = correctXY(cur, data_real, real_img, Ax)
+        #cur = correctZ(cur, data_real, real_img, Ax)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=(1.5,5), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=(1.5,5), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=(1.5,5), noise=angles_noise)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
+        return cur
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        print()
+        cur = correctXY(cur, data_real, real_img, Ax)
         cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width[1], noise=angles_noise)
         cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width[1], noise=angles_noise)
         #cur = correctXY(cur, data_real, real_img, Ax)
         cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width[1], noise=angles_noise)
-        #print()
-        #cur = correctXY(cur, data_real, real_img, Ax)
-        #cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width[1], noise=angles_noise)
-        #cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width[1], noise=angles_noise)
-        #cur = correctXY(cur, data_real, real_img, Ax)
-        #cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width[1], noise=angles_noise)
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
     elif c==3:
@@ -1190,8 +1342,25 @@ def unnormalize_points(points, img):
     return ret
 
 def calcObjectiveStdPoints(comp, good_new, good_old):
-    if comp==0:
+    if comp==10:
         d = good_new[:,0]-good_old[:,0]
+        std = np.std(d)
+        mean = np.mean(d)
+        fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+        #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
+        #print(d.shape, fd.shape, mean, std)
+        f = np.std( fd )
+    elif comp==11:
+        d = good_new[:,1]-good_old[:,1]
+        std = np.std(d)
+        mean = np.mean(d)
+        fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+        #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
+        f = np.std( fd )
+    if comp==0:
+        mid_n_x, mid_n_y = np.mean(good_new, axis=0)
+        mid_o_x, mid_o_y = np.mean(good_old, axis=0)
+        d = (good_new[:,0]-mid_n_x)-(good_old[:,0]-mid_o_x)
         std = np.std(d)
         mean = np.mean(d)
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
@@ -1199,13 +1368,15 @@ def calcObjectiveStdPoints(comp, good_new, good_old):
         #print(d.shape, fd.shape, mean, std)
         f = np.var( fd )
     elif comp==1:
-        d = good_new[:,1]-good_old[:,1]
+        mid_n_x, mid_n_y = np.mean(good_new, axis=0)
+        mid_o_x, mid_o_y = np.mean(good_old, axis=0)
+        d = (good_new[:,1]-mid_n_y)-(good_old[:,1]-mid_o_y)
         std = np.std(d)
         mean = np.mean(d)
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
         #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
         f = np.var( fd )
-    elif comp==12:
+    elif comp==2:
         #f = np.var( good_new[:,1]-good_old[:,1] )
         mid_n_x, mid_n_y = np.mean(good_new, axis=0)
         mid_o_x, mid_o_y = np.mean(good_old, axis=0)
@@ -1227,15 +1398,33 @@ def calcObjectiveStdPoints(comp, good_new, good_old):
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
 
 
-        f = np.var( fd )
-    elif comp==2:
+        f = np.var( d )
+    elif comp==22:
+        mid_n_x, mid_n_y = np.mean(good_new, axis=0)
+        mid_o_x, mid_o_y = np.mean(good_old, axis=0)
+        ϕ_new = np.arctan2(good_new[:,1]-mid_n_y, good_new[:,0]-mid_n_x)
+        ϕ_old = np.arctan2(good_old[:,1]-mid_o_y, good_old[:,0]-mid_o_x)
+
+        ϕ_new = np.array([np.arctan2(l[1]-r[1], l[0]-r[0])  for l in good_new for r in good_new if (l!=r).any()])
+        ϕ_old = np.array([np.arctan2(l[1]-r[1], l[0]-r[0])  for l in good_old for r in good_old if (l!=r).any()])
+
+        ϕ_new[ϕ_new<-np.pi] += 2*np.pi
+        ϕ_new[ϕ_new>np.pi] -= 2*np.pi
+
+        ϕ_old[ϕ_old<-np.pi] += 2*np.pi
+        ϕ_old[ϕ_old>np.pi] -= 2*np.pi
+
+        f = np.abs((np.mean(ϕ_new)-np.mean(ϕ_old))*180/np.pi)
+        if f > 180: f = 360-f
+
+    elif comp==12:
         d = np.linalg.norm(good_new-good_old, axis=1)
 
         std = np.std(d)
         mean = np.mean(d)
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
 
-        f = np.var(d)
+        f = np.std(d)
     elif comp==3:
         f = np.median( good_new[:,0]-good_old[:,0] )
     elif comp==4:
@@ -1307,12 +1496,29 @@ def trackFeatures(base_img, next_img, data, feature_params):
     base_points, f1 = data
     #if len(base_points.shape) == 1:
     #    base_points = np.array([[p.pt[0], p.pt[1]] for p in base_points], dtype=np.float32)
-    lk_params = dict( winSize  = (31,31),
-                  maxLevel = 3,
-                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, 0.05))
+    lk_params = dict( winSize  = (21,21),
+                  maxLevel = 2,
+                  criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 30, 0.01))
     #print(base_img.shape, next_img.shape)
     p1, st, err = cv2.calcOpticalFlowPyrLK(base_img, next_img, base_points[:,np.newaxis,:], None, **lk_params)
-    #print(p1.shape, st.shape)
+    
+        # draw the tracks
+    if False:
+        color = np.random.randint(0,255,(200,3))
+        mask = np.zeros_like(base_img)
+        frame = np.zeros_like(base_img)
+        for i,(new,old) in enumerate(zip(p1[st==1], base_points[:,np.newaxis][st==1])):
+            a,b = new.ravel()
+            c,d = old.ravel()
+            mask = cv2.line(mask, (int(a),int(b)),(int(c),int(d)), color[i].tolist(), 2)
+            frame = cv2.circle(frame,(int(a),int(b)),5,color[i].tolist(),-1)
+        img = cv2.add(frame,mask)
+        #cv.imshow('frame',img)
+        plt.imshow(img)
+        plt.show()
+        plt.close()
+
+    #print(p1.shape, np.count_nonzero(st==1))
     return np.squeeze(p1), np.squeeze(st)==1
 
 def trackFeatures_(base_img, next_img, data, feature_params):
@@ -1341,20 +1547,27 @@ def trackFeatures_(base_img, next_img, data, feature_params):
     valid = np.zeros(len(base_points), dtype=bool)
 
     # ratio test as per Lowe's paper
+    dists = []
     for i,ms in enumerate(matches):
         if len(ms) > 1:
             m,n = ms    
-            if True or m.distance < 0.7*n.distance:
+            dists.append(m.distance)
+            if m.distance < 0.7*n.distance:
                 matchesMask[i,0]=1
                 valid[m.queryIdx] = True
                 points[m.queryIdx] = m.trainIdx
             else:
                 valid[m.queryIdx] = False
+        else:
+            dists.append(-1)
+            valid[m.queryIdx] = False
         #elif len(ms) == 1:
         #    m = ms[0]
         #    valid[ms.queryIdx] = True
         #    points[m.queryIdx] = m.trainIdx
-        
+
+    dists = np.array(dists)
+
     for i in range(len(base_points)):
         if np.count_nonzero(points==i)>1:
             valid[points==i] = False
@@ -1362,7 +1575,12 @@ def trackFeatures_(base_img, next_img, data, feature_params):
             for i2,(m,n) in enumerate(matches):
                 if m.trainIdx == i:
                     matchesMask[i2,0] = 0
-    
+
+    m = np.mean(dists[valid])
+    std = np.std(dists[valid])
+    out = np.bitwise_or(dists<m-3*std, dists>m+3*std)
+    #valid[out] = False
+        
     #img = cv2.drawMatchesKnn(base_img,base_points,next_img,new_points,matches,None,matchesMask=matchesMask)
     #plt.imshow(img)
     #plt.show()
@@ -1396,15 +1614,21 @@ def findInitialFeatures(img, feature_params, use_cpu=True):
     if use_cpu:
         #detector = cv2.xfeatures2d_SURF.create(100, 4, 3, False, True)
         #detector = cv2.SIFT_create()
-        #detector = cv2.AKAZE_create(threshold=0.0001, nOctaves=4, nOctaveLayers=4)
+        detector = cv2.AKAZE_create(threshold=0.0001, nOctaves=4, nOctaveLayers=4)
+        #detector = cv2.xfeatures2d.StarDetector_create(maxSize=45,responseThreshold=10,lineThresholdProjected=10,lineThresholdBinarized=8,suppressNonmaxSize=5)
+        #brief = cv2.xfeatures2d.BriefDescriptorExtractor_create()
         #detector = cv2.ORB_create(nfeatures=300, scaleFactor=1.4, nlevels=4, edgeThreshold=41, patchSize=41, fastThreshold=5)
-        #points, features = detector.detectAndCompute(img, mask)
-        #points = np.array(points)
+        points, features = detector.detectAndCompute(img, mask)
+        #points = detector.detect(img, mask)
+        #points, features = brief.compute(img, points)
+        points = np.array(points)
         
-        feature_params = {"maxCorners": 200, "qualityLevel": 0.01, "minDistance": 19, "blockSize": 21}
-        points = cv2.goodFeaturesToTrack(img, mask=mask, **feature_params)
-        points = points[:,0]
-        features = None
+        #feature_params = {"maxCorners": 200, "qualityLevel": 0.01, "minDistance": 19, "blockSize": 21}
+        #feature_params = {"maxCorners": 200, "qualityLevel": 0.05, "minDistance": 13, "blockSize": 17}
+        #points = cv2.goodFeaturesToTrack(img, mask=mask, **feature_params)
+        #points = points[:,0]
+        #features = None
+        #print(points.shape)
     else:
         if "feat_thres" in feature_params:
             feat_thres = feature_params["feat_thres"]
