@@ -382,12 +382,12 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5
     params = np.array(in_params[:])
     if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
         sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
-    if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
         sino = Ax(params)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-input.nrrd"))
         del sino
-    if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
         rec = sitk.GetImageFromArray(rec)*100
@@ -751,6 +751,7 @@ def reg_real_data():
     #('191107_balt_sin3_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\Sin3', cbct_path),
     #('191107_balt_cbct_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\20sDCT Head 70kV', cbct_path),
     ]
+    #cbct_path = r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     cbct_path = r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
     ('201020_imbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
@@ -782,7 +783,7 @@ def reg_real_data():
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
             #skip = int(len(ims)/100)
-            skip = 5
+            skip = 2
             ims = ims[::skip]
             coord_systems = coord_systems[::skip]
             sids = np.mean(sids[::skip])
@@ -811,10 +812,10 @@ def reg_real_data():
             sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
             sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ims,0,1)), "recos/ims.nrrd")
 
-            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(4), 4, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
             vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(3), 3, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
-            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(5), 5, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
-            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(0), 0, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
+            #vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(5)+"", 5, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
+            #vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(0)+"", 0, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
+            #vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(4)+"", 4, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
         except Exception as e:
             print(name, "cali failed", e)
             raise

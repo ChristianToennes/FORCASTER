@@ -682,7 +682,7 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5), 
     if not my:
         GIoldold = GI(real_img, real_img)
 
-    make_εs = lambda size, count: np.array([-size/(2**i) for i in range(count)] + [0] + [size/(2**i) for i in range(count)][::-1])
+    make_εs = lambda size, count: np.array([-size/(1.1**i) for i in range(count)] + [0] + [size/(1.1**i) for i in range(count)][::-1])
     εs = make_εs(*grad_width)
     change = 0
     selected_εs = []
@@ -965,16 +965,36 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
     elif c==0:
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width)
+        #print()
+        #grad_width=(1.5,15)
+        #cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width, noise=angles_noise)
+        print()
+        grad_width=(1,15)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width, noise=angles_noise)
+        print()
+        grad_width=(0.75,15)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width, noise=angles_noise)
+        print()
+        grad_width=(0.5,15)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width, noise=angles_noise)
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
-    elif c==1:
+    elif c==1: # 3
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
+        cur = correctXY(cur, data_real, real_img, Ax)
         return cur
-    elif c==2:
+    elif c==2: # 4
         # order 0 1 2
         # order 2 0 1
         # order 1 0 2
@@ -985,9 +1005,9 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
         #return cur
         #debug_projs(cur)
 
-        cur1, c1 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(2,25), noise=angles_noise, both=True)
-        cur2, c2 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(2,25), noise=angles_noise, both=True)
-        cur3, c3 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(2,25), noise=angles_noise, both=True)
+        cur1, c1 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(2,15), noise=angles_noise, both=True)
+        cur2, c2 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(2,15), noise=angles_noise, both=True)
+        cur3, c3 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(2,15), noise=angles_noise, both=True)
         if np.abs(c1) > 2:
             angles_noise[0] += c1
             c1 = 0.1*np.sign(c1)
@@ -1001,13 +1021,15 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
             c3 = -0.1*np.sign(c3)
             angles_noise[2] -= c3
         cur = applyRot(cur, c1, c2, c3)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
         #debug_projs(cur)
         print()
         #cur = correctXY(cur, data_real, real_img, Ax)
         #debug_projs(cur)
-        cur1, c11 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(2,25), noise=angles_noise, both=True)
-        cur2, c22 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(2,25), noise=angles_noise, both=True)
-        cur3, c33 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(2,25), noise=angles_noise, both=True)
+        cur1, c11 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(2,15), noise=angles_noise, both=True)
+        cur2, c22 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(2,15), noise=angles_noise, both=True)
+        cur3, c33 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(2,15), noise=angles_noise, both=True)
         if np.abs(c1+c11) > 2:
             angles_noise[0] += c11
             c11 = -c1 + 0.1*np.sign(c1+c11)
@@ -1022,11 +1044,14 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
             angles_noise[2] -= c33
         cur = applyRot(cur, c11, c22, c33)
         #debug_projs(cur)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
+        #return cur
         print()
         #cur = correctXY(cur, data_real, real_img, Ax)
-        cur1, c111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(1,25), noise=angles_noise, both=True)
-        cur2, c222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(1,25), noise=angles_noise, both=True)
-        cur3, c333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(1,25), noise=angles_noise, both=True)
+        cur1, c111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(1,15), noise=angles_noise, both=True)
+        cur2, c222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(1,15), noise=angles_noise, both=True)
+        cur3, c333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(1,15), noise=angles_noise, both=True)
         if np.abs(c1+c11+c111) > 1.5:
             angles_noise[0] += c111
             c111 = -c1 -c11 + 0.1*np.sign(c1+c11+c111)
@@ -1042,12 +1067,11 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
         cur = applyRot(cur, c111, c222, c333)
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
-        return cur
         print()
         #cur = correctXY(cur, data_real, real_img, Ax)
-        cur1, c1111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(1,25), noise=angles_noise, both=True)
-        cur2, c2222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(1,25), noise=angles_noise, both=True)
-        cur3, c3333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(1,25), noise=angles_noise, both=True)
+        cur1, c1111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(1,15), noise=angles_noise, both=True)
+        cur2, c2222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(1,15), noise=angles_noise, both=True)
+        cur3, c3333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(1,15), noise=angles_noise, both=True)
         if np.abs(c1+c11+c111+c1111) > 1.5:
             angles_noise[0] += c1111
             c1111 = -c1 -c11 -c111 + 0.1*np.sign(c1+c11+c111+c1111)
@@ -1061,11 +1085,14 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
             c3333 = -c3 -c33 -c333 + 0.1*np.sign(c3+c33+c333+c3333)
             angles_noise[2] -= c3333
         cur = applyRot(cur, c1111, c2222, c3333)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
+        #return cur
         print()
         #cur = correctXY(cur, data_real, real_img, Ax)
-        cur1, c11111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(0.75,25), noise=angles_noise, both=True)
-        cur2, c22222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(0.75,25), noise=angles_noise, both=True)
-        cur3, c33333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(0.75,25), noise=angles_noise, both=True)
+        cur1, c11111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(0.75,15), noise=angles_noise, both=True)
+        cur2, c22222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(0.75,15), noise=angles_noise, both=True)
+        cur3, c33333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(0.75,15), noise=angles_noise, both=True)
         if np.abs(c1+c11+c111+c1111+c11111) > 1.5:
             angles_noise[0] += c11111
             c11111 = -c1 -c11 -c111 -c1111 + 0.1*np.sign(c1+c11+c111+c1111+c11111)
@@ -1079,11 +1106,13 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
             c33333 = -c3 -c33 -c333 -c3333 + 0.1*np.sign(c3+c33+c333+c3333+c33333)
             angles_noise[2] -= c33333
         cur = applyRot(cur, c11111, c22222, c33333)
+        cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
         print()
         #cur = correctXY(cur, data_real, real_img, Ax)
-        cur1, c111111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(0.5,25), noise=angles_noise, both=True)
-        cur2, c222222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(0.5,25), noise=angles_noise, both=True)
-        cur3, c333333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(0.5,25), noise=angles_noise, both=True)
+        cur1, c111111 = linsearch(cur, data_real, real_img, Ax, 0, grad_width=(0.5,15), noise=angles_noise, both=True)
+        cur2, c222222 = linsearch(cur, data_real, real_img, Ax, 1, grad_width=(0.5,15), noise=angles_noise, both=True)
+        cur3, c333333 = linsearch(cur, data_real, real_img, Ax, 2, grad_width=(0.5,15), noise=angles_noise, both=True)
         if np.abs(c1+c11+c111+c1111+c11111+c111111) > 1.5:
             angles_noise[0] += c111111
             c111111 = -c1 -c11 -c111 -c1111 -c11111 + 0.1*np.sign(c1+c11+c111+c1111+c11111+c111111)
@@ -1098,21 +1127,22 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
             angles_noise[2] -= c333333
         cur = applyRot(cur, c111111, c222222, c333333)
         #debug_projs(cur)
+        cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
         return cur
         print()
         cur = correctXY(cur, data_real, real_img, Ax)
         #cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=(1.5,5), noise=angles_noise)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=(1.5,5), noise=angles_noise)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=(1.5,5), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=(1.5,15), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=(1.5,15), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=(1.5,15), noise=angles_noise)
         #cur = correctXY(cur, data_real, real_img, Ax)
         print()
         cur = correctXY(cur, data_real, real_img, Ax)
         #cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=(1.5,5), noise=angles_noise)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=(1.5,5), noise=angles_noise)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=(1.5,5), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=(1.5,15), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, grad_width=(1.5,15), noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, grad_width=(1.5,15), noise=angles_noise)
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
         return cur
@@ -1125,12 +1155,29 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
         cur = binsearch(cur, data_real, real_img, Ax, 2, grad_width=grad_width[1], noise=angles_noise)
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
-    elif c==3:
+    elif c==3: # 5
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
-        cur = binsearch(cur, data_real, real_img, Ax, 2, False, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 0, False, grad_width=grad_width)
-        cur = binsearch(cur, data_real, real_img, Ax, 1, False, grad_width=grad_width)
+        #print()
+        #grad_width=(1.5,15)
+        #cur = binsearch(cur, data_real, real_img, Ax, 0, False, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 1, False, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 2, False, grad_width=grad_width, noise=angles_noise)
+        print()
+        grad_width=(1,15)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, False, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, False, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 2, False, grad_width=grad_width, noise=angles_noise)
+        print()
+        grad_width=(0.75,15)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, False, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, False, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 2, False, grad_width=grad_width, noise=angles_noise)
+        print()
+        grad_width=(0.5,15)
+        cur = binsearch(cur, data_real, real_img, Ax, 0, False, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, False, grad_width=grad_width, noise=angles_noise)
+        #cur = binsearch(cur, data_real, real_img, Ax, 2, False, grad_width=grad_width, noise=angles_noise)
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
     #print(scale)
@@ -1349,14 +1396,14 @@ def calcObjectiveStdPoints(comp, good_new, good_old):
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
         #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
         #print(d.shape, fd.shape, mean, std)
-        f = np.std( fd )
+        f = np.var( fd )
     elif comp==11:
         d = good_new[:,1]-good_old[:,1]
         std = np.std(d)
         mean = np.mean(d)
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
         #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
-        f = np.std( fd )
+        f = np.var( fd )
     if comp==0:
         mid_n_x, mid_n_y = np.mean(good_new, axis=0)
         mid_o_x, mid_o_y = np.mean(good_old, axis=0)
@@ -1375,8 +1422,9 @@ def calcObjectiveStdPoints(comp, good_new, good_old):
         mean = np.mean(d)
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
         #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
+        #print(d.shape, fd.shape, mean, std)
         f = np.var( fd )
-    elif comp==2:
+    elif comp==12:
         #f = np.var( good_new[:,1]-good_old[:,1] )
         mid_n_x, mid_n_y = np.mean(good_new, axis=0)
         mid_o_x, mid_o_y = np.mean(good_old, axis=0)
@@ -1417,14 +1465,14 @@ def calcObjectiveStdPoints(comp, good_new, good_old):
         f = np.abs((np.mean(ϕ_new)-np.mean(ϕ_old))*180/np.pi)
         if f > 180: f = 360-f
 
-    elif comp==12:
+    elif comp==2:
         d = np.linalg.norm(good_new-good_old, axis=1)
 
         std = np.std(d)
         mean = np.mean(d)
         fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
 
-        f = np.std(d)
+        f = np.std(fd)
     elif comp==3:
         f = np.median( good_new[:,0]-good_old[:,0] )
     elif comp==4:
