@@ -675,14 +675,14 @@ def linsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(4,5), 
     return cur
 
 
-def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5), noise=None, both=False):
+def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,25), noise=None, both=False):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
     if not my:
         GIoldold = GI(real_img, real_img)
 
-    make_εs = lambda size, count: np.array([-size/(2**i) for i in range(count)] + [0] + [size/(2**i) for i in range(count)][::-1])
+    make_εs = lambda size, count: np.array([-size/(1.1**i) for i in range(count)] + [0] + [size/(1.1**i) for i in range(count)][::-1])
     εs = make_εs(*grad_width)
     change = 0
     selected_εs = []
@@ -805,21 +805,21 @@ def binsearch(in_cur, data_real, real_img, Ax, axis, my=True, grad_width=(1,5), 
             cur = applyRot(cur, 0, 0, min_ε)    
             #cur = applyTrans(cur, 0, 0, scale)
     if noise is not None:
-        print("{:3}".format(it), end=" : ")
         print("{}{}{} {: .3f} {: .3f}".format(bcolors.BLUE, axis, bcolors.END, noise[axis], change), end=": ")
-        noise[axis] -= change
-        if np.abs(noise[axis]) > 1:
-            print("{}{: .3f}{}".format(bcolors.RED, noise[axis], bcolors.END), end=", ")
-        elif np.abs(noise[axis]) > 0.1:
-            print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis], bcolors.END), end=", ")
+
+        if np.abs(noise[axis]) < np.abs(noise[axis]-change)-0.1:
+            print("{}{: .3f}{}".format(bcolors.RED, noise[axis]-change, bcolors.END), end=", ")
+        elif np.abs(noise[axis]) > np.abs(noise[axis]-change):
+            print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis]-change, bcolors.END), end=", ")
         else:
-            print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis], bcolors.END), end=", ")
+            print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis]-change, bcolors.END), end=", ")
+        noise[axis] -= change
     if both:
         return cur, change
     return cur
 
 
-def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None, c=0, grad_width=((1.5,5),(1,5)), noise=None):
+def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=None, c=0, grad_width=((1.5,25),(1,25)), noise=None):
     #print("rough")
     if data_real is None:
         data_real = findInitialFeatures(real_img, feature_params)
@@ -1131,6 +1131,21 @@ def roughRegistration(cur, real_img, proj_img, feature_params, Ax, data_real=Non
         cur = binsearch(cur, data_real, real_img, Ax, 2, False, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 0, False, grad_width=grad_width)
         cur = binsearch(cur, data_real, real_img, Ax, 1, False, grad_width=grad_width)
+    elif c==6:
+        #cur = correctXY(cur, data_real, real_img, Ax)
+        cur = correctZ(cur, data_real, real_img, Ax)
+        print()
+        cur = binsearch(cur, data_real, real_img, Ax, 0, False, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, False, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, False, grad_width=grad_width, noise=angles_noise)
+        print()
+        cur = binsearch(cur, data_real, real_img, Ax, 0, True, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, True, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, True, grad_width=grad_width, noise=angles_noise)
+        print()
+        cur = binsearch(cur, data_real, real_img, Ax, 0, True, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 1, True, grad_width=grad_width, noise=angles_noise)
+        cur = binsearch(cur, data_real, real_img, Ax, 2, True, grad_width=grad_width, noise=angles_noise)
         cur = correctXY(cur, data_real, real_img, Ax)
         cur = correctZ(cur, data_real, real_img, Ax)
     #print(scale)

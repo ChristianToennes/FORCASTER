@@ -41,7 +41,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     kVs[120] = (1252.2, 791.9865)
     kVs[125] = (1404.2202, 796.101)
 
-    #f, gamma = i0.get_i0(r"E:\output\70kVp")
+    #f, gamma = i0.get_i0(prefix + r"\70kVp")
     #kVs[70] = f
 
     fs = []
@@ -377,17 +377,17 @@ def reg_bfgs(ims, params, Ax, feature_params, eps = [1,1,1,0.1,0.1,0.1], my = Tr
     
     return corrs
 
-def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5), perf=False, noise=None):
+def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,15), perf=False, noise=None):
     print(name, grad_width)
     params = np.array(in_params[:])
     if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
         sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
-    if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
         sino = Ax(params)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-input.nrrd"))
         del sino
-    if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
         rec = sitk.GetImageFromArray(rec)*100
@@ -553,10 +553,10 @@ def reg_and_reco(real_image, ims, in_params, Ax, name, method=0, grad_width=(1,5
                 sitk.WriteImage(sitk.GetImageFromArray(rec)*100, os.path.join("recos", "forcast_"+name+"_reco-"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
                 del rec
                 
-    elif method==3:
+    elif method>=3:
         perftime = time.perf_counter()
         
-        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=1, grad_width=grad_width, noise=noise)
+        corrs = reg_rough(ims, params, Ax, {'feat_thres': cali['feat_thres']}, c=method, grad_width=grad_width, noise=noise)
 
         vecs = Ax.create_vecs(corrs)
         write_vectors(name+"-rough-corr", corrs)
@@ -739,40 +739,45 @@ def parameter_search(proj_path, cbct_path):
 def reg_real_data():
     projs = []
 
-    cbct_path = r"E:\output\CKM4Baltimore2019\20191108-081024.994000\DCT Head Clear Nat Fill Full HU Normal [AX3D]"
+    if os.path.exists("E:\\output"):
+        prefix = r"E:\output"
+    else:
+        prefix = r"D:\lumbal_spine_13.10.2020\output"
+
+    cbct_path = prefix + r"\CKM4Baltimore2019\20191108-081024.994000\DCT Head Clear Nat Fill Full HU Normal [AX3D]"
     projs += [
-    #('191108_balt_cbct_', 'E:\\output\\CKM4Baltimore2019\\20191108-081024.994000\\20sDCT Head 70kV', cbct_path),
-    #('191108_balt_all_', 'E:\\output\\CKM4Baltimore2019\\20191108-081024.994000\\DR Overview', cbct_path),
+    #('191108_balt_cbct_', prefix + '\\CKM4Baltimore2019\\20191108-081024.994000\\20sDCT Head 70kV', cbct_path),
+    #('191108_balt_all_', prefix + '\\CKM4Baltimore2019\\20191108-081024.994000\\DR Overview', cbct_path),
     ]
-    cbct_path = r"E:\output\CKM4Baltimore2019\20191107-091105.486000\DCT Head Clear Nat Fill Full HU Normal [AX3D]"
+    cbct_path = prefix + r"\CKM4Baltimore2019\20191107-091105.486000\DCT Head Clear Nat Fill Full HU Normal [AX3D]"
     projs += [
-    #('191107_balt_sin1_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\Sin1', cbct_path),
-    #('191107_balt_sin2_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\Sin2', cbct_path),
-    #('191107_balt_sin3_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\Sin3', cbct_path),
-    #('191107_balt_cbct_', 'E:\\output\\CKM4Baltimore2019\\20191107-091105.486000\\20sDCT Head 70kV', cbct_path),
+    #('191107_balt_sin1_', prefix + '\\CKM4Baltimore2019\\20191107-091105.486000\\Sin1', cbct_path),
+    #('191107_balt_sin2_', prefix + '\\CKM4Baltimore2019\\20191107-091105.486000\\Sin2', cbct_path),
+    #('191107_balt_sin3_', prefix + '\\CKM4Baltimore2019\\20191107-091105.486000\\Sin3', cbct_path),
+    #('191107_balt_cbct_', prefix + '\\CKM4Baltimore2019\\20191107-091105.486000\\20sDCT Head 70kV', cbct_path),
     ]
-    cbct_path = r"E:\output\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
+    cbct_path = prefix + r"\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    ('201020_imbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
-    #('201020_imbu_sin_', 'E:\\output\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
-    #('201020_imbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
-    #('201020_imbu_circ_', 'E:\\output\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
-    #('201020_imbureg_noimbu_cbct_', 'E:\\output\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path),
-    #('201020_imbureg_noimbu_opti_', 'E:\\output\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
+    #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
+    #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
+    ('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
+    #('201020_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path),
+    #('201020_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
     ]
-    cbct_path = r"E:\output\CKM4Baltimore\CBCT_2021_01_11_16_04_12"
+    cbct_path = prefix + r"\CKM4Baltimore\CBCT_2021_01_11_16_04_12"
     projs += [
-    #('210111_balt_cbct_', 'E:\\output\\CKM4Baltimore\\CBCT_SINO', cbct_path),
-    #('210111_balt_circ_', 'E:\\output\\CKM4Baltimore\\Circle_Fluoro', cbct_path),
+    #('210111_balt_cbct_', prefix + '\\CKM4Baltimore\\CBCT_SINO', cbct_path),
+    #('210111_balt_circ_', prefix + '\\CKM4Baltimore\\Circle_Fluoro', cbct_path),
     ]
-    cbct_path = r"E:\output\CKM\CBCT\20201207-093148.064000-DCT Head Clear Nat Fill Full HU Normal [AX3D]"
+    cbct_path = prefix + r"\CKM\CBCT\20201207-093148.064000-DCT Head Clear Nat Fill Full HU Normal [AX3D]"
     projs += [
-    #('201207_cbct_', 'E:\\output\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV', cbct_path),
-    #('201207_circ_', 'E:\\output\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD', cbct_path),
-    #('201207_eight_', 'E:\\output\\CKM\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD', cbct_path),
-    #('201207_opti_', 'E:\\output\\CKM\\Opti Traj\\20201207-163001.022000-P16_DR_HD', cbct_path),
-    #('201207_sin_', 'E:\\output\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD', cbct_path),
-    #('201207_tomo_', 'E:\\output\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD', cbct_path),
+    #('201207_cbct_', prefix + '\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV', cbct_path),
+    #('201207_circ_', prefix + '\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD', cbct_path),
+    #('201207_eight_', prefix + '\\CKM\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD', cbct_path),
+    #('201207_opti_', prefix + '\\CKM\\Opti Traj\\20201207-163001.022000-P16_DR_HD', cbct_path),
+    #('201207_sin_', prefix + '\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD', cbct_path),
+    #('201207_tomo_', prefix + '\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD', cbct_path),
     ]
     
     for name, proj_path, cbct_path in projs:
@@ -782,11 +787,18 @@ def reg_real_data():
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
             #skip = int(len(ims)/100)
-            skip = 5
+
+            random = np.random.default_rng(23)
+            angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))
+            trans_noise = random.normal(loc=0, scale=10, size=(len(ims), 3))
+
+            skip = 2
             ims = ims[::skip]
             coord_systems = coord_systems[::skip]
             sids = np.mean(sids[::skip])
             sods = np.mean(sods[::skip])
+            angles_noise = angles_noise[::skip]
+            trans_noise = trans_noise[::skip]
 
             origin, size, spacing, image = utils.read_cbct_info(cbct_path)
 
@@ -807,14 +819,18 @@ def reg_real_data():
             params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
             params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
 
+            for i, (α,β,γ) in enumerate(angles_noise):
+                params[i] = forcast.applyRot(params[i], -α, -β, -γ)
+
             projs = Ax(params)
             sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
             sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ims,0,1)), "recos/ims.nrrd")
 
-            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(4), 4, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
-            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(3), 3, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
-            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(5), 5, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
-            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(0), 0, noise=(np.zeros((len(ims),3)), np.zeros((len(ims),3)) ) )
+            #vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(3), 3, noise=(np.zeros((len(ims),3)), np.array(angles_noise)) )
+            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(5), 5, noise=(np.zeros((len(ims),3)), np.array(angles_noise)) )
+            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(0), 0, noise=(np.zeros((len(ims),3)), np.array(angles_noise)) )
+            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(4), 4, noise=(np.zeros((len(ims),3)), np.array(angles_noise)) )
+            vecs, corrs = reg_and_reco(real_image, ims, params, Ax, name+str(6), 6, noise=(np.zeros((len(ims),3)), np.array(angles_noise)) )
         except Exception as e:
             print(name, "cali failed", e)
             raise
