@@ -787,7 +787,6 @@ def reg_real_data():
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
             #skip = int(len(ims)/100)
-
             random = np.random.default_rng(23)
             angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))
             trans_noise = random.normal(loc=0, scale=10, size=(len(ims), 3))
