@@ -33,7 +33,6 @@ def Ax_astra(out_shape, proj_geom):
     run_Ax.free = free
     return run_Ax
 
-
 def Ax_geo_astra(out_shape, x):
     vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     vol_id = astra.data3d.create('-vol', vol_geom, x)
@@ -107,23 +106,6 @@ def Ax_param_asta(out_shape, detector_spacing, detector_size, dist_source_origin
             params = np.array([params])
         coord_systems = np.zeros((len(params), 3, 4), dtype=float)
         for i, (t,u,v) in enumerate(params):
-            #α, β, γ = α*np.pi/180, β*np.pi/180, γ*np.pi/180
-            #cα, cβ, cγ = np.cos(α), np.cos(-β), np.cos(-γ)
-            #sα, sβ, sγ = np.sin(α), np.sin(-β), np.sin(-γ)
-            #R = np.array([
-            #    [cα*cβ, cα*sβ*sγ-sα*cγ, cα*sβ*cγ+sα*sγ],
-            #    [sα*cβ, sα*sβ*sγ+cα*cγ, sα*sβ*cγ-cα*sγ],
-            #    [-sβ, cβ*sγ, cβ*cγ]
-            #])
-            #R = np.array([
-            #    [cβ, sβ*sγ, cγ*sβ],
-            #    [sα*sβ, cα*cγ-cβ*sα*sγ, -cα*sγ-cβ*cγ*sα],
-            #    [-cα*sβ, cγ*sα+cα*cβ*sγ, cα*cβ*cγ-sα*sγ],
-            #])
-            #Rα = rotMat(α, np.array([0,0,1]))
-            #Rβ = rotMat(β, Rα.dot(np.array([1,0,0])))
-            #Rγ = rotMat(γ, Rα.dot(Rβ.dot(np.array([0,1,0]))))
-            #R = Rα.dot(Rβ.dot(Rγ))
             det = np.cross(u, v)
             coord_systems[i,:,0] = v
             coord_systems[i,:,1] = u
