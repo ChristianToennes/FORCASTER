@@ -71,17 +71,24 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     skip = 4
     if images.shape[1] < 1000:
         skip = 2
-    if images.shape[1] < 600:
-        skip = 1
+    #if images.shape[1] < 600:
+    #    skip = 1
+
+    edges = 1
 
     sel = np.zeros(images.shape, dtype=bool)
-    sel[:,20*skip:-20*skip:skip,20*skip:-20*skip:skip] = True
-    norm_images_gained = np.zeros((images.shape[0],images[0,20*skip:-20*skip:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,20*skip:-20*skip:skip].shape[0]))), dtype=np.float32)
-    norm_images_ungained = np.zeros((images.shape[0],images[0,20*skip:-20*skip:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,20*skip:-20*skip:skip].shape[0]))), dtype=np.float32)
-    gained_images = np.array([image*(1+gain/100) for image,gain in zip(images, percent_gain)])
+    #sel[:,20*skip:-20*skip:skip,20*skip:-20*skip:skip] = True
+    #norm_images_gained = np.zeros((images.shape[0],images[0,20*skip:-20*skip:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,20*skip:-20*skip:skip].shape[0]))), dtype=np.float32)
+    #norm_images_ungained = np.zeros((images.shape[0],images[0,20*skip:-20*skip:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,20*skip:-20*skip:skip].shape[0]))), dtype=np.float32)
+    sel[:,edges:-edges:skip,edges:-edges:skip] = True
+    sel_shape = (images.shape[0],images[0,edges:-edges:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,edges:-edges:skip].shape[0])))
+    norm_images_gained = np.zeros(sel_shape, dtype=np.float32)
+    norm_images_ungained = np.zeros(sel_shape, dtype=np.float32)
+    
+    gained_images = np.array([image*(1+gain/100) for image,gain in zip(images[sel].reshape(sel_shape), percent_gain)])
     
     for i in range(len(fs)):
-        norm_img = gained_images[i][sel[i]].reshape(norm_images_gained[0].shape)
+        norm_img = gained_images[i].reshape(norm_images_gained[0].shape)
         norm_images_gained[i] = norm_img
         norm_img = images[i][sel[i]].reshape(norm_images_gained[0].shape)
         norm_images_ungained[i] = norm_img
@@ -140,10 +147,15 @@ def read_dicoms(indir, max_ims=np.inf):
                     sids = np.array(ds[0x0021,0x1031].value)*0.1
                 else:
                     sids = np.array(list(struct.iter_unpack("<h", ds[0x0021,0x1031].value))).flatten()*0.1
-                if ds[0x0021,0x1017].VR == "SL":
-                    sods = [np.array(ds[0x0021,0x1017].value)]*len(ts)
-                else:
-                    sods = [np.array(int.from_bytes(ds[0x0021,0x1017].value, "little", signed=True))]*len(ts)
+                
+                
+                #if ds[0x0021,0x1017].VR == "SL":
+                #    sods = [np.array(ds[0x0021,0x1017].value)]*len(ts)
+                #else:
+                #    sods = [np.array(int.from_bytes(ds[0x0021,0x1017].value, "little", signed=True))]*len(ts)
+                
+                stparmdata = utils.unpack_sh_stparm(ds[0x0021,0x1012].value)
+                sods = [stparmdata["SOD_A"]] *len(ts)
 
                 if ds[0x0019,0x1008].VR == "US":
                     percent_gain = [ds[0x0019,0x1008].value] * len(ts)
@@ -384,7 +396,7 @@ def reg_rough_parallel(ims, params, config, c=0):
                         corrs[res[1]] = res[2]
                         print(res[1], res[3])
             if ready_con is None:
-                ready.wait()
+                ready.wait(1)
         ready_con.send((i, params[i], ims[i], proj_ds[:,i], (config["noise"][0][i],config["noise"][1][i]), c))
 
     while len(cons) > 0:
@@ -409,7 +421,7 @@ def reg_rough_parallel(ims, params, config, c=0):
         con1.close()
         con2.close()
     corrs = np.array(corrs)
-    print(corrs)
+    #print(corrs)
     return corrs
 
 
@@ -466,6 +478,24 @@ def reg_bfgs(ims, params, Ax, feature_params, eps = [1,1,1,0.1,0.1,0.1], my = Tr
     
     return corrs
 
+def create_circular_mask(shape, center=None, radius=None, radius_off=5, end_off=30):
+    l, h, w = shape
+    if center is None: # use the middle of the image
+        center = (int(w/2), int(h/2))
+    if radius is None: # use the smallest distance between the center and image walls
+        radius = min(center[0], center[1], w-center[0], h-center[1])
+
+    Y, X = np.ogrid[:h, :w]
+    dist_from_center = np.sqrt((X - center[0])**2 + (Y-center[1])**2)
+
+    mask = np.zeros((l,h,w), dtype=bool)
+    mask[:] = (dist_from_center <= (radius-radius_off))[np.newaxis,:,:]
+    for i in range(30):
+        mask[i] = (dist_from_center <= (i/30)*(radius-radius_off))
+        mask[-i-1] = (dist_from_center <= (i/30)*(radius-radius_off))
+
+    return mask
+
 def reg_and_reco(ims, in_params, config):
     name = config["name"]
     grad_width = config["grad_width"] if "grad_width" in config else (1,25)
@@ -478,6 +508,10 @@ def reg_and_reco(ims, in_params, config):
     params = np.array(in_params[:])
     if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
         sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
+    if not perf:
+        sino = sitk.GetImageFromArray(np.swapaxes(ims,0,1))
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_projs-input.nrrd"))
+        del sino
     if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
         sino = Ax(params)
         sino = sitk.GetImageFromArray(sino)
@@ -485,7 +519,12 @@ def reg_and_reco(ims, in_params, config):
         del sino
     if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
-        rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+        rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), True)
+        #mask = np.zeros(rec.shape, dtype=bool)
+        mask = create_circular_mask(rec.shape)
+        rec = rec*mask
+        del mask
+        #rec = utils.CGLS_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), 10)
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input.nrrd"))
         del rec
@@ -603,7 +642,7 @@ def reg_and_reco(ims, in_params, config):
     else:
         perftime = time.perf_counter()
         
-        if mp.cpu_count() > 1:
+        if False and mp.cpu_count() > 1:
             corrs = reg_rough_parallel(ims, params, config, method)
         else:
             corrs = reg_rough(ims, params, config, method)
@@ -622,6 +661,9 @@ def reg_and_reco(ims, in_params, config):
             sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
             del sino
             rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+            mask = create_circular_mask(rec.shape)
+            rec = rec*mask
+            del mask
             #rec = np.swapaxes(rec, 0, 2)
             #rec = np.swapaxes(rec, 1,2)
             #rec = rec[::-1, ::-1]
@@ -760,10 +802,10 @@ def reg_real_data():
     projs += [
     ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
-    #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
-    #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
+    ('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
+    ('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
     ('201020_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path),
-    #('201020_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
+    ('201020_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
     ]
     cbct_path = prefix + r"\CKM4Baltimore\CBCT_2021_01_11_16_04_12"
     projs += [
@@ -772,11 +814,11 @@ def reg_real_data():
     ]
     cbct_path = prefix + r"\CKM\CBCT\20201207-093148.064000-DCT Head Clear Nat Fill Full HU Normal [AX3D]"
     projs += [
-    #('201207_cbct_', prefix + '\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV', cbct_path),
-    #('201207_circ_', prefix + '\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD', cbct_path),
+    ('201207_cbct_', prefix + '\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV', cbct_path),
+    ('201207_circ_', prefix + '\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD', cbct_path),
     #('201207_eight_', prefix + '\\CKM\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD', cbct_path),
     #('201207_opti_', prefix + '\\CKM\\Opti Traj\\20201207-163001.022000-P16_DR_HD', cbct_path),
-    #('201207_sin_', prefix + '\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD', cbct_path),
+    ('201207_sin_', prefix + '\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD', cbct_path),
     #('201207_tomo_', prefix + '\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD', cbct_path),
     ]
     
@@ -786,13 +828,13 @@ def reg_real_data():
             ims, _, _, _, _, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=200)
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
-            #skip = int(len(ims)/100)
+            skip = max(1, int(len(ims)/200))
             random = np.random.default_rng(23)
             angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))
             angles_noise = np.zeros_like(angles_noise)
             trans_noise = random.normal(loc=0, scale=10, size=(len(ims), 3))
 
-            skip = 4
+            #skip = 4
             ims = ims[::skip]
             coord_systems = coord_systems[::skip]
             sids = np.mean(sids[::skip])
@@ -824,14 +866,16 @@ def reg_real_data():
                 params[i] = cal.applyRot(params[i], -α, -β, -γ)
 
             projs = Ax(params)
-            sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
-            sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ims,0,1)), "recos/ims.nrrd")
+            #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
+            #sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ims,0,1)), "recos/ims.nrrd")
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "noise": (np.zeros((len(ims),3)), np.array(angles_noise)), "method": 3, "name": name, "real_cbct": real_image}
+            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
 
-            for method in [3,4,5,0,6]:
+            #for method in [3,4,5,0,6]:
+            for method in [3]:
                 config["name"] = name + str(method)
                 config["method"] = method
+                config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))
                 vecs, corrs = reg_and_reco(ims, params, config)
         except Exception as e:
             print(name, "cali failed", e)
