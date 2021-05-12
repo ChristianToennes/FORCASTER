@@ -104,6 +104,8 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     for i in range(len(fs)):
         norm_img = norm_images_gained[i] / (offset + (gain*fs)[i])
         #norm_img = norm_images_gained[i] / (1.1*np.max(norm_images_gained[i]))
+        if (norm_img==0).any():
+            norm_img[norm_img==0] = np.min(norm_img[norm_img!=0])
         norm_images_gained[i] = -np.log(norm_img)
 
     return norm_images_gained, norm_images_ungained, offset+gain*fs, fs
@@ -524,10 +526,20 @@ def reg_and_reco(ims, in_params, config):
         mask = create_circular_mask(rec.shape)
         rec = rec*mask
         del mask
-        #rec = utils.CGLS_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), 10)
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input.nrrd"))
         del rec
+    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+        reg_geo = Ax.create_geo(params)
+        rec = utils.CGLS_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), 50, True)
+        #mask = np.zeros(rec.shape, dtype=bool)
+        mask = create_circular_mask(rec.shape)
+        rec = rec*mask
+        del mask
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input_cgls.nrrd"))
+        del rec
+
 
     cali = {}
     cali['feat_thres'] = 80
@@ -538,8 +550,6 @@ def reg_and_reco(ims, in_params, config):
     cali['max_ratio'] = 0.9
     cali['max_distance'] = 20
     cali['outlier_confidence'] = 85
-
-    np.seterr(all='raise') 
 
     if method==1:
         perftime = time.perf_counter()
@@ -660,7 +670,7 @@ def reg_and_reco(ims, in_params, config):
             sino = sitk.GetImageFromArray(sino)
             sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
             del sino
-            rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1))
+            rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), True)
             mask = create_circular_mask(rec.shape)
             rec = rec*mask
             del mask
@@ -669,6 +679,16 @@ def reg_and_reco(ims, in_params, config):
             #rec = rec[::-1, ::-1]
             rec = sitk.GetImageFromArray(rec)*100
             sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
+            del rec
+            rec = utils.CGLS_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), 50, True)
+            mask = create_circular_mask(rec.shape)
+            rec = rec*mask
+            del mask
+            #rec = np.swapaxes(rec, 0, 2)
+            #rec = np.swapaxes(rec, 1,2)
+            #rec = rec[::-1, ::-1]
+            rec = sitk.GetImageFromArray(rec)*100
+            sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough_cgls.nrrd"))
             del rec
 
     return vecs, corrs
@@ -822,6 +842,8 @@ def reg_real_data():
     #('201207_tomo_', prefix + '\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD', cbct_path),
     ]
     
+    np.seterr(all='raise')
+
     for name, proj_path, cbct_path in projs:
         
         try:
