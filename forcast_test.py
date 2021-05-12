@@ -366,6 +366,7 @@ def it_func(con, Ax_params, ready):
         ready.set()
         stringout.close()
         sys.stdout = old_stdout
+    con.send(("error",))
 
 def reg_rough_parallel(ims, params, config, c=0):
     corrs = []
@@ -386,7 +387,7 @@ def reg_rough_parallel(ims, params, config, c=0):
         ready_con = None
         while ready_con is None:
             ready.clear()
-            for (con, _) in cons:
+            for (con, con1) in cons:
                 if con.poll():
                     res = con.recv()
                     if res[0] == "ready":
@@ -395,6 +396,9 @@ def reg_rough_parallel(ims, params, config, c=0):
                     elif res[0] == "result":
                         corrs[res[1]] = res[2]
                         print(res[1], res[3])
+                    elif res[0] == "error":
+                        pool.append(mp.Process(target=it_func, args=(con1, config["Ax_gen"], ready)))
+                        pool[-1].start()
             if ready_con is None:
                 ready.wait(1)
         ready_con.send((i, params[i], ims[i], proj_ds[:,i], (config["noise"][0][i],config["noise"][1][i]), c))
@@ -405,7 +409,7 @@ def reg_rough_parallel(ims, params, config, c=0):
         for con in cons:
             if con[0].poll():
                 res = con[0].recv()
-                if res[0] == "ready":
+                if res[0] == "ready" or res[0] == "error":
                     finished_con.append(con)
                 elif res[0] == "result":
                     corrs[res[1]] = res[2]
@@ -415,7 +419,7 @@ def reg_rough_parallel(ims, params, config, c=0):
             con[0].close()
             con[1].close()
         if len(cons) > 0:
-            ready.wait()
+            ready.wait(1)
 
     for (con1, con2) in cons:
         con1.close()
@@ -603,7 +607,7 @@ def reg_and_reco(ims, in_params, config):
                 sitk.WriteImage(sitk.GetImageFromArray(rec)*100, os.path.join("recos", "forcast_"+name+"_reco-"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
                 del rec
 
-    elif method==6:
+    elif method==-6:
         perftime = time.perf_counter()
         
         good_values= [
@@ -872,7 +876,7 @@ def reg_real_data():
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
 
             #for method in [3,4,5,0,6]:
-            for method in [3]:
+            for method in [5,3,0]:
                 config["name"] = name + str(method)
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))
