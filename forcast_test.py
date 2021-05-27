@@ -13,6 +13,7 @@ import time
 import itertools
 
 def write_vectors(name, vecs):
+    return
     with open(name+".csv", "w") as f:
         f.writelines([",".join([str(v) for v in vec])+"\n" for vec in vecs])
 
@@ -314,7 +315,7 @@ def read_dicoms(indir, max_ims=np.inf):
 def reg_rough(ims, params, config, c=0):
     corrs = []
     noise = config["noise"]
-    for i in range(len(params)):
+    for i in reversed(range(len(params))):
     #for i in [29]:
         print(i, end=",", flush=True)
         cur = params[i]
@@ -344,89 +345,137 @@ import sys
 import io
 
 def it_func(con, Ax_params, ready):
-    print("start")
-    Ax = utils.Ax_param_asta(*Ax_params)
-    while True:
+    try:
+        print("start")
+        np.seterr(all='raise')
+        Ax = None
+        Ax = utils.Ax_param_asta(*Ax_params)
+        while True:
+            try:
+                con.send(("ready",))
+                ready.set()
+                (i, cur, im, proj, noise, method) = con.recv()
+                #print(i)
+                old_stdout = sys.stdout
+                sys.stdout = stringout = io.StringIO()
+            
+                real_img = cal.Projection_Preprocessing(im)
+                cur_config = {"real_img": real_img, "Ax": Ax, "noise": noise}
+                try:
+                    cur = cal.roughRegistration(cur, proj, cur_config, method)
+                except Exception as ex:
+                    print(ex, i, cur, file=sys.stderr)
+                #corrs.append(cur)
+                
+                stringout.flush()
+                con.send(("result",i,cur,stringout.getvalue()))
+                ready.set()
+                stringout.close()
+                sys.stdout = old_stdout
+            except EOFError:
+                break
+            except BrokenPipeError:
+                return
         try:
-            con.send(("ready",))
-            ready.set()
-            (i, cur, im, proj, noise, method) = con.recv()
-            #print(i)
-            old_stdout = sys.stdout
-            sys.stdout = stringout = io.StringIO()
+            con.send(("error",))
         except EOFError:
-            break
-        real_img = cal.Projection_Preprocessing(im)
-        cur_config = {"real_img": real_img, "Ax": Ax, "noise": noise}
-        try:
-            cur = cal.roughRegistration(cur, proj, cur_config, method)
-        except Exception as ex:
-            print(ex, i, cur)
-        #corrs.append(cur)
-        stringout.flush()
-        con.send(("result",i,cur,stringout.getvalue()))
-        ready.set()
-        stringout.close()
-        sys.stdout = old_stdout
-    con.send(("error",))
+            pass
+        except BrokenPipeError:
+            pass
+    except KeyboardInterrupt:
+        pass
 
 def reg_rough_parallel(ims, params, config, c=0):
     corrs = []
-    pool_size = mp.cpu_count()
+    pool_size = mp.cpu_count()+4
     pool = []
-    cons = []
     #corrsq = mp.Queue()
     ready = mp.Event()
-    for _ in range(pool_size):
-        cons.append(mp.Pipe(True))
-        pool.append(mp.Process(target=it_func, args=(cons[-1][1], config["Ax_gen"], ready)))
-        pool[-1].start()
+    #for _ in range(pool_size):
+    #    cons.append(mp.Pipe(True))
+    #    pool.append(mp.Process(target=it_func, args=(cons[-1][1], config["Ax_gen"], ready)))
+    #    pool[-1].start()
 
     proj_ds = cal.Projection_Preprocessing(config["Ax"](np.array(params)))
     
-    corrs = [None]*len(params)
-    for i in range(len(params)):
+    corrs = np.array([None]*len(params))
+    indices = list(range(len(params)))
+    while np.array([e is None for e in corrs]).any(): #len(indices)>0:
         ready_con = None
         while ready_con is None:
+            for _ in range(len(pool), pool_size):
+                p = mp.Pipe(True)
+                proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], ready), daemon=True)
+                proc.start()
+                pool.append([p[0], p[1], proc, -1])
             ready.clear()
-            for (con, con1) in cons:
-                if con.poll():
-                    res = con.recv()
-                    if res[0] == "ready":
-                        ready_con = con
-                        break
-                    elif res[0] == "result":
-                        corrs[res[1]] = res[2]
-                        print(res[1], res[3])
-                    elif res[0] == "error":
-                        pool.append(mp.Process(target=it_func, args=(con1, config["Ax_gen"], ready)))
-                        pool[-1].start()
+            finished_con = []
+            for con in pool:
+                try:
+                    if con[2].is_alive():
+                        if con[0].poll():
+                            res = con[0].recv()
+                            if res[0] == "ready":
+                                ready_con = con
+                                break
+                            elif res[0] == "result":
+                                corrs[res[1]] = res[2]
+                                #print(res[1], res[3], flush=True)
+                                print(res[1], end=', ', flush=True)
+                            elif res[0] == "error":
+                                finished_con.append(con)
+                            else:
+                                print("error", res)
+                    else:
+                        finished_con.append(con)
+                except (OSError, BrokenPipeError, EOFError):
+                    finished_con.append(con)
+
+            for con in finished_con:
+                indices.append(con[3])
+                pool.remove(con)
+                con[0].close()
+                con[1].close()
             if ready_con is None:
                 ready.wait(1)
-        ready_con.send((i, params[i], ims[i], proj_ds[:,i], (config["noise"][0][i],config["noise"][1][i]), c))
+        if len(indices) > 0:
+            i = indices.pop()
+            ready_con[0].send((i, params[i], ims[i], proj_ds[:,i], (config["noise"][0][i],config["noise"][1][i]), c))
+            ready_con[3] = i
 
-    while len(cons) > 0:
-        finished_con = []
-        ready.clear()
-        for con in cons:
-            if con[0].poll():
-                res = con[0].recv()
-                if res[0] == "ready" or res[0] == "error":
-                    finished_con.append(con)
-                elif res[0] == "result":
-                    corrs[res[1]] = res[2]
-                    print(res[1], res[3])
-        for con in finished_con:
-            cons.remove(con)
-            con[0].close()
-            con[1].close()
-        if len(cons) > 0:
-            ready.wait(1)
+    if False:
+        while len(pool) > 0:
+            finished_con = []
+            ready.clear()
+            for con in pool:
+                try:
+                    if con[2].is_alive():
+                        if con[0].poll():
+                            res = con[0].recv()
+                            if res[0] == "ready" or res[0] == "error":
+                                finished_con.append(con)
+                            elif res[0] == "result":
+                                corrs[res[1]] = res[2]
+                                #print(res[1], res[3])
+                                print(res[1], end=', ')
+                    else:
+                        finished_con.append(con)
+                except (OSError, BrokenPipeError, EOFError):
+                        finished_con.append(con)
+            for con in finished_con:
+                pool.remove(con)
+                con[0].close()
+                con[1].close()
+            if len(pool) > 0:
+                ready.wait(1)
 
-    for (con1, con2) in cons:
-        con1.close()
-        con2.close()
-    corrs = np.array(corrs)
+    for con in pool:
+        con[2].terminate()
+        con[0].close()
+        con[1].close()
+        
+    corrs = np.array(corrs.tolist())
+    print()
     #print(corrs)
     return corrs
 
@@ -501,6 +550,38 @@ def create_circular_mask(shape, center=None, radius=None, radius_off=5, end_off=
         mask[-i-1] = (dist_from_center <= (i/30)*(radius-radius_off))
 
     return mask
+
+class bcolors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    END = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    
+    def print_val(val):
+        if np.abs(val) > 0.1:
+            print("{}{: .3f}{}".format(bcolors.RED, val, bcolors.END), end=", ")
+        elif np.abs(val) < 0.1:
+            print("{}{: .3f}{}".format(bcolors.GREEN, val, bcolors.END), end=", ")
+        else:
+            print("{}{: .3f}{}".format(bcolors.YELLOW, val, bcolors.END), end=", ")
+
+
+def print_stats(noise):
+    for axis in [0,1,2]:
+        print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
+        bcolors.print_val(np.mean(noise[:, axis]))
+        bcolors.print_val(np.std(noise[:, axis]))
+        bcolors.print_val(np.min(noise[:, axis]))
+        bcolors.print_val(np.quantile(noise[:, axis], 0.25))
+        bcolors.print_val(np.median(noise[:, axis]))
+        bcolors.print_val(np.quantile(noise[:, axis], 0.75))
+        bcolors.print_val(np.max(noise[:, axis]))
+        print()
+
 
 def reg_and_reco(ims, in_params, config):
     name = config["name"]
@@ -663,9 +744,11 @@ def reg_and_reco(ims, in_params, config):
                 del rec
                 
     else:
+        print_stats(config["noise"][1])
+        
         perftime = time.perf_counter()
         
-        if False and mp.cpu_count() > 1:
+        if mp.cpu_count() > 1:
             corrs = reg_rough_parallel(ims, params, config, method)
         else:
             corrs = reg_rough(ims, params, config, method)
@@ -674,8 +757,12 @@ def reg_and_reco(ims, in_params, config):
         write_vectors(name+"-rough-corr", corrs)
         write_vectors(name+"-rough", vecs)
 
+        
         perftime = time.perf_counter()-perftime
+        
+        print_stats(config["noise"][1])
         print("rough reg done ", perftime)
+
 
         if not perf:
             reg_geo = Ax.create_geo(corrs)
@@ -847,10 +934,20 @@ def reg_real_data():
     projs += [
     ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
-    ('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
-    ('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
-    ('201020_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path),
-    ('201020_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
+    #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
+    #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
+    #('201020_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path),
+    #('201020_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
+    ]
+    
+    cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
+    projs += [
+    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
+    #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
+    #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
+    #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
+    #('2010201_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path),
+    #('2010201_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
     ]
     cbct_path = prefix + r"\CKM4Baltimore\CBCT_2021_01_11_16_04_12"
     projs += [
@@ -859,11 +956,11 @@ def reg_real_data():
     ]
     cbct_path = prefix + r"\CKM\CBCT\20201207-093148.064000-DCT Head Clear Nat Fill Full HU Normal [AX3D]"
     projs += [
-    ('201207_cbct_', prefix + '\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV', cbct_path),
-    ('201207_circ_', prefix + '\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD', cbct_path),
+    #('201207_cbct_', prefix + '\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV', cbct_path),
+    #('201207_circ_', prefix + '\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD', cbct_path),
     #('201207_eight_', prefix + '\\CKM\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD', cbct_path),
     #('201207_opti_', prefix + '\\CKM\\Opti Traj\\20201207-163001.022000-P16_DR_HD', cbct_path),
-    ('201207_sin_', prefix + '\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD', cbct_path),
+    #('201207_sin_', prefix + '\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD', cbct_path),
     #('201207_tomo_', prefix + '\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD', cbct_path),
     ]
     
@@ -877,8 +974,8 @@ def reg_real_data():
             #coord_systems = coord_systems[:20]
             skip = max(1, int(len(ims)/200))
             random = np.random.default_rng(23)
-            angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))
-            angles_noise = np.zeros_like(angles_noise)
+            angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
+            #angles_noise = np.zeros_like(angles_noise)
             trans_noise = random.normal(loc=0, scale=10, size=(len(ims), 3))
 
             #skip = 4
@@ -919,7 +1016,7 @@ def reg_real_data():
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
 
             #for method in [3,4,5,0,6]:
-            for method in [5,3,0]:
+            for method in [3,0,5,4,6]:
                 config["name"] = name + str(method)
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))
