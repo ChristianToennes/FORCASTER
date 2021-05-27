@@ -234,106 +234,63 @@ def At2b_astra(out_shape, proj_geom):
     run_At2b.free = free
     return run_At2b
 
-def FDK_astra(out_shape, proj_geom):
+def FDK_astra(out_shape, proj_geom, x):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
     vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     rec_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict('FDK_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['Option'] = {"VoxelSuperSampling": 3, 
+    cfg['Option'] = {#"VoxelSuperSampling": 3, 
                      "ShortScan": True
                     }
     alg_id = astra.algorithm.create(cfg)
     iterations = 1
-    freed = False
-    def free():
-        nonlocal freed
-        astra.data3d.delete(proj_id)
-        astra.data3d.delete(rec_id)
-        astra.algorithm.delete(alg_id)
-        freed = True
-    def run_FDK(x, free_memory=False):
-        nonlocal freed
-        if freed:
-            print("data structures and algorithm already deleted")
-            return
-        #print(np.mean(x), np.min(x), np.max(x))
-        astra.data3d.store(proj_id, x)
-        astra.algorithm.run(alg_id, iterations)
-        result = astra.data3d.get(rec_id)
-        #print(np.mean(result), np.min(result), np.max(result))
-        if free_memory:
-            free()
-        return result
-    run_FDK.free = free
-    return run_FDK
+    astra.data3d.store(proj_id, x)
+    astra.algorithm.run(alg_id, iterations)
+    result = astra.data3d.get(rec_id)
+    astra.data3d.delete(proj_id)
+    astra.data3d.delete(rec_id)
+    astra.algorithm.delete(alg_id)
+    return result
 
-def CGLS_astra(out_shape, proj_geom):
+def CGLS_astra(out_shape, proj_geom, x, iterations):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
     vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     rec_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict('CGLS3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['Option'] = {"VoxelSuperSampling": 3}
+    #cfg['Option'] = {"VoxelSuperSampling": 3}
     alg_id = astra.algorithm.create(cfg)
-    freed = False
-    def free():
-        nonlocal freed
-        astra.data3d.delete(proj_id)
-        astra.data3d.delete(rec_id)
-        astra.algorithm.delete(alg_id)
-        freed = True
-    def run_CGLS(x, iterations, free_memory=False):
-        nonlocal freed
-        if freed:
-            print("data structures and algorithm already deleted")
-            return
-        print(np.mean(x), np.min(x), np.max(x))
-        astra.data3d.store(proj_id, x)
-        astra.algorithm.run(alg_id, iterations)
-        result = astra.data3d.get(rec_id)
-        result[result==np.nan] = 0
-        print(np.mean(result), np.min(result), np.max(result))
-        if free_memory:
-            free()
-        return result
-    run_CGLS.free = free
-    return run_CGLS
+    astra.data3d.store(proj_id, x)
+    astra.algorithm.run(alg_id, iterations)
+    result = astra.data3d.get(rec_id)
+    result[result==np.nan] = 0
+    astra.data3d.delete(proj_id)
+    astra.data3d.delete(rec_id)
+    astra.algorithm.delete(alg_id)
+
+    return result
 
 
-def SIRT_astra(out_shape, proj_geom):
+def SIRT_astra(out_shape, proj_geom, x, iterations):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
     vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
     rec_id = astra.data3d.create('-vol', vol_geom)
     cfg = astra.astra_dict('SIRT3D_CUDA')
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
-    cfg['Option'] = {"VoxelSuperSampling": 3}
+    #cfg['Option'] = {"VoxelSuperSampling": 3}
     alg_id = astra.algorithm.create(cfg)
-    freed = False
-    def free():
-        nonlocal freed
-        astra.data3d.delete(proj_id)
-        astra.data3d.delete(rec_id)
-        astra.algorithm.delete(alg_id)
-        freed = True
-    def run_SIRT(x, iterations, free_memory=False):
-        nonlocal freed
-        if freed:
-            print("data structures and algorithm already deleted")
-            return
-        print(np.mean(x), np.min(x), np.max(x))
-        astra.data3d.store(proj_id, x)
-        astra.algorithm.run(alg_id, iterations)
-        result = astra.data3d.get(rec_id)
-        print(np.mean(result), np.min(result), np.max(result))
-        if free_memory:
-            free()
-        return result
-    run_SIRT.free = free
-    return run_SIRT
+    astra.data3d.store(proj_id, x)
+    astra.algorithm.run(alg_id, iterations)
+    result = astra.data3d.get(rec_id)
+    astra.data3d.delete(proj_id)
+    astra.data3d.delete(rec_id)
+    astra.algorithm.delete(alg_id)
+
+    return result
 
 def ASD_POCS_astra(out_shape, proj_geom): # sidky 2008
     β = 1

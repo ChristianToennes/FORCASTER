@@ -525,7 +525,7 @@ def reg_and_reco(ims, in_params, config):
         del sino
     if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
-        rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), True)
+        rec = utils.FDK_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1))
         #mask = np.zeros(rec.shape, dtype=bool)
         mask = create_circular_mask(rec.shape)
         rec = rec*mask
@@ -533,9 +533,9 @@ def reg_and_reco(ims, in_params, config):
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input.nrrd"))
         del rec
-    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+    if False and not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
-        rec = utils.CGLS_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), 50, True)
+        rec = utils.CGLS_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 75)
         #mask = np.zeros(rec.shape, dtype=bool)
         mask = create_circular_mask(rec.shape)
         rec = rec*mask
@@ -543,7 +543,16 @@ def reg_and_reco(ims, in_params, config):
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input_cgls.nrrd"))
         del rec
-
+    if False and not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+        reg_geo = Ax.create_geo(params)
+        rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
+        #mask = np.zeros(rec.shape, dtype=bool)
+        mask = create_circular_mask(rec.shape)
+        rec = rec*mask
+        del mask
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input_sirt.nrrd"))
+        del rec
 
     cali = {}
     cali['feat_thres'] = 80
@@ -674,7 +683,7 @@ def reg_and_reco(ims, in_params, config):
             sino = sitk.GetImageFromArray(sino)
             sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
             del sino
-            rec = utils.FDK_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), True)
+            rec = utils.FDK_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1))
             mask = create_circular_mask(rec.shape)
             rec = rec*mask
             del mask
@@ -684,7 +693,19 @@ def reg_and_reco(ims, in_params, config):
             rec = sitk.GetImageFromArray(rec)*100
             sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
             del rec
-            rec = utils.CGLS_astra(real_image.shape, reg_geo)(np.swapaxes(ims, 0,1), 50, True)
+            reg_geo = Ax.create_geo(corrs)
+            rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
+            mask = create_circular_mask(rec.shape)
+            rec = rec*mask
+            del mask
+            #rec = np.swapaxes(rec, 0, 2)
+            #rec = np.swapaxes(rec, 1,2)
+            #rec = rec[::-1, ::-1]
+            rec = sitk.GetImageFromArray(rec)*100
+            sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough_sirt.nrrd"))
+            del rec
+            reg_geo = Ax.create_geo(corrs)
+            rec = utils.CGLS_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 75)
             mask = create_circular_mask(rec.shape)
             rec = rec*mask
             del mask
