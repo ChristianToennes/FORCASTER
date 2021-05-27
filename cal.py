@@ -3,6 +3,8 @@ import cv2
 import utils
 import matplotlib.pyplot as plt
 import scipy.optimize
+import warnings
+import sys
 
 default_config = {"use_cpu": True, "AKAZE_params": {"threshold":0.0001, "nOctaves":4, "nOctaveLayers":4},
 "my": True, "grad_width": (1,25), "noise": None, "both": False, "max_change": 1}
@@ -77,6 +79,7 @@ def trackFeatures(next_img, data, config):
             valid[m.queryIdx] = False
 
     dists = np.array(dists)
+    
 
     for i in range(len(base_points)):
         if np.count_nonzero(points==i)>1:
@@ -86,15 +89,19 @@ def trackFeatures(next_img, data, config):
                 if m.trainIdx == i:
                     matchesMask[i2,0] = 0
 
-    m = np.mean(dists[valid])
-    std = np.std(dists[valid])
-    out = np.bitwise_or(dists<m-3*std, dists>m+3*std)
-    valid[out] = False
+    if len(dists[valid])==0:
+        #real_img = config["real_img"]
+        #img = cv2.drawMatchesKnn(real_img,base_points,next_img,new_points,matches,None,matchesMask=matchesMask)
+        ##plt.imshow(img)
+        #plt.show()
+        #plt.close()
+        pass
+    else:
+        m = np.mean(dists[valid])
+        std = np.std(dists[valid])
+        out = np.bitwise_or(dists<m-3*std, dists>m+3*std)
+        valid[out] = False
 
-    #img = cv2.drawMatchesKnn(base_img,base_points,next_img,new_points,matches,None,matchesMask=matchesMask)
-    #plt.imshow(img)
-    #plt.show()
-    #plt.close()
     return new_points[points], valid
 
 def findInitialFeatures(img, config):
@@ -196,22 +203,34 @@ def calcGIObjective(old_img, new_img, config):
     return config["GIoldold"] / (GIoldnew+1e-8)
 
 def calcPointsObjective(comp, good_new, good_old):
-    if comp==10:
+    if comp==0:
         d = good_new[:,0]-good_old[:,0]
-        std = np.std(d)
-        mean = np.mean(d)
-        fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
-        #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
-        #print(d.shape, fd.shape, mean, std)
-        f = np.var( fd )
-    elif comp==11:
+        if len(d)==0:
+            f = 50
+        else:
+            std = np.std(d)
+            mean = np.mean(d)
+            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+            #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
+            #print(d.shape, fd.shape, mean, std)
+            if len(fd)==0:
+                f = 50
+            else:
+                f = np.var( fd )
+    elif comp==1:
         d = good_new[:,1]-good_old[:,1]
-        std = np.std(d)
-        mean = np.mean(d)
-        fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
-        #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
-        f = np.var( fd )
-    elif comp==0:
+        if len(d)==0:
+            f = 50
+        else:
+            std = np.std(d)
+            mean = np.mean(d)
+            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+            #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
+            if len(fd)==0:
+                f = 50
+            else:
+                f = np.var( fd )
+    elif comp==10:
         mid_n_x, mid_n_y = np.mean(good_new, axis=0)
         mid_o_x, mid_o_y = np.mean(good_old, axis=0)
         d = (good_new[:,0]-mid_n_x)-(good_old[:,0]-mid_o_x)
@@ -221,7 +240,7 @@ def calcPointsObjective(comp, good_new, good_old):
         fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
         #print(d.shape, fd.shape, mean, std)
         f = np.var( fd )
-    elif comp==1:
+    elif comp==11:
         mid_n_x, mid_n_y = np.mean(good_new, axis=0)
         mid_o_x, mid_o_y = np.mean(good_old, axis=0)
         d = (good_new[:,1]-mid_n_y)-(good_old[:,1]-mid_o_y)
@@ -274,12 +293,16 @@ def calcPointsObjective(comp, good_new, good_old):
 
     elif comp==2:
         d = np.linalg.norm(good_new-good_old, axis=1)
-
-        std = np.std(d)
-        mean = np.mean(d)
-        fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
-
-        f = np.std(fd)
+        if len(d)==0:
+            f = 50
+        else:
+            std = np.std(d)
+            mean = np.mean(d)
+            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+            if len(fd)==0:
+                f = 50
+            else:
+                f = np.std(fd)
     else:
         f = 0
     return f
@@ -375,6 +398,7 @@ def correctZ(in_cur, config):
     return cur
 
 def linsearch(in_cur, axis, config):
+    warnings.simplefilter("error")
     data_real = config["data_real"]
     real_img = config["real_img"]
     Ax = config["Ax"]
@@ -426,9 +450,56 @@ def linsearch(in_cur, axis, config):
         
         values = np.array([calcPointsObjective(axis, points, points_real[v]) for points,v in zip(points,valid)])
         #p = np.polyfit(εs, values, 2)
+
+        values_out = values>(np.mean(values)+3*np.std(values))
+        values[values_out] = np.median(values)
+
         mid = np.argmin(values)
-        p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
-        p2 = np.polyfit(εs[mid:], values[mid:], 1)
+        midpoints = np.argsort(values)[:5]
+        mean_mid = np.mean(εs[midpoints])
+        std_mid = np.std(εs[midpoints])
+        mid = np.argmin(values[midpoints[np.bitwise_and(εs[midpoints]>mean_mid-2*std_mid, εs[midpoints]<mean_mid+2*std_mid)]])
+        mid = midpoints[np.bitwise_and(εs[midpoints]>mean_mid-2*std_mid, εs[midpoints]<mean_mid+2*std_mid)][mid]
+        if True:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                try:
+                    p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
+                except np.RankWarning:
+                    #p1 = [εs[values[0]], 0]
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        p1 = np.polyfit([εs[0]*2,εs[0]], [values[0]*2, values[0]], 1)
+                    #print("low rank p1", εs[:mid+1], noise[axis], p1, file=sys.stderr)
+                    #plt.figure()
+                    #plt.title(str(axis) + " p1 " + str(noise[axis]))
+                    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[-1]), np.polyval(p, np.linspace(1.2*εs[0],1.2*εs[-1])))
+                    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[mid]), np.polyval(p1, np.linspace(1.2*εs[0],1.2*εs[mid])))
+                    #plt.plot(np.linspace(1.2*εs[mid],1.2*εs[-1]), np.polyval(p2, np.linspace(1.2*εs[mid],1.2*εs[-1])))
+                    #plt.scatter(εs, values)
+                    #plt.show()
+                    #plt.close()
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                try:
+                    p2 = np.polyfit(εs[mid:], values[mid:], 1)
+                except np.RankWarning:
+                    #p2 = [εs[values[-1]], 0]
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        p2 = np.polyfit([εs[-1],εs[-1]*2], [values[-1], values[-1]*2], 1)
+                    #print("low rank p2", εs[mid:], noise[axis], p2, file=sys.stderr)
+                    #plt.figure()
+                    #plt.title(str(axis) + " p2 " + str(noise[axis]))
+                    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[-1]), np.polyval(p, np.linspace(1.2*εs[0],1.2*εs[-1])))
+                    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[mid]), np.polyval(p1, np.linspace(1.2*εs[0],1.2*εs[mid])))
+                    #plt.plot(np.linspace(1.2*εs[mid],1.2*εs[-1]), np.polyval(p2, np.linspace(1.2*εs[mid],1.2*εs[-1])))
+                    #plt.scatter(εs, values)
+                    #plt.show()
+                    #plt.close()
+        else:
+            p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
+            p2 = np.polyfit(εs[mid:], values[mid:], 1)
     else:
         values = np.array([calcGIObjective(real_img, projs[:,i], config) for i in range(projs.shape[1])])
         #p = np.polyfit(εs, values, 2)
@@ -484,7 +555,7 @@ def linsearch(in_cur, axis, config):
             print("{}{: .3f}{}".format(bcolors.GREEN, noise[axis]-min_ε, bcolors.END), end=", ")
         else:
             print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis]-min_ε, bcolors.END), end=", ")
-        noise[axis] -= min_ε
+        #noise[axis] -= min_ε
     if both:
         return cur, min_ε
     return cur
@@ -513,7 +584,7 @@ def binsearch(in_cur, axis, config):
     if not my:
         config["GIoldold"] = GI(real_img, real_img)
 
-    make_εs = lambda size, count: np.array([-size/(1.1**i) for i in range(count)] + [0] + [size/(1.1**i) for i in range(count)][::-1])
+    make_εs = lambda size, count: np.array([-size/(1.3**i) for i in range(count)] + [0] + [size/(1.3**i) for i in range(count)][::-1])
     εs = make_εs(*grad_width)
     change = 0
     selected_εs = []
@@ -691,14 +762,14 @@ def roughRegistration(cur, proj_img, reg_config, c):
     if c==0:
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
-        for grad_width in [(1,25), (0.75,25), (0.5,25)]:
-            print()
+        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+            #print()
             config["grad_width"]=grad_width
             cur = binsearch(cur, 0, config)
             cur = binsearch(cur, 1, config)
-            #cur = binsearch(cur, 2, config)
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
+            cur = binsearch(cur, 2, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
     elif c==3: # 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
@@ -706,55 +777,54 @@ def roughRegistration(cur, proj_img, reg_config, c):
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c==4: # 4
-        print()
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
-        change = [0,0,0]
-        for grad_width in [(1,25),(0.75,25),(0.5,25)]:
-            print()
-            config["both"] = True
-            config["grad_width"] = grad_width
-            cur1, c1 = linsearch(cur, 0, config)
-            cur2, c2 = linsearch(cur, 1, config)
-            cur3, c3 = linsearch(cur, 2, config)
-            change[0] += c1
-            change[1] += c2
-            change[2] += c3
-            if np.abs(change[0]) > config["max_change"]:
-                c1 = 0.1*np.sign(c1) - change[0]
-                angles_noise[0] = noise[1][0]
-            if np.abs(change[1]) > config["max_change"]:
-                c2 = -0.1*np.sign(c2) - change[1]
-                angles_noise[1] = noise[1][1]
-            if np.abs(change[2]) > config["max_change"]:
-                c3 = -0.1*np.sign(c3) - change[2]
-                angles_noise[2] = noise[1][2]
-            cur = applyRot(cur, c1, c2, c3)
+        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+            #print()
+            config["grad_width"]=grad_width
+            cur = linsearch(cur, 0, config)
+            cur = linsearch(cur, 1, config)
+            cur = linsearch(cur, 2, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
     elif c==5: # 5
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         config["my"] = False
-        for grad_width in [(1,25), (0.75,25), (0.5,25)]:
-            print()
+        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+            #print()
             config["grad_width"]=grad_width
             cur = binsearch(cur, 0, config)
             cur = binsearch(cur, 1, config)
-            #cur = binsearch(cur, 2, config)
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
+            cur = binsearch(cur, 2, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
     elif c==6:
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
-        for grad_width, my in [((1,25), False), ((0.75,25), True), ((0.5,25), True)]:
-            print()
+        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+            #print()
             config["grad_width"]=grad_width
-            config["my"] = my
-            cur = binsearch(cur, 0, config)
-            cur = binsearch(cur, 1, config)
+            cur = linsearch(cur, 0, config)
+            #cur = binsearch(cur, 1, config)
             #cur = binsearch(cur, 2, config)
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+            #print()
+            config["grad_width"]=grad_width
+            #cur = binsearch(cur, 0, config)
+            cur = linsearch(cur, 1, config)
+            #cur = binsearch(cur, 2, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+            #print()
+            config["grad_width"]=grad_width
+            #cur = binsearch(cur, 0, config)
+            #cur = binsearch(cur, 1, config)
+            cur = linsearch(cur, 2, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
 
     return cur
