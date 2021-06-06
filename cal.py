@@ -307,6 +307,14 @@ def calcPointsObjective(comp, good_new, good_old):
         f = 0
     return f
 
+def calcMyObjective(axis, proj, config):
+    data_real = config["data_real"]
+    (p,v), proj = trackFeatures(proj, data_real, config), proj
+    points = normalize_points(p, proj)
+    valid = v==1
+    points = points[valid]
+    value = calcPointsObjective(axis, points, data_real[0][valid])
+    return value
 
 class bcolors:
     HEADER = '\033[95m'
@@ -606,20 +614,9 @@ def binsearch(in_cur, axis, config):
         projs = Projection_Preprocessing(Ax(dvec))
 
         if my:
-            points = []
-            valid = []
-            for (p,v), proj in [(trackFeatures(projs[:,i], data_real, config), projs[:,i]) for i in range(projs.shape[1])]:
-                points.append(normalize_points(p, proj))
-                valid.append(v==1)
-            combined_valid = valid[0]
-            for v in valid:
-                combined_valid = np.bitwise_and(combined_valid, v)
-            points = [p[v] for p, v in zip(points, valid)]
-            
-            #print(points.shape, points_real.shape)
-            values = np.array([calcPointsObjective(axis, points, points_real[v]) for points,v in zip(points,valid)])
+            values = np.array([calcMyObjective(axis, projs[:,i], config) for i in range(projs.shape[1])])
             #values1 = np.array([calcObjective(data_real, real_img, projs[:,i], {}, GIoldold) for i in range(projs.shape[1])])
-            p = np.polyfit(εs, values, 2)
+            p = np.polyfit(εs[values>=0], values[values>=0], 2)
             #p1 = np.polyfit(εs, values1, 2)
         else:
             values = np.array([calcGIObjective(real_img, projs[:,i], config) for i in range(projs.shape[1])])
