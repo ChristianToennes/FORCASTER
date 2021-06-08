@@ -6,7 +6,7 @@ import scipy.optimize
 import warnings
 import sys
 
-default_config = {"use_cpu": True, "AKAZE_params": {"threshold":0.0001, "nOctaves":4, "nOctaveLayers":4},
+default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 4},
 "my": True, "grad_width": (1,25), "noise": None, "both": False, "max_change": 1}
 
 def applyRot(in_params, α, β, γ):
@@ -206,7 +206,7 @@ def calcPointsObjective(comp, good_new, good_old):
     if comp==0:
         d = good_new[:,0]-good_old[:,0]
         if len(d)==0:
-            f = 50
+            f = -1
         else:
             std = np.std(d)
             mean = np.mean(d)
@@ -214,22 +214,22 @@ def calcPointsObjective(comp, good_new, good_old):
             #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
             #print(d.shape, fd.shape, mean, std)
             if len(fd)==0:
-                f = 50
+                f = -1
             else:
-                f = np.var( fd )
+                f = np.std( fd )
     elif comp==1:
         d = good_new[:,1]-good_old[:,1]
         if len(d)==0:
-            f = 50
+            f = -1
         else:
             std = np.std(d)
             mean = np.mean(d)
             fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
             #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
             if len(fd)==0:
-                f = 50
+                f = -1
             else:
-                f = np.var( fd )
+                f = np.std( fd )
     elif comp==10:
         mid_n_x, mid_n_y = np.mean(good_new, axis=0)
         mid_o_x, mid_o_y = np.mean(good_old, axis=0)
@@ -294,17 +294,55 @@ def calcPointsObjective(comp, good_new, good_old):
     elif comp==2:
         d = np.linalg.norm(good_new-good_old, axis=1)
         if len(d)==0:
-            f = 50
+            f = -1
         else:
             std = np.std(d)
             mean = np.mean(d)
             fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
             if len(fd)==0:
-                f = 50
+                f = -1
             else:
                 f = np.std(fd)
+    
+    if comp==-1:
+        d = good_new[:,0]-good_old[:,0]
+        if len(d)==0:
+            f = -1
+        else:
+            std = np.std(d)
+            mean = np.mean(d)
+            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+            #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
+            #print(d.shape, fd.shape, mean, std)
+            if len(fd)==0:
+                f = -1
+            else:
+                f = np.abs(np.median( fd ))
+    elif comp==-2:
+        d = good_new[:,1]-good_old[:,1]
+        if len(d)==0:
+            f = -1
+        else:
+            std = np.std(d)
+            mean = np.mean(d)
+            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+            #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
+            if len(fd)==0:
+                f = -1
+            else:
+                f = np.abs(np.median( fd ))
+
+    elif comp==-3:
+        dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in good_new for r in good_new])
+        dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in good_old for r in good_old])
+        if np.count_nonzero(dist_new) > 5:
+            f = np.abs(np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
+        else:
+            f = -1
+    
     else:
         f = 0
+        
     return f
 
 def calcMyObjective(axis, proj, config):
@@ -456,17 +494,19 @@ def linsearch(in_cur, axis, config):
             combined_valid = np.bitwise_and(combined_valid, v)
         points = [p[v] for p, v in zip(points, valid)]
         
+        #print(points.shape, points_real.shape)
         values = np.array([calcPointsObjective(axis, points, points_real[v]) for points,v in zip(points,valid)])
         #p = np.polyfit(εs, values, 2)
 
-        values_out = values>(np.mean(values)+3*np.std(values))
-        values[values_out] = np.median(values)
+        #values_out = values>(np.mean(values)+3*np.std(values))
+        #values[values_out] = np.median(values)
 
         mid = np.argmin(values)
-        midpoints = np.argsort(values)[:5]
+        skip = np.count_nonzero(values<0)
+        midpoints = np.argsort(values)[skip:skip+5]
         mean_mid = np.mean(εs[midpoints])
         std_mid = np.std(εs[midpoints])
-        mid = np.argmin(values[midpoints[np.bitwise_and(εs[midpoints]>mean_mid-2*std_mid, εs[midpoints]<mean_mid+2*std_mid)]])
+        mid = np.argmin(values[midpoints[np.bitwise_and(εs[midpoints]>mean_mid-3*std_mid, εs[midpoints]<mean_mid+3*std_mid)]])
         mid = midpoints[np.bitwise_and(εs[midpoints]>mean_mid-2*std_mid, εs[midpoints]<mean_mid+2*std_mid)][mid]
         if True:
             with warnings.catch_warnings():
@@ -475,9 +515,9 @@ def linsearch(in_cur, axis, config):
                     p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
                 except np.RankWarning:
                     #p1 = [εs[values[0]], 0]
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore")
-                        p1 = np.polyfit([εs[0]*2,εs[0]], [values[0]*2, values[0]], 1)
+                    #with warnings.catch_warnings():
+                    #    warnings.simplefilter("ignore")
+                    #    p1 = np.polyfit([εs[0]*2,εs[0]], [values[0]*2, values[0]], 1)
                     #print("low rank p1", εs[:mid+1], noise[axis], p1, file=sys.stderr)
                     #plt.figure()
                     #plt.title(str(axis) + " p1 " + str(noise[axis]))
@@ -487,15 +527,18 @@ def linsearch(in_cur, axis, config):
                     #plt.scatter(εs, values)
                     #plt.show()
                     #plt.close()
+                    if both:
+                        return cur, 0
+                    return cur
             with warnings.catch_warnings():
                 warnings.simplefilter("error")
                 try:
                     p2 = np.polyfit(εs[mid:], values[mid:], 1)
                 except np.RankWarning:
                     #p2 = [εs[values[-1]], 0]
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore")
-                        p2 = np.polyfit([εs[-1],εs[-1]*2], [values[-1], values[-1]*2], 1)
+                    #with warnings.catch_warnings():
+                    #    warnings.simplefilter("ignore")
+                    #    p2 = np.polyfit([εs[-1],εs[-1]*2], [values[-1], values[-1]*2], 1)
                     #print("low rank p2", εs[mid:], noise[axis], p2, file=sys.stderr)
                     #plt.figure()
                     #plt.title(str(axis) + " p2 " + str(noise[axis]))
@@ -505,6 +548,9 @@ def linsearch(in_cur, axis, config):
                     #plt.scatter(εs, values)
                     #plt.show()
                     #plt.close()
+                    if both:
+                        return cur, 0
+                    return cur
         else:
             p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
             p2 = np.polyfit(εs[mid:], values[mid:], 1)
@@ -515,39 +561,7 @@ def linsearch(in_cur, axis, config):
         p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
         p2 = np.polyfit(εs[mid:], values[mid:], 1)
     
-    #print(axis)
-    #for axis in [0,10]:#1,11,12,22,2,3,4,5,6,7,8]:
-    #values = np.array([calcObjectiveStdPoints(axis, points, points_real[v]) for points,v in zip(points,valid)])
-    #p = np.polyfit(εs, values, 2)
-    #plt.figure()
-    #plt.title(str(axis))
-    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[-1]), np.polyval(p, np.linspace(1.2*εs[0],1.2*εs[-1])))
-    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[mid]), np.polyval(p1, np.linspace(1.2*εs[0],1.2*εs[mid])))
-    #plt.plot(np.linspace(1.2*εs[mid],1.2*εs[-1]), np.polyval(p2, np.linspace(1.2*εs[mid],1.2*εs[-1])))
-    #plt.scatter(εs, values)
-    #plt.show()
-    #plt.close()
-
-    #mins = np.roots(np.polyder(p))
-    #ε_pos = np.argmin(np.polyval(p, mins))
-    #min_ε1 = np.real(mins[ε_pos])
-
     min_ε = np.roots(p1-p2)[0]
-
-    #print(axis, min_ε, min_ε1, εs[mid])
-    
-    #ε_pos = np.argmin(values)
-    #if ε_pos > 0 and ε_pos < len(values)-1:
-    #    min_ε = εs[ε_pos]
-    #else:
-    #    min_ε = 0
-
-    #if np.abs(min_ε) > grad_width[0]:
-        #ε_pos = np.argmin(values)
-        #if ε_pos > 0 and ε_pos < len(values)-1:
-        #    min_ε = εs[ε_pos]
-        #else:
-    #        min_ε = -0.1 * np.sign(min_ε)
 
     if axis==0:
         cur = applyRot(cur, min_ε, 0, 0)
@@ -592,7 +606,7 @@ def binsearch(in_cur, axis, config):
     if not my:
         config["GIoldold"] = GI(real_img, real_img)
 
-    make_εs = lambda size, count: np.array([-size/(1.3**i) for i in range(count)] + [0] + [size/(1.3**i) for i in range(count)][::-1])
+    make_εs = lambda size, count: np.array([-size/(1.1**i) for i in range(count)] + [0] + [size/(1.1**i) for i in range(count)][::-1])
     εs = make_εs(*grad_width)
     change = 0
     selected_εs = []
@@ -600,7 +614,7 @@ def binsearch(in_cur, axis, config):
     failed_count = grad_width[0]
     osci_count = 0
     min_ε = 0
-    for it in range(100):
+    for it in range(5):
         #print(εs, change)
         dvec = []
         for ε in εs:
@@ -655,10 +669,21 @@ def binsearch(in_cur, axis, config):
                 εs = make_εs(2*(εs[nearest_index+1]-εs[nearest_index]), grad_width[1])
             else:
                 εs = make_εs(2*(εs[nearest_index]-εs[nearest_index-1]), grad_width[1])
-        if np.abs(min_ε) <= 0.0001:
+        if np.abs(min_ε) <= 0.001*grad_width[0]:
+            print("small", end=" ")
+            if axis==0:
+                cur = applyRot(cur, min_ε, 0, 0)
+                #cur = applyTrans(cur, med_x, 0, 0)
+            if axis==1:
+                cur = applyRot(cur, 0, min_ε, 0)
+                #cur = applyTrans(cur, 0, med_y, 0)
+            if axis==2:
+                cur = applyRot(cur, 0, 0, min_ε)    
+                #cur = applyTrans(cur, 0, 0, scale)
             break
         if np.abs(change) > failed_count:
-            #print("reset", axis, change, end=",")
+            #print("reset", axis, change, end=", ", flush=True)
+            print("reset", end=" ")
             failed_count += grad_width[0]
             osci_count = 0
             cur = np.array(in_cur)
@@ -673,7 +698,8 @@ def binsearch(in_cur, axis, config):
             min_ε = np.random.uniform(εs[1], εs[-2])
             change = min_ε
         if failed_count > grad_width[0]*6:
-            #print("failed", axis, grad_width, end=",")
+            #print("failed", axis, grad_width, end=", ", flush=True)
+            print("failed", end=" ")
             cur = np.array(in_cur)
             break
         selected_εs.append(min_ε)
@@ -689,7 +715,7 @@ def binsearch(in_cur, axis, config):
         if axis==2:
             cur = applyRot(cur, 0, 0, min_ε)    
             #cur = applyTrans(cur, 0, 0, scale)
-    if noise is not None:
+    if False and noise is not None:
         print("{}{}{} {: .3f} {: .3f}".format(bcolors.BLUE, axis, bcolors.END, noise[axis], change), end=": ")
 
         if np.abs(noise[axis]) < np.abs(noise[axis]-change)-0.1:
@@ -704,7 +730,10 @@ def binsearch(in_cur, axis, config):
     return cur
 
 
-def roughRegistration(cur, proj_img, reg_config, c):
+def roughRegistration(in_cur, reg_config, c):
+    cur = np.array(in_cur)
+    if c==1 or c==2:
+        return bfgs(cur, reg_config, c)
     config = dict(default_config)
     config.update(reg_config)
 
@@ -759,14 +788,15 @@ def roughRegistration(cur, proj_img, reg_config, c):
     if c==0:
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
-        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+        for grad_width in [(1.5,25), (0.5,25)]:
             #print()
-            config["grad_width"]=grad_width
-            cur = binsearch(cur, 0, config)
-            cur = binsearch(cur, 1, config)
-            cur = binsearch(cur, 2, config)
-            cur = correctXY(cur, config)
-            cur = correctZ(cur, config)
+            for it in range(2):
+                config["grad_width"]=grad_width
+                cur = binsearch(cur, 0, config)
+                cur = binsearch(cur, 1, config)
+                cur = binsearch(cur, 2, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
     elif c==3: # 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
@@ -776,7 +806,7 @@ def roughRegistration(cur, proj_img, reg_config, c):
     elif c==4: # 4
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
-        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+        for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
             #print()
             config["grad_width"]=grad_width
             cur = linsearch(cur, 0, config)
@@ -785,21 +815,22 @@ def roughRegistration(cur, proj_img, reg_config, c):
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
     elif c==5: # 5
+        config["my"] = False
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
-        config["my"] = False
-        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+        for grad_width in [(1.5,25), (0.5,25)]:
             #print()
-            config["grad_width"]=grad_width
-            cur = binsearch(cur, 0, config)
-            cur = binsearch(cur, 1, config)
-            cur = binsearch(cur, 2, config)
-            cur = correctXY(cur, config)
-            cur = correctZ(cur, config)
+            for _ in range(2):
+                config["grad_width"]=grad_width
+                cur = binsearch(cur, 0, config)
+                cur = binsearch(cur, 1, config)
+                cur = binsearch(cur, 2, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
     elif c==6:
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
-        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+        for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
             #print()
             config["grad_width"]=grad_width
             cur = linsearch(cur, 0, config)
@@ -807,7 +838,7 @@ def roughRegistration(cur, proj_img, reg_config, c):
             #cur = binsearch(cur, 2, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
-        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+        for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
             #print()
             config["grad_width"]=grad_width
             #cur = binsearch(cur, 0, config)
@@ -815,7 +846,7 @@ def roughRegistration(cur, proj_img, reg_config, c):
             #cur = binsearch(cur, 2, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
-        for grad_width in [(2,25), (1,25), (0.75,25), (0.5,25)]:
+        for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
             #print()
             config["grad_width"]=grad_width
             #cur = binsearch(cur, 0, config)
@@ -823,5 +854,171 @@ def roughRegistration(cur, proj_img, reg_config, c):
             cur = linsearch(cur, 2, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
+
+        for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
+            #print()
+            config["grad_width"]=grad_width
+            cur = linsearch(cur, 0, config)
+            #cur = binsearch(cur, 1, config)
+            #cur = binsearch(cur, 2, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+        for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
+            #print()
+            config["grad_width"]=grad_width
+            #cur = binsearch(cur, 0, config)
+            cur = linsearch(cur, 1, config)
+            #cur = binsearch(cur, 2, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+        for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
+            #print()
+            config["grad_width"]=grad_width
+            #cur = binsearch(cur, 0, config)
+            #cur = binsearch(cur, 1, config)
+            cur = linsearch(cur, 2, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+
+    return cur
+
+def bfgs(cur, reg_config, c):
+    config = dict(default_config)
+    config.update(reg_config)
+    config["my"] = c==1
+
+    real_img = config["real_img"]
+    noise = config["noise"]
+    Ax = config["Ax"]
+
+    if "data_real" not in config or config["data_real"] is None:
+        config["data_real"] = findInitialFeatures(real_img, config)
+    
+    if noise is None:
+        config["noise"] = np.zeros((2,3))
+        noise = config["noise"]
+
+    trans_noise, angles_noise = noise
+    config["angle_noise"] = np.array(angles_noise)
+    config["trans_noise"] = np.array(trans_noise)
+
+    data_real = config["data_real"]
+    points_real = normalize_points(data_real[0], real_img)
+    if config["my"]:
+        def f(x, cur, eps):
+            cur_x = applyRot(cur, x[0], x[1], x[2])
+            proj = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
+
+            (p,v), proj = trackFeatures(proj, data_real, config), proj
+            points = normalize_points(p, proj)
+            valid = v==1
+            points = points[valid]
+            ret = 0
+            for axis, mult in [(0,1),(1,1),(2,1)]:
+                obj = calcPointsObjective(axis, points, points_real[valid])*mult
+                if obj==-1:
+                    ret += 50
+                else:
+                    ret += obj
+            return ret
+        
+        def gradf(x, cur, eps):
+            cur_x = applyRot(cur, x[0], x[1], x[2])
+            dvec = [cur_x]
+            dvec.append(applyRot(cur_x, eps[0], 0, 0))
+            dvec.append(applyRot(cur_x, 0, eps[1], 0))
+            dvec.append(applyRot(cur_x, 0, 0, eps[2]))
+            dvec = np.array(dvec)
+            projs = Projection_Preprocessing(Ax(dvec))
+
+            (p,v), proj = trackFeatures(projs[:,0], data_real, config), projs[:,0]
+            points = normalize_points(p, proj)
+            valid = v==1
+            points = points[valid]
+            cur_obj = []
+            for axis, mult in [(0,1),(1,1),(2,1)]:
+                obj = calcPointsObjective(axis, points, points_real[valid])*mult
+                if obj==-1:
+                    cur_obj.append(50)
+                else:
+                    cur_obj.append(obj)
+
+            ret = [0,0,0]
+            for i in range(1, projs.shape[1]):
+                proj = projs[:,i]
+                (p,v), proj = trackFeatures(proj, data_real, config), proj
+                points = normalize_points(p, proj)
+                valid = v==1
+                points = points[valid]
+                part = 0
+                axis, mult = [(0,1),(1,1),(2,1)][i-1]
+                obj = calcPointsObjective(axis, points, points_real[valid])*mult
+                if obj==-1:
+                    obj = 50
+
+                ret[i-1] = (obj-cur_obj[i-1])*0.5
+
+            return ret
+
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        
+        eps = [0.01, 0.01, 0.01]
+        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 10, 'eps': eps})
+        eps = [0.005, 0.005, 0.005]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
+
+        cur = applyRot(cur, ret.x[0], ret.x[1], ret.x[2])
+
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        
+        config["angle_noise"] += ret.x
+    
+    else:
+        def f(x, cur, eps):
+            cur_x = applyTrans(cur, x[0], x[1], x[2])
+            cur_x = applyRot(cur_x, x[3], x[4], x[5])
+            proj = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
+            ret = calcGIObjective(real_img, proj, config)
+            #print(ret)
+            return ret
+        
+        def gradf(x, cur, eps):
+            cur_x = applyTrans(cur, x[0], x[1], x[2])
+            cur_x = applyRot(cur_x, x[3], x[4], x[5])
+            dvec = [cur_x]
+            dvec.append(applyTrans(cur_x, eps[0], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[1], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
+            dvec.append(applyRot(cur_x, eps[3], 0, 0))
+            dvec.append(applyRot(cur_x, 0, eps[4], 0))
+            dvec.append(applyRot(cur_x, 0, 0, eps[5]))
+            dvec = np.array(dvec)
+            projs = Projection_Preprocessing(Ax(dvec))
+
+            h0 = calcGIObjective(real_img, projs[:,0], config)
+            ret = [0,0,0,0,0,0]
+            for i in range(1, projs.shape[1]):
+                ret[i-1] = (calcGIObjective(real_img, projs[:,i], config)-h0) * 0.5
+            
+            #print(ret)
+
+            return ret
+
+        eps = [0.1, 0.1, 0.1, 0.01, 0.01, 0.01]
+        ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 10, 'eps': eps})
+        eps = [0.05, 0.05, 0.05, 0.005, 0.005, 0.005]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
+        
+        cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
+        cur = applyRot(cur, ret.x[3], ret.x[4], ret.x[5])
+
+        config["trans_noise"] += ret.x[:3]
+        config["angle_noise"] += ret.x[3:]
+
+    reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 
     return cur
