@@ -489,60 +489,6 @@ def reg_rough_parallel(ims, params, config, c=0):
     #print(corrs)
     return corrs
 
-
-def reg_lessrough(ims, params, Ax, feature_params):
-    corrs = []
-    for i in range(len(ims)):
-        print(i, end=",", flush=True)
-        cur = params[i]
-        #print(cur)
-        real_img = forcast.Projection_Preprocessing(ims[i])
-        proj_d = forcast.Projection_Preprocessing(Ax(np.array([cur])))[:,0]
-        try:
-            cur = forcast.roughRegistration(cur, real_img, proj_d, feature_params, Ax, c=0)
-            #print(cur)
-        except Exception as ex:
-            print(ex)
-            #raise
-        corrs.append(cur)
-        
-    
-    #corrs = np.array(corrs)
-    corrs = np.array(params)
-    global_cor = np.median(corrs, axis=0)
-
-    #print(corrs)
-
-    for i in range(len(ims)):
-        print(i, end=" ", flush=True)
-        try:
-            cur = corrs[i]
-            proj_d = forcast.Projection_Preprocessing(Ax(np.array([cur])))[:,0]
-            real_img = forcast.Projection_Preprocessing(ims[i])
-            cur = forcast.lessRoughRegistration(cur, real_img, proj_d, feature_params, Ax)
-            corrs[i] = cur
-        except Exception as ex:
-            print(ex)
-            raise
-    
-    return corrs
-
-def reg_bfgs(ims, params, Ax, feature_params, eps = [1,1,1,0.1,0.1,0.1], my = True):
-   
-    #corrs = reg_rough(ims, params, Ax, feature_params)
-    corrs = np.array(params)
-    for i in range(len(ims)):
-        print(i, end=" ", flush=True)
-        try:
-            for _ in range(1):
-                bfgs_corrs, fun, err = forcast.bfgs(i, ims, corrs, Ax, feature_params, np.array(eps), my=my)
-                corrs[i] = bfgs_corrs
-        except Exception as ex:
-            print(ex)
-            raise
-    
-    return corrs
-
 def create_circular_mask(shape, center=None, radius=None, radius_off=5, end_off=30):
     l, h, w = shape
     if center is None: # use the middle of the image
@@ -864,7 +810,7 @@ def reg_real_data():
     
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
+    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
@@ -898,7 +844,7 @@ def reg_real_data():
             random = np.random.default_rng(23)
             #angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
             angles_noise = random.uniform(low=-1, high=1, size=(len(ims_un),3))
-            #angles_noise = np.zeros_like(angles_noise)
+            angles_noise = np.zeros_like(angles_noise)
             trans_noise = random.normal(loc=0, scale=10, size=(len(ims_un), 3))
 
             #skip = 4
@@ -933,6 +879,9 @@ def reg_real_data():
             for i, (α,β,γ) in enumerate(angles_noise):
                 params[i] = cal.applyRot(params[i], -α, -β, -γ)
 
+            for i, (x,y,z) in enumerate(trans_noise):
+                params[i] = cal.applyTrans(params[i], x, y, z*5)
+
             projs = Ax(params)
             #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
             #sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ims,0,1)), "recos/ims.nrrd")
@@ -943,7 +892,7 @@ def reg_real_data():
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
 
             #for method in [3,4,5,0,6]:
-            for method in [1]:#,0,5]:
+            for method in [1,2,3]:#,0,5]:
                 config["name"] = name + str(method)
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))

@@ -76,7 +76,7 @@ def trackFeatures(next_img, data, config):
                 valid[m.queryIdx] = False
         else:
             dists.append(-1)
-            valid[m.queryIdx] = False
+            valid[ms[0].queryIdx] = False
 
     dists = np.array(dists)
     
@@ -733,7 +733,7 @@ def binsearch(in_cur, axis, config):
 def roughRegistration(in_cur, reg_config, c):
     cur = np.array(in_cur)
     if c==1 or c==2:
-        return bfgs(cur, reg_config, c)
+        return bfgs_trans(cur, reg_config, c)
     config = dict(default_config)
     config.update(reg_config)
 
@@ -965,15 +965,23 @@ def bfgs(cur, reg_config, c):
         cur = correctXY(cur, config)
         
         eps = [0.01, 0.01, 0.01]
-        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 10, 'eps': eps})
+        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 10, 'eps': eps})
         eps = [0.005, 0.005, 0.005]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 10, 'eps': eps})
+        eps = [0.0025, 0.0025, 0.0025]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 10, 'eps': eps})
 
         cur = applyRot(cur, ret.x[0], ret.x[1], ret.x[2])
 
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
+        #cur = correctXY(cur, config)
+        #cur = correctZ(cur, config)
+        #cur = correctXY(cur, config)
         
         config["angle_noise"] += ret.x
     
@@ -1022,3 +1030,147 @@ def bfgs(cur, reg_config, c):
     reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 
     return cur
+
+
+def bfgs_trans(cur, reg_config, c):
+    config = dict(default_config)
+    config.update(reg_config)
+    config["my"] = c==1
+
+    real_img = config["real_img"]
+    noise = config["noise"]
+    Ax = config["Ax"]
+
+    if "data_real" not in config or config["data_real"] is None:
+        config["data_real"] = findInitialFeatures(real_img, config)
+    
+    if noise is None:
+        config["noise"] = np.zeros((2,3))
+        noise = config["noise"]
+
+    trans_noise, angles_noise = noise
+    config["angle_noise"] = np.array(angles_noise)
+    config["trans_noise"] = np.array(trans_noise)
+
+    data_real = config["data_real"]
+    points_real = normalize_points(data_real[0], real_img)
+    if config["my"]:
+        def f(x, cur, eps):
+            cur_x = applyTrans(cur, x[0], x[1], x[2])
+            proj = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
+
+            (p,v), proj = trackFeatures(proj, data_real, config), proj
+            points = normalize_points(p, proj)
+            valid = v==1
+            points = points[valid]
+            ret = 0
+            for axis, mult in [(-1,1),(-2,1),(-3,1)]:
+                obj = calcPointsObjective(axis, points, points_real[valid])*mult
+                if obj==-1:
+                    ret += 50
+                else:
+                    ret += obj
+            return ret
+        
+        def gradf(x, cur, eps):
+            cur_x = applyTrans(cur, x[0], x[1], x[2])
+            dvec = [cur_x]
+            dvec.append(applyTrans(cur_x, eps[0], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[1], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
+            dvec = np.array(dvec)
+            projs = Projection_Preprocessing(Ax(dvec))
+
+            (p,v), proj = trackFeatures(projs[:,0], data_real, config), projs[:,0]
+            points = normalize_points(p, proj)
+            valid = v==1
+            points = points[valid]
+            cur_obj = []
+            for axis, mult in [(-1,1),(-2,1),(-3,1)]:
+                obj = calcPointsObjective(axis, points, points_real[valid])*mult
+                if obj==-1:
+                    cur_obj.append(50)
+                else:
+                    cur_obj.append(obj)
+
+            ret = [0,0,0]
+            for i in range(1, projs.shape[1]):
+                proj = projs[:,i]
+                (p,v), proj = trackFeatures(proj, data_real, config), proj
+                points = normalize_points(p, proj)
+                valid = v==1
+                points = points[valid]
+                part = 0
+                axis, mult = [(0,1),(1,1),(2,1)][i-1]
+                obj = calcPointsObjective(axis, points, points_real[valid])*mult
+                if obj==-1:
+                    obj = 50
+
+                ret[i-1] = (obj-cur_obj[i-1])*0.5
+
+            return ret
+
+        #cur = correctXY(cur, config)
+        #cur = correctZ(cur, config)
+        #cur = correctXY(cur, config)
+        
+        eps = [1, 1, 1]
+        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 20, 'eps': eps})
+        eps = [0.5, 0.5, 0.5]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 20, 'eps': eps})
+
+        cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
+
+        #cur = correctXY(cur, config)
+        #cur = correctZ(cur, config)
+        #cur = correctXY(cur, config)
+        
+        config["trans_noise"] += ret.x
+    
+    else:
+        def f(x, cur, eps):
+            cur_x = applyTrans(cur, x[0], x[1], x[2])
+            proj = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
+            ret = calcGIObjective(real_img, proj, config)
+            #print(ret)
+            return ret
+        
+        def gradf(x, cur, eps):
+            cur_x = applyTrans(cur, x[0], x[1], x[2])
+            dvec = [cur_x]
+            dvec.append(applyTrans(cur_x, eps[0], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[1], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
+            dvec = np.array(dvec)
+            projs = Projection_Preprocessing(Ax(dvec))
+
+            h0 = calcGIObjective(real_img, projs[:,0], config)
+            ret = [0,0,0]
+            for i in range(1, projs.shape[1]):
+                ret[i-1] = (calcGIObjective(real_img, projs[:,i], config)-h0) * 0.5
+            
+            #print(ret)
+
+            return ret
+
+        eps = [1, 1, 1]
+        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 20, 'eps': eps})
+        eps = [0.5, 0.5, 0.5]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 20, 'eps': eps})
+
+        cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
+
+        config["trans_noise"] += ret.x[:3]
+
+    reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
+
+    return cur
+
