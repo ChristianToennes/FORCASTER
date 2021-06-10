@@ -333,8 +333,8 @@ def save_dcm(ims, angles, sids, sods, orig_path, out_path):
     ds.Rows = ims.shape[1]
     ds.Columns = ims.shape[2]
 
-    #ds.add_new(0x00211017, 'SL', sods[0])
-    #ds.add_new(0x00211031, 'SS', sids[0])
+    ds.add_new(0x00211017, 'SL', sods[0])
+    #ds.add_new(0x00211031, 'SS', np.array(sids*10, dtype=int))
     #ds.DistanceSourceToDetector = sids[0]
 
     # Set the transfer syntax
@@ -348,9 +348,7 @@ def save_dcm(ims, angles, sids, sods, orig_path, out_path):
     #ds.ContentTime = timeStr
 
     pydicom.dataset.validate_file_meta(ds.file_meta, enforce_standard=True)
-    print(ims.dtype)
     ims = ims.astype(np.uint16)
-    print(ims.dtype)
     ds.PixelData = ims.flatten().tobytes()
     #ds.add_new(0x7fe00009, "OD", ims.flatten())
 
@@ -359,7 +357,9 @@ def save_dcm(ims, angles, sids, sods, orig_path, out_path):
 def create():
     ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(get_path())
     noise_ims, noise_angles = add_noise(ims_ungained, angles)
-    save_dcm(noise_ims, np.round(noise_angles, 2), sids, sods, get_path(), 'test/test.dcm')
+    save_dcm(noise_ims, np.round(noise_angles, 2), sids, sods, get_path(), 'test/noisy.dcm')
+    save_dcm(noise_ims, np.round(angles, 2), sids, sods, get_path(), 'test/only_trans.dcm')
+    save_dcm(ims_ungained, np.round(noise_angles, 2), sids, sods, get_path(), 'test/only_angle.dcm')
 
 if __name__ == "__main__":
     create()
