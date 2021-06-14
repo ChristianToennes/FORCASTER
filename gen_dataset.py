@@ -5,7 +5,8 @@ import pydicom.dataset
 import os
 import struct
 import utils
-import datetime
+import scipy.interpolate
+import matplotlib.pyplot as plt
 
 def normalize(images, mAs_array, kV_array, percent_gain):
     print("normalize images")
@@ -298,13 +299,30 @@ def add_noise(ims, angles):
     #trans_noise = random.normal(loc=0, scale=20, size=(len(ims), 3))
     min_trans, max_trans = -10, 10
     trans_noise = np.array(np.round(random.uniform(low=min_trans, high=max_trans, size=(len(ims),2))), dtype=int)
+    zoom_noise = random.uniform(low=0.9, high=1.1, size=len(ims))
 
-    moved_ims = np.zeros((ims.shape[0], ims.shape[1]+min_trans-max_trans-2, ims.shape[2]-max_trans+min_trans-2))
+    moved_ims = np.zeros((ims.shape[0], ims.shape[1]+min_trans-max_trans-2, ims.shape[2]-max_trans+min_trans-2), dtype=ims.dtype)
     for i in range(ims.shape[0]):
         dx, dy = trans_noise[i]
         sx, ex = max_trans+1+dx, min_trans-1+dx
         sy, ey = max_trans+1+dy, min_trans-1+dy
-        moved_ims[i] = ims[i,sx:ex,sy:ey]
+
+        iy, ix = np.arange(0, ims.shape[2], 1), np.arange(0, ims.shape[1], 1)
+        f = scipy.interpolate.interp2d(iy, ix, ims[i], fill_value=0)
+
+        mid_x, mid_y = ims.shape[1]//2, ims.shape[2]//2
+        mid_x -= dx
+        mid_y -= dy
+        sx = mid_x-(moved_ims.shape[1]//2) * zoom_noise[i]
+        ex = (moved_ims.shape[1]) * zoom_noise[i] - sx
+
+        sy = mid_y-(moved_ims.shape[2]//2) * zoom_noise[i]
+        ey = (moved_ims.shape[2]) * zoom_noise[i] - sy
+
+        x = np.linspace(sx, ex, moved_ims.shape[1])
+        y = np.linspace(sy, ey, moved_ims.shape[2])
+        
+        moved_ims[i] = f(y,x)
 
     return moved_ims, angles + angles_noise
 
