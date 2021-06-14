@@ -800,7 +800,10 @@ def reg_real_data():
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     #cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
+    ('gen_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
+    #('gen_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
+    #('gen_both', prefix+'\\gen_dataset\\noisy', cbct_path),
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
     #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
@@ -810,7 +813,10 @@ def reg_real_data():
     
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
+    ('gen1_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
+    #('gen1_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
+    #('gen1_both
+    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
@@ -840,12 +846,12 @@ def reg_real_data():
             _, ims_un, _, _, _, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=200)
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
-            skip = max(1, int(len(ims_un)/200))
+            skip = max(1, int(len(ims_un)/500))
             random = np.random.default_rng(23)
             #angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
             angles_noise = random.uniform(low=-1, high=1, size=(len(ims_un),3))
             angles_noise = np.zeros_like(angles_noise)
-            trans_noise = random.normal(loc=0, scale=10, size=(len(ims_un), 3))
+            trans_noise = random.normal(loc=0, scale=3, size=(len(ims_un), 3))
 
             #skip = 4
             #ims = ims[::skip]
@@ -876,11 +882,11 @@ def reg_real_data():
             params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
             params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
 
-            for i, (α,β,γ) in enumerate(angles_noise):
-                params[i] = cal.applyRot(params[i], -α, -β, -γ)
+            #for i, (α,β,γ) in enumerate(angles_noise):
+            #    params[i] = cal.applyRot(params[i], -α, -β, -γ)
 
-            for i, (x,y,z) in enumerate(trans_noise):
-                params[i] = cal.applyTrans(params[i], x, y, z*5)
+            #for i, (x,y,z) in enumerate(trans_noise):
+            #    params[i] = cal.applyTrans(params[i], x, y, z*5)
 
             projs = Ax(params)
             #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")

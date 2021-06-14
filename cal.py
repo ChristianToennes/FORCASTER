@@ -1101,7 +1101,7 @@ def bfgs_trans(cur, reg_config, c):
                 valid = v==1
                 points = points[valid]
                 part = 0
-                axis, mult = [(0,1),(1,1),(2,1)][i-1]
+                axis, mult = [(-1,1),(-2,1),(-3,1)][i-1]
                 obj = calcPointsObjective(axis, points, points_real[valid])*mult
                 if obj==-1:
                     obj = 50
@@ -1118,7 +1118,12 @@ def bfgs_trans(cur, reg_config, c):
         ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
                                       options={'maxiter': 20, 'eps': eps})
-        eps = [0.5, 0.5, 0.5]
+
+        eps = [0.25, 0.25, 0.25]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 20, 'eps': eps})
+        eps = [0.05, 0.05, 0.05]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
                                       options={'maxiter': 20, 'eps': eps})
@@ -1159,11 +1164,16 @@ def bfgs_trans(cur, reg_config, c):
 
         eps = [1, 1, 1]
         ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
-                                      jac=gradf,
+                                      #jac=gradf,
                                       options={'maxiter': 20, 'eps': eps})
         eps = [0.5, 0.5, 0.5]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                      jac=gradf,
+                                      #jac=gradf,
+                                      options={'maxiter': 20, 'eps': eps})
+
+        eps = [0.25, 0.25, 0.25]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      #jac=gradf,
                                       options={'maxiter': 20, 'eps': eps})
 
         cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])

@@ -51,7 +51,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     if images.shape[1] < 1000:
         skip = 2
     #if images.shape[1] < 600:
-    #    skip = 1
+    skip = 1
 
     edges = 1
 
@@ -296,13 +296,14 @@ def add_noise(ims, angles):
     angles_noise = random.uniform(low=-1, high=1, size=(len(ims),3))
     #angles_noise = np.zeros_like(angles_noise)
     #trans_noise = random.normal(loc=0, scale=20, size=(len(ims), 3))
-    trans_noise = np.array(np.round(random.uniform(low=-9, high=9, size=(len(ims),2))), dtype=int)
+    min_trans, max_trans = -10, 10
+    trans_noise = np.array(np.round(random.uniform(low=min_trans, high=max_trans, size=(len(ims),2))), dtype=int)
 
-    moved_ims = np.zeros((ims.shape[0], ims.shape[1]-20, ims.shape[2]-20))
+    moved_ims = np.zeros((ims.shape[0], ims.shape[1]+min_trans-max_trans-2, ims.shape[2]-max_trans+min_trans-2))
     for i in range(ims.shape[0]):
         dx, dy = trans_noise[i]
-        sx, ex = 10+dx, -10+dx
-        sy, ey = 10+dy, -10+dy
+        sx, ex = max_trans+1+dx, min_trans-1+dx
+        sy, ey = max_trans+1+dy, min_trans-1+dy
         moved_ims[i] = ims[i,sx:ex,sy:ey]
 
     return moved_ims, angles + angles_noise
@@ -316,6 +317,10 @@ def get_path():
     return filepath
 
 def save_dcm(ims, angles, sids, sods, orig_path, out_path):
+
+    if not os.path.isdir(os.path.dirname(out_path)):
+        os.makedirs(os.path.dirname(out_path))
+    
     ds = pydicom.dcmread(os.path.join(orig_path, os.listdir(orig_path)[0]))
     file_meta = ds.file_meta
 
@@ -357,9 +362,13 @@ def save_dcm(ims, angles, sids, sods, orig_path, out_path):
 def create():
     ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(get_path())
     noise_ims, noise_angles = add_noise(ims_ungained, angles)
-    save_dcm(noise_ims, np.round(noise_angles, 2), sids, sods, get_path(), 'test/noisy.dcm')
-    save_dcm(noise_ims, np.round(angles, 2), sids, sods, get_path(), 'test/only_trans.dcm')
-    save_dcm(ims_ungained, np.round(noise_angles, 2), sids, sods, get_path(), 'test/only_angle.dcm')
+    if os.path.exists("E:\\output"):
+        prefix = r"E:\output"
+    else:
+        prefix = r"D:\lumbal_spine_13.10.2020\output"
+    save_dcm(noise_ims, np.round(noise_angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/noisy/sino.dcm')
+    save_dcm(noise_ims, np.round(angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/only_trans/sino.dcm')
+    save_dcm(ims_ungained, np.round(noise_angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/only_angle/sino.dcm')
 
 if __name__ == "__main__":
     create()
