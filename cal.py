@@ -374,8 +374,10 @@ def correctXY(in_cur, config):
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
 
-
-    for i in range(20):
+    its = 20
+    if "it" in config:
+        its = config["it"]
+    for i in range(its):
         projs = Projection_Preprocessing(Ax(np.array([cur])))
         p,v = trackFeatures(projs[:,0], data_real, config)
         points = normalize_points(p, projs[:,0])
@@ -415,7 +417,10 @@ def correctZ(in_cur, config):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
-    for i in range(20):
+    its = 20
+    if "it" in config:
+        its = config["it"]
+    for i in range(its):
         projs = Projection_Preprocessing(Ax(np.array([cur])))
         p,v = trackFeatures(projs[:,0], data_real, config)
         points = normalize_points(p, projs[:,0])
@@ -804,16 +809,24 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c==4: # 4
+        config["it"] = 1
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
-        for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
-            #print()
-            config["grad_width"]=grad_width
-            cur = linsearch(cur, 0, config)
-            cur = linsearch(cur, 1, config)
-            cur = linsearch(cur, 2, config)
-            cur = correctXY(cur, config)
-            cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c == 7:
+        config["it"] = 5
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c == 8:
+        config["it"] = 1
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
     elif c==5: # 5
         config["my"] = False
         cur = correctXY(cur, config)
