@@ -308,7 +308,7 @@ def add_noise(ims, angles):
         sy, ey = max_trans+1+dy, min_trans-1+dy
 
         iy, ix = np.arange(0, ims.shape[2], 1), np.arange(0, ims.shape[1], 1)
-        f = scipy.interpolate.interp2d(iy, ix, ims[i], fill_value=0)
+        f = scipy.interpolate.interp2d(iy, ix, ims[i], fill_value=np.max(ims[i]))
 
         mid_x, mid_y = ims.shape[1]//2, ims.shape[2]//2
         mid_x -= dx
