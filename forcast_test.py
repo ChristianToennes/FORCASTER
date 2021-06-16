@@ -350,7 +350,7 @@ def it_func(con, Ax_params, ready, name):
     profiler = cProfile.Profile()
     try:
         
-        print("start")
+        #print("start")
         np.seterr(all='raise')
         Ax = None
         Ax = utils.Ax_param_asta(*Ax_params)
@@ -538,6 +538,13 @@ def print_stats(noise):
         bcolors.print_val(np.max(noise[:, axis]))
         print()
 
+def evalPerformance(output, real, time, name):
+    vals = []
+    for i in range(len(real)):
+        vals.append(cal.calcGIObjective(output[:,i], real[i], {}))
+    print("NGI: ", np.mean(vals))
+    with open("stats.csv", "a") as f:
+        f.write("{};{};".format(name, time) + ";".join([str(v) for v in vals]) + "\n")
 
 def reg_and_reco(ims, in_params, config):
     name = config["name"]
@@ -619,6 +626,7 @@ def reg_and_reco(ims, in_params, config):
     #print(params, corrs)
     if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
         sino = Ax(corrs)
+        evalPerformance(sino, ims, perftime, name)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-output.nrrd"))
         del sino
@@ -898,7 +906,7 @@ def reg_real_data():
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
 
             #for method in [3,4,5,0,6]:
-            for method in [1,2,3]:#,0,5]:
+            for method in [1,2]:#,0,5]:
                 config["name"] = name + str(method)
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))
