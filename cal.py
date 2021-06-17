@@ -737,6 +737,8 @@ def binsearch(in_cur, axis, config):
 
 def roughRegistration(in_cur, reg_config, c):
     cur = np.array(in_cur)
+    if c==0:
+        return bfgs(cur, reg_config, 1)
     if c==1 or c==2:
         return bfgs_trans(cur, reg_config, c)
     config = dict(default_config)
@@ -790,44 +792,43 @@ def roughRegistration(in_cur, reg_config, c):
         plt.show()
         plt.close()
 
-    if c==0:
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        for grad_width in [(1.5,25), (0.5,25)]:
-            #print()
-            for it in range(2):
-                config["grad_width"]=grad_width
-                cur = binsearch(cur, 0, config)
-                cur = binsearch(cur, 1, config)
-                cur = binsearch(cur, 2, config)
-                cur = correctXY(cur, config)
-                cur = correctZ(cur, config)
-    elif c==3: # 3
+    if c==3: # 3
+        config["it"] = 1
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c==4: # 4
-        config["it"] = 1
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c == 5:
+        config["it"] = 10
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c == 7:
-        config["it"] = 5
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
-    elif c == 8:
         config["it"] = 1
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
+        #cur = correctXY(cur, config)
+    elif c==8:
+        config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
+        #cur = correctXY(cur, config)
+    elif c==9:
+        config["it"] = 10
         cur = correctXY(cur, config)
-    elif c==5: # 5
+        cur = correctZ(cur, config)
+        #cur = correctXY(cur, config)
+    elif c==15: # 5
         config["my"] = False
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
@@ -840,7 +841,7 @@ def roughRegistration(in_cur, reg_config, c):
                 cur = binsearch(cur, 2, config)
                 cur = correctXY(cur, config)
                 cur = correctZ(cur, config)
-    elif c==6:
+    elif c==16:
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
@@ -893,6 +894,15 @@ def roughRegistration(in_cur, reg_config, c):
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
 
+    return cur
+
+def correctTrans(cur, config):
+    config["it"] = 3
+    cur = correctXY(cur, config)
+    cur = correctZ(cur, config)
+    cur = correctXY(cur, config)
+    cur = correctZ(cur, config)
+    cur = correctXY(cur, config)
     return cur
 
 def bfgs(cur, reg_config, c):
@@ -973,28 +983,24 @@ def bfgs(cur, reg_config, c):
 
             return ret
 
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
+        cur = correctTrans(cur, config)
         
         eps = [0.01, 0.01, 0.01]
         ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 10, 'eps': eps})
+                                      options={'maxiter': 20, 'eps': eps})
         eps = [0.005, 0.005, 0.005]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 10, 'eps': eps})
+                                      options={'maxiter': 20, 'eps': eps})
         eps = [0.0025, 0.0025, 0.0025]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 10, 'eps': eps})
+                                      options={'maxiter': 20, 'eps': eps})
 
         cur = applyRot(cur, ret.x[0], ret.x[1], ret.x[2])
 
-        #cur = correctXY(cur, config)
-        #cur = correctZ(cur, config)
-        #cur = correctXY(cur, config)
+        #cur = correctTrans(cur, config)
         
         config["angle_noise"] += ret.x
     
@@ -1030,8 +1036,10 @@ def bfgs(cur, reg_config, c):
             return ret
 
         eps = [0.1, 0.1, 0.1, 0.01, 0.01, 0.01]
-        ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 10, 'eps': eps})
+        ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
         eps = [0.05, 0.05, 0.05, 0.005, 0.005, 0.005]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
+        eps = [0.025, 0.025, 0.025, 0.0025, 0.0025, 0.0025]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
         
         cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
