@@ -809,9 +809,9 @@ def reg_real_data():
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     #cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    ('gen_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
-    #('gen_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
-    #('gen_both', prefix+'\\gen_dataset\\noisy', cbct_path),
+    ('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
+    ('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
+    ('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path),
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
@@ -822,9 +822,9 @@ def reg_real_data():
     
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    ('gen1_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
-    #('gen1_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
-    #('gen1_both
+    ('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
+    ('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
+    ('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
     #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
@@ -907,7 +907,7 @@ def reg_real_data():
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
 
             #for method in [3,4,5,0,6]:
-            for method in [1,2]:#,0,5]:
+            for method in [0,3,4,5,7,8,9]:#,0,5]:
                 config["name"] = name + str(method)
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))
