@@ -560,12 +560,12 @@ def reg_and_reco(ims, in_params, config):
         sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
     if not perf:
         sino = sitk.GetImageFromArray(np.swapaxes(ims,0,1))
-        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_projs-input.nrrd"))
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_projs-input.nrrd"), True)
         del sino
     if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
         sino = Ax(params)
         sino = sitk.GetImageFromArray(sino)
-        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-input.nrrd"))
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-input.nrrd"), True)
         del sino
     if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
@@ -575,7 +575,7 @@ def reg_and_reco(ims, in_params, config):
         rec = rec*mask
         del mask
         rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input.nrrd"))
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input.nrrd"), True)
         del rec
     if False and not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
@@ -628,7 +628,7 @@ def reg_and_reco(ims, in_params, config):
         sino = Ax(corrs)
         evalPerformance(sino, ims, perftime, name)
         sino = sitk.GetImageFromArray(sino)
-        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-output.nrrd"))
+        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-output.nrrd"), True)
         del sino
     
     print_stats(config["noise"][1])
@@ -636,10 +636,10 @@ def reg_and_reco(ims, in_params, config):
 
     if not perf:
         reg_geo = Ax.create_geo(corrs)
-        sino = Ax(corrs)
-        sino = sitk.GetImageFromArray(sino)
-        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
-        del sino
+        #sino = Ax(corrs)
+        #sino = sitk.GetImageFromArray(sino)
+        #sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
+        #del sino
         rec = utils.FDK_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1))
         mask = create_circular_mask(rec.shape)
         rec = rec*mask
@@ -648,30 +648,31 @@ def reg_and_reco(ims, in_params, config):
         #rec = np.swapaxes(rec, 1,2)
         #rec = rec[::-1, ::-1]
         rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough.nrrd"))
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-output.nrrd"), True)
         del rec
-        reg_geo = Ax.create_geo(corrs)
-        rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
-        mask = create_circular_mask(rec.shape)
-        rec = rec*mask
-        del mask
-        #rec = np.swapaxes(rec, 0, 2)
-        #rec = np.swapaxes(rec, 1,2)
-        #rec = rec[::-1, ::-1]
-        rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough_sirt.nrrd"))
-        del rec
-        reg_geo = Ax.create_geo(corrs)
-        rec = utils.CGLS_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 75)
-        mask = create_circular_mask(rec.shape)
-        rec = rec*mask
-        del mask
-        #rec = np.swapaxes(rec, 0, 2)
-        #rec = np.swapaxes(rec, 1,2)
-        #rec = rec[::-1, ::-1]
-        rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough_cgls.nrrd"))
-        del rec
+        if False:
+            reg_geo = Ax.create_geo(corrs)
+            rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
+            mask = create_circular_mask(rec.shape)
+            rec = rec*mask
+            del mask
+            #rec = np.swapaxes(rec, 0, 2)
+            #rec = np.swapaxes(rec, 1,2)
+            #rec = rec[::-1, ::-1]
+            rec = sitk.GetImageFromArray(rec)*100
+            sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough_sirt.nrrd"))
+            del rec
+            reg_geo = Ax.create_geo(corrs)
+            rec = utils.CGLS_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 75)
+            mask = create_circular_mask(rec.shape)
+            rec = rec*mask
+            del mask
+            #rec = np.swapaxes(rec, 0, 2)
+            #rec = np.swapaxes(rec, 1,2)
+            #rec = rec[::-1, ::-1]
+            rec = sitk.GetImageFromArray(rec)*100
+            sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough_cgls.nrrd"))
+            del rec
 
     return vecs, corrs
 
