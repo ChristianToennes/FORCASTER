@@ -12,6 +12,7 @@ import astra
 import time
 import itertools
 import cProfile, pstats
+import cv2
 
 def write_vectors(name, vecs):
     return
@@ -543,8 +544,15 @@ def evalPerformance(output, real, time, name):
     for i in range(len(real)):
         vals.append(cal.calcGIObjective(output[:,i], real[i], {}))
     print("NGI: ", np.mean(vals))
+
+    vals1 = []
+    for i in range(len(real)):
+        vals1.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCORR_NORMED)))
+
     with open("stats.csv", "a") as f:
-        f.write("{};{};".format(name, time) + ";".join([str(v) for v in vals]) + "\n")
+        f.write("{0};GI;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),6)), 0, 0, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),6)), 0, 0, 1, {2}));".format(name, time, len(vals)) + ";".join([str(v) for v in vals]) + "\n")
+        f.write("{0};CCORR;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),6)), 0, 0, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),6)), 0, 0, 1, {2}));".format(name, time, len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
+
 
 def reg_and_reco(ims, in_params, config):
     name = config["name"]
