@@ -304,7 +304,7 @@ def calcPointsObjective(comp, good_new, good_old):
             else:
                 f = np.std(fd)
     
-    if comp==-1:
+    elif comp==-1:
         d = good_new[:,0]-good_old[:,0]
         if len(d)==0:
             f = -1
@@ -341,7 +341,7 @@ def calcPointsObjective(comp, good_new, good_old):
             f = -1
     
     else:
-        f = 0
+        f = -2
         
     return f
 

@@ -13,6 +13,8 @@ import time
 import itertools
 import cProfile, pstats
 import cv2
+import scipy.ndimage
+import re
 
 def write_vectors(name, vecs):
     return
@@ -547,7 +549,56 @@ def print_stats(noise):
         bcolors.print_val(np.max(noise[:, axis]))
         print()
 
-def evalPerformance(output, real, time, name):
+EPS = np.finfo(float).eps
+
+def mutual_information_2d(x, y, sigma=1, normalized=False):
+    """
+    Computes (normalized) mutual information between two 1D variate from a
+    joint histogram.
+    Parameters
+    ----------
+    x : 1D array
+        first variable
+    y : 1D array
+        second variable
+    sigma: float
+        sigma for Gaussian smoothing of the joint histogram
+    Returns
+    -------
+    nmi: float
+        the computed similariy measure
+    """
+    bins = (256, 256)
+
+
+
+    jh = np.histogram2d(x.flatten(), y.flatten(), bins=bins)[0]
+
+    # smooth the jh with a gaussian filter of given sigma
+    scipy.ndimage.gaussian_filter(jh, sigma=sigma, mode='constant',
+                                 output=jh)
+
+    # compute marginal histograms
+    jh = jh + EPS
+    sh = np.sum(jh)
+    jh = jh / sh
+    s1 = np.sum(jh, axis=0).reshape((-1, jh.shape[0]))
+    s2 = np.sum(jh, axis=1).reshape((jh.shape[1], -1))
+
+    # Normalised Mutual Information of:
+    # Studholme,  jhill & jhawkes (1998).
+    # "A normalized entropy measure of 3-D medical image alignment".
+    # in Proc. Medical Imaging 1998, vol. 3338, San Diego, CA, pp. 132-143.
+    if normalized:
+        mi = ((np.sum(s1 * np.log(s1)) + np.sum(s2 * np.log(s2)))
+                / np.sum(jh * np.log(jh))) - 1
+    else:
+        mi = ( np.sum(jh * np.log(jh)) - np.sum(s1 * np.log(s1))
+               - np.sum(s2 * np.log(s2)))
+
+    return mi
+
+def evalPerformance(output, real, time, name, stats_file='stats.csv'):
     vals = []
     for i in range(len(real)):
         vals.append(cal.calcGIObjective(output[:,i], real[i], {}))
@@ -569,13 +620,49 @@ def evalPerformance(output, real, time, name):
     for i in range(len(real)):
         vals4.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCORR)))
 
-    with open("stats.csv", "a") as f:
-        f.write("{0};GI;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals]) + "\n")
+    vals5 = []
+    for i in range(len(real)):
+        vals5.append(mutual_information_2d(real[i], output[:,i], normalized=True))
+
+    with open(stats_file, "a") as f:
+        f.write("{0};NGI;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals]) + "\n")
         f.write("{0};CCORR_NORM;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
         f.write("{0};CCOEFF_NORM;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals2]) + "\n")
         f.write("{0};CCOEFF;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals3]) + "\n")
         f.write("{0};CCORR;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals4]) + "\n")
+        f.write("{0};NMI;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals5]) + "\n")
 
+def evalResults(out_path, in_path, projname):
+    ims_un = read_dicoms(in_path)[1]
+
+    projs = []
+    names = []
+    input_sino = False
+    for filename in os.listdir(out_path):
+        if re.fullmatch("forcast_(.+?)_sino-output.nrrd", filename) != None and projname in filename:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            projs.append(sitk.GetArrayFromImage(img))
+            names.append("_".join(filename.split('_')[1:-1]))
+        if re.fullmatch("forcast_(.+?)_sino-input.nrrd", filename) != None and projname in filename and input_sino == False:
+            input_sino = True
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            projs.append(sitk.GetArrayFromImage(img))
+            names.append(projname+"_input")
+
+    for name, proj in zip(names, projs):
+        skip = int(np.ceil(ims_un.shape[0]/proj.shape[1]))
+        
+        i0s = [i0_est(ims_un[i::skip], proj[:,i]) for i in range(proj.shape[1])]
+        ims = -np.log(ims_un[::skip]/np.mean(i0s))
+        
+        evalPerformance(proj, ims, 0, name, 'stats2.csv')
+
+def evalAllResults():
+    projs = get_proj_paths()
+    with open("stats2.csv", "w") as f:
+        f.truncate()
+    for name, proj_path, _ in projs:
+        evalResults("recos", proj_path, name)
 
 def reg_and_reco(ims, in_params, config):
     name = config["name"]
@@ -817,14 +904,14 @@ def i0_est(real_img, proj_img):
     i0 = real * np.exp(proj)
     return i0
 
-def reg_real_data():
+def get_proj_paths():
     projs = []
 
     if os.path.exists("E:\\output"):
         prefix = r"E:\output"
     else:
         prefix = r"D:\lumbal_spine_13.10.2020\output"
-
+    
     cbct_path = prefix + r"\CKM4Baltimore2019\20191108-081024.994000\DCT Head Clear Nat Fill Full HU Normal [AX3D]"
     projs += [
     #('191108_balt_cbct_', prefix + '\\CKM4Baltimore2019\\20191108-081024.994000\\20sDCT Head 70kV', cbct_path),
@@ -877,16 +964,20 @@ def reg_real_data():
     #('201207_sin_', prefix + '\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD', cbct_path),
     #('201207_tomo_', prefix + '\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD', cbct_path),
     ]
+    return projs
+
+def reg_real_data():
+    projs = get_proj_paths()
 
     np.seterr(all='raise')
 
     for name, proj_path, cbct_path in projs:
         
         try:
-            _, ims_un, _, _, _, coord_systems, sids, sods = read_dicoms(proj_path, max_ims=200)
+            _, ims_un, _, _, _, coord_systems, sids, sods = read_dicoms(proj_path)
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
-            skip = max(1, int(len(ims_un)/500))
+            skip = max(1, int(len(ims_un)/10))
             random = np.random.default_rng(23)
             #angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
             angles_noise = random.uniform(low=-1, high=1, size=(len(ims_un),3))
