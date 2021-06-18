@@ -348,7 +348,8 @@ import sys
 import io
 
 def it_func(con, Ax_params, ready, name):
-    profiler = cProfile.Profile()
+    if name != None:
+        profiler = cProfile.Profile()
     try:
         
         #print("start")
@@ -364,7 +365,8 @@ def it_func(con, Ax_params, ready, name):
                 old_stdout = sys.stdout
                 sys.stdout = stringout = io.StringIO()
 
-                profiler.enable()    
+                if name != None:
+                    profiler.enable()    
                 real_img = cal.Projection_Preprocessing(im)
                 cur_config = {"real_img": real_img, "Ax": Ax, "noise": noise}
                 try:
@@ -372,8 +374,9 @@ def it_func(con, Ax_params, ready, name):
                 except Exception as ex:
                     print(ex, i, cur, file=sys.stderr)
                 #corrs.append(cur)
-                profiler.disable()
-                profiler.dump_stats(name)
+                if name != None:
+                    profiler.disable()
+                    profiler.dump_stats(name)
                 stringout.flush()
                 con.send(("result",i,cur,stringout.getvalue()))
                 ready.set()
@@ -382,9 +385,11 @@ def it_func(con, Ax_params, ready, name):
             except EOFError:
                 break
             except BrokenPipeError:
-                profiler.dump_stats(name)
+                if name != None:
+                    profiler.dump_stats(name)
                 return
-        profiler.dump_stats(name)
+        if name != None:
+            profiler.dump_stats(name)
         try:
             con.send(("error",))
         except EOFError:
@@ -414,7 +419,10 @@ def reg_rough_parallel(ims, params, config, c=0):
         while ready_con is None:
             for _ in range(len(pool), pool_size):
                 p = mp.Pipe(True)
-                name = config["name"]+"_"+str(proc_count)
+                if "profile" in config and config["profile"]:
+                    name = config["name"]+"_"+str(proc_count)
+                else:
+                    name = None
                 proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], ready, name), daemon=True)
                 proc.start()
                 proc_count += 1
