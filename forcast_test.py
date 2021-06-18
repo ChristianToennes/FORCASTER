@@ -549,9 +549,24 @@ def evalPerformance(output, real, time, name):
     for i in range(len(real)):
         vals1.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCORR_NORMED)))
 
+    vals2 = []
+    for i in range(len(real)):
+        vals2.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCOEFF_NORMED)))
+
+    vals3 = []
+    for i in range(len(real)):
+        vals3.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCOEFF)))
+
+    vals4 = []
+    for i in range(len(real)):
+        vals4.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCORR)))
+
     with open("stats.csv", "a") as f:
-        f.write("{0};GI;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),6)), 0, 0, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),6)), 0, 0, 1, {2}));".format(name, time, len(vals)) + ";".join([str(v) for v in vals]) + "\n")
-        f.write("{0};CCORR;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),6)), 0, 0, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),6)), 0, 0, 1, {2}));".format(name, time, len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
+        f.write("{0};GI;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals]) + "\n")
+        f.write("{0};CCORR_NORM;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
+        f.write("{0};CCOEFF_NORM;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals2]) + "\n")
+        f.write("{0};CCOEFF;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals3]) + "\n")
+        f.write("{0};CCORR;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals4]) + "\n")
 
 
 def reg_and_reco(ims, in_params, config):
