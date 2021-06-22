@@ -299,7 +299,7 @@ def add_noise(ims, angles):
     #trans_noise = random.normal(loc=0, scale=20, size=(len(ims), 3))
     min_trans, max_trans = -10, 10
     trans_noise = np.array(np.round(random.uniform(low=min_trans, high=max_trans, size=(len(ims),2))), dtype=int)
-    zoom_noise = random.uniform(low=0.9, high=1.1, size=len(ims))
+    zoom_noise = random.uniform(low=0.9, high=1, size=len(ims))
 
     moved_ims = np.zeros((ims.shape[0], ims.shape[1]+min_trans-max_trans-2, ims.shape[2]-max_trans+min_trans-2), dtype=ims.dtype)
     for i in range(ims.shape[0]):
@@ -379,14 +379,15 @@ def save_dcm(ims, angles, sids, sods, orig_path, out_path):
     
 def create():
     ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(get_path())
-    noise_ims, noise_angles = add_noise(ims_ungained, angles)
+    ims = ims_ungained[:, 10:-10, 10:-10]
+    noise_ims, noise_angles = add_noise(ims, angles)
     if os.path.exists("E:\\output"):
         prefix = r"E:\output"
     else:
         prefix = r"D:\lumbal_spine_13.10.2020\output"
     save_dcm(noise_ims, np.round(noise_angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/noisy/sino.dcm')
     save_dcm(noise_ims, np.round(angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/only_trans/sino.dcm')
-    save_dcm(ims_ungained, np.round(noise_angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/only_angle/sino.dcm')
+    save_dcm(ims, np.round(noise_angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/only_angle/sino.dcm')
 
 if __name__ == "__main__":
     create()
