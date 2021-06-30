@@ -231,31 +231,33 @@ def calcPointsObjective(comp, good_new, good_old):
             else:
                 f = np.std( fd )
     elif comp==10:
-        mid_n_x, mid_n_y = np.mean(good_new, axis=0)
-        mid_o_x, mid_o_y = np.mean(good_old, axis=0)
-        d = (good_new[:,0]-mid_n_x)-(good_old[:,0]-mid_o_x)
-        std = np.std(d)
-        mean = np.mean(d)
-        #fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
-        fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
-        #print(d.shape, fd.shape, mean, std)
-        f = np.var( fd )
+        a = (good_new[:,0,np.newaxis]-good_new[:,0])
+        b = (good_old[:,0,np.newaxis]-good_old[:,0])
+        r = np.abs(a - b)
+        if len(r)>0:
+            std = np.std(r)
+            mean = np.mean(r)
+            fd = r[np.bitwise_and(r<mean+3*std)]
+            f = np.mean(fd)
+        else: 
+            f = -1
     elif comp==11:
-        mid_n_x, mid_n_y = np.mean(good_new, axis=0)
-        mid_o_x, mid_o_y = np.mean(good_old, axis=0)
-        d = (good_new[:,1]-mid_n_y)-(good_old[:,1]-mid_o_y)
-        std = np.std(d)
-        mean = np.mean(d)
-        #fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
-        fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
-        #print(d.shape, fd.shape, mean, std)
-        f = np.var( fd )
+        a = (good_new[:,1,np.newaxis]-good_new[:,1])
+        b = (good_old[:,1,np.newaxis]-good_old[:,1])
+        r = np.abs(a - b)
+        if len(r)>0:
+            std = np.std(r)
+            mean = np.mean(r)
+            fd = r[np.bitwise_and(r<mean+3*std)]
+            f = np.mean(fd)
+        else: 
+            f = -1
     elif comp==12:
         #f = np.var( good_new[:,1]-good_old[:,1] )
-        mid_n_x, mid_n_y = np.mean(good_new, axis=0)
-        mid_o_x, mid_o_y = np.mean(good_old, axis=0)
-        ϕ_new = np.arctan2(good_new[:,1]-mid_n_y, good_new[:,0]-mid_n_x)
-        ϕ_old = np.arctan2(good_old[:,1]-mid_o_y, good_old[:,0]-mid_o_x)
+        a = (good_new[:,np.newaxis]-good_new).reshape((-1,2))
+        b = (good_old[:,np.newaxis]-good_old).reshape((-1,2))
+        ϕ_new = np.arctan2(a[:,1], a[:,0])
+        ϕ_old = np.arctan2(b[:,1], b[:,0])
 
         ϕ_new[ϕ_new<-np.pi] += 2*np.pi
         ϕ_new[ϕ_new>np.pi] -= 2*np.pi
@@ -266,13 +268,13 @@ def calcPointsObjective(comp, good_new, good_old):
         d = ϕ_new*180/np.pi-ϕ_old*180/np.pi
         d[d<-180] += 360
         d[d>180] -= 360
+        d = np.abs(d)
 
         std = np.std(d)
         mean = np.mean(d)
-        fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
-
-
-        f = np.var( d )
+        fd = d[np.bitwise_and(d<mean+3*std)]
+        
+        f = np.mean( fd )
     elif comp==22:
         mid_n_x, mid_n_y = np.mean(good_new, axis=0)
         mid_o_x, mid_o_y = np.mean(good_old, axis=0)
@@ -908,7 +910,7 @@ def correctTrans(cur, config):
 def bfgs(cur, reg_config, c):
     config = dict(default_config)
     config.update(reg_config)
-    config["my"] = c==1
+    config["my"] = c<=1
 
     real_img = config["real_img"]
     noise = config["noise"]
