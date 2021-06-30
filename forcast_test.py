@@ -464,32 +464,6 @@ def reg_rough_parallel(ims, params, config, c=0):
             ready_con[0].send((i, params[i], ims[i], (config["noise"][0][i],config["noise"][1][i]), c))
             ready_con[3] = i
 
-    if False:
-        while len(pool) > 0:
-            finished_con = []
-            ready.clear()
-            for con in pool:
-                try:
-                    if con[2].is_alive():
-                        if con[0].poll():
-                            res = con[0].recv()
-                            if res[0] == "ready" or res[0] == "error":
-                                finished_con.append(con)
-                            elif res[0] == "result":
-                                corrs[res[1]] = res[2]
-                                #print(res[1], res[3])
-                                print(res[1], end=', ')
-                    else:
-                        finished_con.append(con)
-                except (OSError, BrokenPipeError, EOFError):
-                        finished_con.append(con)
-            for con in finished_con:
-                pool.remove(con)
-                con[0].close()
-                con[1].close()
-            if len(pool) > 0:
-                ready.wait(1)
-
     for con in pool:
         con[2].terminate()
         con[0].close()
@@ -598,39 +572,44 @@ def mutual_information_2d(x, y, sigma=1, normalized=False):
 
     return mi
 
-def evalPerformance(output, real, time, name, stats_file='stats.csv'):
+def evalPerformance(output, real, runtime, name, stats_file='stats.csv'):
+    if np.size(output[0]) != np.size(real[0]):
+        return
     vals = []
     for i in range(len(real)):
-        vals.append(cal.calcGIObjective(output[:,i], real[i], {}))
+        vals.append(cal.calcGIObjective(real[i], output[i], {}))
     print("NGI: ", np.mean(vals))
 
     vals1 = []
     for i in range(len(real)):
-        vals1.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCORR_NORMED)))
+        vals1.append(np.mean(cv2.matchTemplate(real[i], output[i], cv2.TM_CCORR_NORMED)))
 
     vals2 = []
     for i in range(len(real)):
-        vals2.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCOEFF_NORMED)))
+        vals2.append(np.mean(cv2.matchTemplate(real[i], output[i], cv2.TM_CCOEFF_NORMED)))
 
     vals3 = []
-    for i in range(len(real)):
-        vals3.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCOEFF)))
-
     vals4 = []
     for i in range(len(real)):
-        vals4.append(np.mean(cv2.matchTemplate(real[i], output[:,i], cv2.TM_CCORR)))
-
+        break
+        a = real[i].flatten()
+        b = output[i].flatten()
+        a = (a - np.mean(a)) / (np.std(a) * len(a))
+        b = (b - np.mean(b)) / (np.std(b))
+        vals3.append(np.mean(cv2.matchTemplate(a, b, cv2.TM_CCORR)))
+        vals4.append(np.mean(cv2.matchTemplate(a, b, cv2.TM_CCOEFF)))
+        
     vals5 = []
     for i in range(len(real)):
-        vals5.append(mutual_information_2d(real[i], output[:,i], normalized=True))
+        vals5.append(mutual_information_2d(real[i], output[i], normalized=True))
 
     with open(stats_file, "a") as f:
-        f.write("{0};NGI;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals]) + "\n")
-        f.write("{0};CCORR_NORM;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
-        f.write("{0};CCOEFF_NORM;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals2]) + "\n")
-        f.write("{0};CCOEFF;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals3]) + "\n")
-        f.write("{0};CCORR;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals4]) + "\n")
-        f.write("{0};NMI;{1};=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, time/(24*60*60), len(vals)) + ";".join([str(v) for v in vals5]) + "\n")
+        f.write("{0};NGI;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals]) + "\n")
+        f.write("{0};CCORR_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
+        f.write("{0};CCOEFF_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals2]) + "\n")
+        #f.write("{0};NCCORR;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals3]) + "\n")
+        #f.write("{0};NCCOEFF;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals4]) + "\n")
+        f.write("{0};NMI;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals5]) + "\n")
 
 def evalResults(out_path, in_path, projname):
     ims_un = read_dicoms(in_path)[1]
@@ -655,11 +634,40 @@ def evalResults(out_path, in_path, projname):
         i0s = [i0_est(ims_un[i::skip], proj[:,i]) for i in range(proj.shape[1])]
         ims = -np.log(ims_un[::skip]/np.mean(i0s))
         
-        evalPerformance(proj, ims, 0, name, 'stats2.csv')
+        evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
+    
+    projs = []
+    names = []
+    input_sino = False
+    input_recos = {}
+    for filename in os.listdir(out_path):
+        if re.fullmatch("forcast_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            projs.append(sitk.GetArrayFromImage(img))
+            names.append("_".join(filename.split('_')[1:]))
+        if re.fullmatch("forcast_(.+?)_reco-output.nrrd", filename) != None and projname in filename:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            projs.append(sitk.GetArrayFromImage(img))
+            names.append("_".join(filename.split('_')[1:]))
+        if re.fullmatch("forcast_(.+?)_sino-input.nrrd", filename) != None and projname in filename and input_sino == False:
+            input_sino = True
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            projs.append(sitk.GetArrayFromImage(img))
+            names.append(projname+"_input")
+        if re.fullmatch("forcast_[^_]+_reco-input.nrrd", filename) != None:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            input_recos[filename.split('_')[1]] = sitk.GetArrayFromImage(img)
+
+
+    for name, proj in zip(names, projs):
+        ims = input_recos[name.split('_')[0]]
+        evalPerformance(proj, ims, 0, name, 'stats_rec.csv')
 
 def evalAllResults():
     projs = get_proj_paths()
-    with open("stats2.csv", "w") as f:
+    with open("stats_proj.csv", "w") as f:
+        f.truncate()
+    with open("stats_rec.csv", "w") as f:
         f.truncate()
     for name, proj_path, _ in projs:
         evalResults("recos", proj_path, name)
@@ -705,9 +713,9 @@ def reg_and_reco(ims, in_params, config):
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input_cgls.nrrd"))
         del rec
-    if False and not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
-        rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
+        rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 200)
         #mask = np.zeros(rec.shape, dtype=bool)
         mask = create_circular_mask(rec.shape)
         rec = rec*mask
@@ -744,7 +752,7 @@ def reg_and_reco(ims, in_params, config):
     #print(params, corrs)
     if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
         sino = Ax(corrs)
-        evalPerformance(sino, ims, perftime, name)
+        evalPerformance(np.swapaxes(sino, 0, 1), ims, perftime, name)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-output.nrrd"), True)
         del sino
@@ -768,18 +776,20 @@ def reg_and_reco(ims, in_params, config):
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-output.nrrd"), True)
         del rec
+
+        reg_geo = Ax.create_geo(corrs)
+        rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 200)
+        mask = create_circular_mask(rec.shape)
+        rec = rec*mask
+        del mask
+        #rec = np.swapaxes(rec, 0, 2)
+        #rec = np.swapaxes(rec, 1,2)
+        #rec = rec[::-1, ::-1]
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-output_sirt.nrrd"))
+        del rec
+
         if False:
-            reg_geo = Ax.create_geo(corrs)
-            rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
-            mask = create_circular_mask(rec.shape)
-            rec = rec*mask
-            del mask
-            #rec = np.swapaxes(rec, 0, 2)
-            #rec = np.swapaxes(rec, 1,2)
-            #rec = rec[::-1, ::-1]
-            rec = sitk.GetImageFromArray(rec)*100
-            sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough_sirt.nrrd"))
-            del rec
             reg_geo = Ax.create_geo(corrs)
             rec = utils.CGLS_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 75)
             mask = create_circular_mask(rec.shape)
@@ -927,10 +937,10 @@ def get_proj_paths():
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     #cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    ('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
-    ('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
-    ('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
+    #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
+    #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
+    #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path),
+    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
     #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
@@ -940,9 +950,9 @@ def get_proj_paths():
     
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    ('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
-    ('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
-    ('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
+    #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
+    #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
+    #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
     #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
@@ -977,12 +987,15 @@ def reg_real_data():
             _, ims_un, _, _, _, coord_systems, sids, sods = read_dicoms(proj_path)
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
-            skip = max(1, int(len(ims_un)/10))
+            skip = max(1, int(len(ims_un)/500))
             random = np.random.default_rng(23)
             #angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
             angles_noise = random.uniform(low=-1, high=1, size=(len(ims_un),3))
-            angles_noise = np.zeros_like(angles_noise)
-            trans_noise = random.normal(loc=0, scale=3, size=(len(ims_un), 3))
+            #angles_noise = np.zeros_like(angles_noise)
+            #trans_noise = random.normal(loc=0, scale=20, size=(len(ims), 3))
+            min_trans, max_trans = -5, 5
+            trans_noise = random.uniform(low=min_trans, high=max_trans, size=(len(ims_un),2))
+            zoom_noise = random.uniform(low=0.95, high=1, size=len(ims_un))
 
             #skip = 4
             #ims = ims[::skip]
@@ -992,6 +1005,7 @@ def reg_real_data():
             sods = np.mean(sods[::skip])
             angles_noise = angles_noise[::skip]
             trans_noise = trans_noise[::skip]
+            zoom_noise = zoom_noise[::skip]
 
             origin, size, spacing, image = utils.read_cbct_info(cbct_path)
 
@@ -1016,8 +1030,10 @@ def reg_real_data():
             #for i, (α,β,γ) in enumerate(angles_noise):
             #    params[i] = cal.applyRot(params[i], -α, -β, -γ)
 
-            #for i, (x,y,z) in enumerate(trans_noise):
-            #    params[i] = cal.applyTrans(params[i], x, y, z*5)
+            for i, (x,y) in enumerate(trans_noise):
+                params[i] = cal.applyTrans(params[i], x, y, 0)
+            for i, z in enumerate(zoom_noise):
+                params[i] = cal.applyTrans(params[i], 0, 0, 1-z)
 
             projs = Ax(params)
             #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
@@ -1029,7 +1045,7 @@ def reg_real_data():
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
 
             #for method in [3,4,5,0,6]:
-            for method in [0,3,4,5,7,8,9]:#,0,5]:
+            for method in [2]:
                 config["name"] = name + str(method)
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))

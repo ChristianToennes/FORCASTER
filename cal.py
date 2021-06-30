@@ -33,7 +33,7 @@ def applyTrans(in_params, x, y, z):
         cur[0] += y * ydir
     if z != 0:
         zdir = np.cross(cur[2], cur[1])
-        zdir = zdir / np.linalg.norm(zdir)
+        #zdir = zdir / np.linalg.norm(zdir)
         cur[0] += z * zdir
     return cur
 
@@ -200,7 +200,7 @@ def calcGIObjective(old_img, new_img, config):
     GIoldnew = GI(old_img, new_img)
     if "GIoldold" not in config or config["GIoldold"] is None:
         config["GIoldold"] = GI(old_img, old_img)
-    return config["GIoldold"] / (GIoldnew+1e-8)
+    return GIoldnew / config["GIoldold"]
 
 def calcPointsObjective(comp, good_new, good_old):
     if comp==0:
@@ -1138,16 +1138,16 @@ def bfgs_trans(cur, reg_config, c):
         eps = [1, 1, 1]
         ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 20, 'eps': eps})
+                                      options={'maxiter': 30, 'eps': eps})
 
         eps = [0.25, 0.25, 0.25]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 20, 'eps': eps})
+                                      options={'maxiter': 30, 'eps': eps})
         eps = [0.05, 0.05, 0.05]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 20, 'eps': eps})
+                                      options={'maxiter': 30, 'eps': eps})
 
         cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
 
@@ -1158,10 +1158,13 @@ def bfgs_trans(cur, reg_config, c):
         config["trans_noise"] += ret.x
     
     else:
+        
+        config["GIoldold"] = GI(real_img, real_img)
+
         def f(x, cur, eps):
             cur_x = applyTrans(cur, x[0], x[1], x[2])
             proj = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
-            ret = calcGIObjective(real_img, proj, config)
+            ret = 1.0-calcGIObjective(real_img, proj, config)
             #print(ret)
             return ret
         
@@ -1174,10 +1177,10 @@ def bfgs_trans(cur, reg_config, c):
             dvec = np.array(dvec)
             projs = Projection_Preprocessing(Ax(dvec))
 
-            h0 = calcGIObjective(real_img, projs[:,0], config)
+            h0 = 1-calcGIObjective(real_img, projs[:,0], config)
             ret = [0,0,0]
             for i in range(1, projs.shape[1]):
-                ret[i-1] = (calcGIObjective(real_img, projs[:,i], config)-h0) * 0.5
+                ret[i-1] = (1-calcGIObjective(real_img, projs[:,i], config)-h0) * 0.5
             
             #print(ret)
 
@@ -1186,16 +1189,16 @@ def bfgs_trans(cur, reg_config, c):
         eps = [1, 1, 1]
         ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
                                       #jac=gradf,
-                                      options={'maxiter': 20, 'eps': eps})
+                                      options={'maxiter': 40, 'eps': eps})
         eps = [0.5, 0.5, 0.5]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       #jac=gradf,
-                                      options={'maxiter': 20, 'eps': eps})
+                                      options={'maxiter': 40, 'eps': eps})
 
-        eps = [0.25, 0.25, 0.25]
+        eps = [0.05, 0.05, 0.05]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       #jac=gradf,
-                                      options={'maxiter': 20, 'eps': eps})
+                                      options={'maxiter': 40})
 
         cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
 
