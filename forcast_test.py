@@ -990,7 +990,7 @@ def reg_real_data():
             skip = max(1, int(len(ims_un)/500))
             random = np.random.default_rng(23)
             #angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
-            angles_noise = random.uniform(low=-1, high=1, size=(len(ims_un),3))
+            angles_noise = random.uniform(low=-2, high=2, size=(len(ims_un),3))
             #angles_noise = np.zeros_like(angles_noise)
             #trans_noise = random.normal(loc=0, scale=20, size=(len(ims), 3))
             min_trans, max_trans = -5, 5
@@ -1027,13 +1027,13 @@ def reg_real_data():
             params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
             params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
 
-            #for i, (α,β,γ) in enumerate(angles_noise):
-            #    params[i] = cal.applyRot(params[i], -α, -β, -γ)
+            for i, (α,β,γ) in enumerate(angles_noise):
+                params[i] = cal.applyRot(params[i], -α, -β, -γ)
 
-            for i, (x,y) in enumerate(trans_noise):
-                params[i] = cal.applyTrans(params[i], x, y, 0)
-            for i, z in enumerate(zoom_noise):
-                params[i] = cal.applyTrans(params[i], 0, 0, 1-z)
+            #for i, (x,y) in enumerate(trans_noise):
+            #    params[i] = cal.applyTrans(params[i], x, y, 0)
+            #for i, z in enumerate(zoom_noise):
+            #    params[i] = cal.applyTrans(params[i], 0, 0, 1-z)
 
             projs = Ax(params)
             #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
@@ -1045,7 +1045,7 @@ def reg_real_data():
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
 
             #for method in [3,4,5,0,6]:
-            for method in [2]:
+            for method in [0]:
                 config["name"] = name + str(method)
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))
