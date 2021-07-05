@@ -203,28 +203,28 @@ def calcGIObjective(old_img, new_img, config):
     return GIoldnew / config["GIoldold"]
 
 def calcPointsObjective(comp, good_new, good_old):
-    if comp==0:
+    if comp==10:
         d = good_new[:,0]-good_old[:,0]
         if len(d)==0:
             f = -1
         else:
             std = np.std(d)
             mean = np.mean(d)
-            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+            fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
             #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
             #print(d.shape, fd.shape, mean, std)
             if len(fd)==0:
                 f = -1
             else:
                 f = np.std( fd )
-    elif comp==1:
+    elif comp==11:
         d = good_new[:,1]-good_old[:,1]
         if len(d)==0:
             f = -1
         else:
             std = np.std(d)
             mean = np.mean(d)
-            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+            fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
             #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
             if len(fd)==0:
                 f = -1
@@ -237,34 +237,34 @@ def calcPointsObjective(comp, good_new, good_old):
         else:
             std = np.std(d)
             mean = np.mean(d)
-            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
+            fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
             if len(fd)==0:
                 f = -1
             else:
                 f = np.std(fd)
-    elif comp==10:
+    elif comp==0:
         a = (good_new[:,0,np.newaxis]-good_new[:,0])
         b = (good_old[:,0,np.newaxis]-good_old[:,0])
         a = a[b!=0]
         b = b[b!=0]
-        r = a/b
+        r = a/b - 1
         if len(r)>0:
             std = np.std(r)
             mean = np.mean(r)
-            fd = r[np.bitwise_and(r<mean+3*std, r>mean-3*std)]
+            fd = r[np.bitwise_and(r<=mean+3*std, r>=mean-3*std)]
             f = np.mean( np.abs(fd) )
         else: 
             f = -1
-    elif comp==11:
+    elif comp==1:
         a = (good_new[:,1,np.newaxis]-good_new[:,1])
         b = (good_old[:,1,np.newaxis]-good_old[:,1])
         a = a[b!=0]
         b = b[b!=0]
-        r = a / b
+        r = a / b - 1
         if len(r)>0:
             std = np.std(r)
             mean = np.mean(r)
-            fd = r[np.bitwise_and(r<mean+3*std, r>mean-3*std)]
+            fd = r[np.bitwise_and(r<=mean+3*std, r>=mean-3*std)]
             f = np.mean( np.abs(fd) )
         else: 
             f = -1
@@ -273,26 +273,20 @@ def calcPointsObjective(comp, good_new, good_old):
         a = (good_new[:,np.newaxis]-good_new).reshape((-1,2))
         b = (good_old[:,np.newaxis]-good_old).reshape((-1,2))
 
-        a = a[np.sum(a, axis=1)!=0]
-        b = b[np.sum(b, axis=1)!=0]
+        filt = ~np.eye(good_new.shape[0],dtype=bool).flatten()
+        a = a[filt]
+        b = b[filt]
         ϕ_new = np.arctan2(a[:,1], a[:,0])
         ϕ_old = np.arctan2(b[:,1], b[:,0])
 
-        ϕ_new[ϕ_new<-np.pi] += 2*np.pi
-        ϕ_new[ϕ_new>np.pi] -= 2*np.pi
-
-        ϕ_old[ϕ_old<-np.pi] += 2*np.pi
-        ϕ_old[ϕ_old>np.pi] -= 2*np.pi
-
         d = ϕ_new*180/np.pi-ϕ_old*180/np.pi
-        d[d<-180] += 360
-        d[d>180] -= 360
+        d[d<-180] = -360-d[d<-180]
+        d[d>180] = 360-d[d>180]
 
         if len(d) > 0:
             std = np.std(d)
             mean = np.mean(d)
-            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
-
+            fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
             f = np.mean( np.abs(fd) )
         else:
             f = -1
@@ -302,14 +296,22 @@ def calcPointsObjective(comp, good_new, good_old):
         ϕ_new = np.arctan2(good_new[:,1]-mid_n_y, good_new[:,0]-mid_n_x)
         ϕ_old = np.arctan2(good_old[:,1]-mid_o_y, good_old[:,0]-mid_o_x)
 
-        ϕ_new = np.array([np.arctan2(l[1]-r[1], l[0]-r[0])  for l in good_new for r in good_new if (l!=r).any()])
-        ϕ_old = np.array([np.arctan2(l[1]-r[1], l[0]-r[0])  for l in good_old for r in good_old if (l!=r).any()])
+        #ϕ_new = np.array([np.arctan2(l[1]-r[1], l[0]-r[0])  for l in good_new for r in good_new if (l!=r).any()])
+        #ϕ_old = np.array([np.arctan2(l[1]-r[1], l[0]-r[0])  for l in good_old for r in good_old if (l!=r).any()])
 
         ϕ_new[ϕ_new<-np.pi] += 2*np.pi
         ϕ_new[ϕ_new>np.pi] -= 2*np.pi
 
         ϕ_old[ϕ_old<-np.pi] += 2*np.pi
         ϕ_old[ϕ_old>np.pi] -= 2*np.pi
+
+        f = np.abs((np.mean(ϕ_new)-np.mean(ϕ_old))*180/np.pi)
+        if f > 180: f = 360-f
+    elif comp==32:
+        mid_n_x, mid_n_y = np.mean(good_new, axis=0)
+        mid_o_x, mid_o_y = np.mean(good_old, axis=0)
+        ϕ_new = np.arctan2(good_new[:,1]-mid_n_y, good_new[:,0]-mid_n_x)+np.pi
+        ϕ_old = np.arctan2(good_old[:,1]-mid_o_y, good_old[:,0]-mid_o_x)+np.pi
 
         f = np.abs((np.mean(ϕ_new)-np.mean(ϕ_old))*180/np.pi)
         if f > 180: f = 360-f
@@ -341,7 +343,6 @@ def calcPointsObjective(comp, good_new, good_old):
                 f = -1
             else:
                 f = np.abs(np.median( fd ))
-
     elif comp==-3:
         dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in good_new for r in good_new])
         dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in good_old for r in good_old])
