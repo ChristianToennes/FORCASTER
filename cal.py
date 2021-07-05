@@ -883,6 +883,28 @@ def roughRegistration(in_cur, reg_config, c):
             cur = linsearch(cur, 2, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
+    elif c==20:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 1
+        for grad_width in [(2.5,15), (1.5,15), (0.5,15)]:
+            #print()
+            for _ in range(2):
+                config["grad_width"]=grad_width
+                cur = linsearch(cur, 0, config)
+                cur = linsearch(cur, 1, config)
+                cur = linsearch(cur, 2, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
 
     return cur
 
@@ -975,18 +997,23 @@ def bfgs(cur, reg_config, c):
 
         cur = correctTrans(cur, config)
         
-        eps = [0.01, 0.01, 0.01]
+        eps = [0.5, 0.5, 0.5]
         ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
                                       options={'maxiter': 20, 'eps': eps})
+
+        eps = [0.05, 0.05, 0.05]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 40, 'eps': eps})
         eps = [0.005, 0.005, 0.005]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 20, 'eps': eps})
+                                      options={'maxiter': 40, 'eps': eps})
         eps = [0.0025, 0.0025, 0.0025]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 20, 'eps': eps})
+                                      options={'maxiter': 40, 'eps': eps})
 
         cur = applyRot(cur, ret.x[0], ret.x[1], ret.x[2])
 
