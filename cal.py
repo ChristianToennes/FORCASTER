@@ -520,56 +520,35 @@ def linsearch(in_cur, axis, config):
         mid = np.argmin(values)
         skip = np.count_nonzero(values<0)
         midpoints = np.argsort(values)[skip:skip+5]
+        #if len(midpoints) == 0:
+        #    print(values)
         mean_mid = np.mean(εs[midpoints])
-        std_mid = np.std(εs[midpoints])
-        mid = np.argmin(values[midpoints[np.bitwise_and(εs[midpoints]>mean_mid-3*std_mid, εs[midpoints]<mean_mid+3*std_mid)]])
-        mid = midpoints[np.bitwise_and(εs[midpoints]>mean_mid-2*std_mid, εs[midpoints]<mean_mid+2*std_mid)][mid]
-        if True:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error")
-                try:
-                    p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
-                except np.RankWarning:
-                    #p1 = [εs[values[0]], 0]
-                    #with warnings.catch_warnings():
-                    #    warnings.simplefilter("ignore")
-                    #    p1 = np.polyfit([εs[0]*2,εs[0]], [values[0]*2, values[0]], 1)
-                    #print("low rank p1", εs[:mid+1], noise[axis], p1, file=sys.stderr)
-                    #plt.figure()
-                    #plt.title(str(axis) + " p1 " + str(noise[axis]))
-                    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[-1]), np.polyval(p, np.linspace(1.2*εs[0],1.2*εs[-1])))
-                    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[mid]), np.polyval(p1, np.linspace(1.2*εs[0],1.2*εs[mid])))
-                    #plt.plot(np.linspace(1.2*εs[mid],1.2*εs[-1]), np.polyval(p2, np.linspace(1.2*εs[mid],1.2*εs[-1])))
-                    #plt.scatter(εs, values)
-                    #plt.show()
-                    #plt.close()
-                    if both:
-                        return cur, 0
-                    return cur
-            with warnings.catch_warnings():
-                warnings.simplefilter("error")
-                try:
-                    p2 = np.polyfit(εs[mid:], values[mid:], 1)
-                except np.RankWarning:
-                    #p2 = [εs[values[-1]], 0]
-                    #with warnings.catch_warnings():
-                    #    warnings.simplefilter("ignore")
-                    #    p2 = np.polyfit([εs[-1],εs[-1]*2], [values[-1], values[-1]*2], 1)
-                    #print("low rank p2", εs[mid:], noise[axis], p2, file=sys.stderr)
-                    #plt.figure()
-                    #plt.title(str(axis) + " p2 " + str(noise[axis]))
-                    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[-1]), np.polyval(p, np.linspace(1.2*εs[0],1.2*εs[-1])))
-                    #plt.plot(np.linspace(1.2*εs[0],1.2*εs[mid]), np.polyval(p1, np.linspace(1.2*εs[0],1.2*εs[mid])))
-                    #plt.plot(np.linspace(1.2*εs[mid],1.2*εs[-1]), np.polyval(p2, np.linspace(1.2*εs[mid],1.2*εs[-1])))
-                    #plt.scatter(εs, values)
-                    #plt.show()
-                    #plt.close()
-                    if both:
-                        return cur, 0
-                    return cur
-        else:
+        if False and mid > 10 and mid < grad_width[1]*2-10:
+            std_mid = np.std(εs[midpoints])
+            mid = np.argmin(values[midpoints[np.bitwise_and(εs[midpoints]>mean_mid-3*std_mid, εs[midpoints]<mean_mid+3*std_mid)]])
+            mid = midpoints[np.bitwise_and(εs[midpoints]>mean_mid-2*std_mid, εs[midpoints]<mean_mid+2*std_mid)][mid]
+            #with warnings.catch_warnings():
+            #    warnings.simplefilter("error")
+            #    try:
+            #        p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
+            #    except np.RankWarning:
+            #        if both:
+            #            return cur, 0
+            #        return cur
+            #with warnings.catch_warnings():
+            #    warnings.simplefilter("error")
+            #    try:
+            #        p2 = np.polyfit(εs[mid:], values[mid:], 1)
+            #    except np.RankWarning:
+            #        if both:
+            #            return cur, 0
+            #        return cur
+        #else:
             p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
             p2 = np.polyfit(εs[mid:], values[mid:], 1)
+            min_ε = np.roots(p1-p2)[0]
+        else:
+            min_ε = mean_mid
     else:
         values = np.array([calcGIObjective(real_img, projs[:,i], config) for i in range(projs.shape[1])])
         #p = np.polyfit(εs, values, 2)
@@ -577,7 +556,7 @@ def linsearch(in_cur, axis, config):
         p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
         p2 = np.polyfit(εs[mid:], values[mid:], 1)
     
-    min_ε = np.roots(p1-p2)[0]
+        min_ε = np.roots(p1-p2)[0]
 
     if axis==0:
         cur = applyRot(cur, min_ε, 0, 0)
