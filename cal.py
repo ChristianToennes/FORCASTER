@@ -891,8 +891,8 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
-        config["it"] = 1
-        for grad_width in [(2.5,15), (1.5,15), (0.5,15)]:
+        config["it"] = 3
+        for grad_width in [(2.5,15), (0.5,15)]:
             #print()
             for _ in range(2):
                 config["grad_width"]=grad_width
@@ -905,6 +905,127 @@ def roughRegistration(in_cur, reg_config, c):
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c==21:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        for grad_width in [(2.5,25), (0.5,25)]:
+            #print()
+            for _ in range(2):
+                config["grad_width"]=grad_width
+                cur = linsearch(cur, 0, config)
+                cur = linsearch(cur, 1, config)
+                cur = linsearch(cur, 2, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c==22:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        for grad_width in [(2.5,15), (0.5,15)]:
+            #print()
+            for _ in range(2):
+                config["grad_width"]=grad_width
+                cur = linsearch(cur, 0, config)
+                cur = linsearch(cur, 1, config)
+                cur = linsearch(cur, 2, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
+                cur = correctXY(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+    elif c==23:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        for grad_width in [(2.5,15), (0.5,15)]:
+            #print()
+            for _ in range(4):
+                config["grad_width"]=grad_width
+                cur = linsearch(cur, 0, config)
+                cur = linsearch(cur, 1, config)
+                cur = linsearch(cur, 2, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c==24:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        for grad_width in [(2.5,15), (0.5,15)]:
+            #print()
+            for _ in range(2):
+                config["grad_width"]=grad_width
+                cur = linsearch(cur, 0, config)
+                cur = linsearch(cur, 1, config)
+                cur = linsearch(cur, 2, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
+                cur = correctXY(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c==25:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        for grad_width in [(2.5,25), (0.5,15)]:
+            #print()
+            for _ in range(2):
+                config["grad_width"]=grad_width
+                cur = linsearch(cur, 0, config)
+                cur = linsearch(cur, 1, config)
+                cur = linsearch(cur, 2, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
 
     return cur
 
