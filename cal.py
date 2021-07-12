@@ -419,7 +419,7 @@ def correctXY(in_cur, config):
     return cur
 
 def correctZ(in_cur, config):
-    print("z", end=" ")
+    #print("z", end=" ")
     cur = np.array(in_cur)
     data_real = config["data_real"]
     real_img = config["real_img"]
@@ -485,7 +485,12 @@ def linsearch(in_cur, axis, config):
         config["GIoldold"] = GI(real_img, real_img)
     #print(grad_width, noise)
     #grad_width = (1,25)
-    make_εs = lambda size, count: np.hstack((np.linspace(-size, 0, count, False), [0], np.linspace(size, 0, count, False)[::-1] ))
+    
+    if "binsearch" in config and config["binsearch"] == True:
+        make_εs = lambda size, count: np.array([-size/(1.1**i) for i in range(count)] + [0] + [size/(1.1**i) for i in range(count)][::-1])
+    else:
+        make_εs = lambda size, count: np.hstack((np.linspace(-size, 0, count, False), [0], np.linspace(size, 0, count, False)[::-1] ))
+    
 
     εs = make_εs(*grad_width)
     cur = np.array(in_cur)
