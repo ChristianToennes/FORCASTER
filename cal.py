@@ -569,7 +569,7 @@ def linsearch(in_cur, axis, config):
         cur = applyRot(cur, 0, min_ε, 0)
     if axis==2:
         cur = applyRot(cur, 0, 0, min_ε)
-    if noise is not None:
+    if False and noise is not None:
         print("{}{}{} {: .3f} {: .3f}".format(bcolors.BLUE, axis, bcolors.END, noise[axis], min_ε), end=": ")
         if np.abs(noise[axis]) < np.abs(noise[axis]-min_ε)-0.1:
             print("{}{: .3f}{}".format(bcolors.RED, noise[axis]-min_ε, bcolors.END), end=", ")
@@ -732,6 +732,8 @@ def binsearch(in_cur, axis, config):
 
 def roughRegistration(in_cur, reg_config, c):
     cur = np.array(in_cur)
+    if c==-1:
+        return bfgs(cur, reg_config, 0)
     if c==0:
         return bfgs(cur, reg_config, 1)
     if c==1 or c==2:
@@ -823,6 +825,18 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         #cur = correctXY(cur, config)
+    elif c==10:
+        config["it"] = 1
+        cur = correctXY(cur, config)
+    elif c==11:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+    elif c==12:
+        config["it"] = 5
+        cur = correctXY(cur, config)
+    elif c==13:
+        config["it"] = 10
+        cur = correctXY(cur, config)
     elif c==15: # 5
         config["my"] = False
         cur = correctXY(cur, config)
@@ -888,6 +902,8 @@ def roughRegistration(in_cur, reg_config, c):
             cur = linsearch(cur, 2, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
+    elif c==19:
+        pass
     elif c==20:
         config["it"] = 3
         cur = correctXY(cur, config)
@@ -920,7 +936,8 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
 
         config["it"] = 3
-        for grad_width in [(2.5,25), (0.5,25)]:
+        config["binsearch"] = True
+        for grad_width in [(2.5,15), (0.5,15)]:
             #print()
             for _ in range(2):
                 config["grad_width"]=grad_width
@@ -943,24 +960,21 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
 
         config["it"] = 3
+        config["binsearch"] = True
         for grad_width in [(2.5,15), (0.5,15)]:
             #print()
-            for _ in range(2):
+            for _ in range(3):
                 config["grad_width"]=grad_width
                 cur = linsearch(cur, 0, config)
                 cur = linsearch(cur, 1, config)
                 cur = linsearch(cur, 2, config)
                 cur = correctXY(cur, config)
                 cur = correctZ(cur, config)
-                cur = correctXY(cur, config)
         
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
-
     elif c==23:
         config["it"] = 3
         cur = correctXY(cur, config)
@@ -972,10 +986,13 @@ def roughRegistration(in_cur, reg_config, c):
         config["it"] = 3
         for grad_width in [(2.5,15), (0.5,15)]:
             #print()
-            for _ in range(4):
+            for _ in range(2):
                 config["grad_width"]=grad_width
+                config["binsearch"] = False
                 cur = linsearch(cur, 0, config)
+                config["binsearch"] = False
                 cur = linsearch(cur, 1, config)
+                config["binsearch"] = True
                 cur = linsearch(cur, 2, config)
                 cur = correctXY(cur, config)
                 cur = correctZ(cur, config)
@@ -1046,7 +1063,7 @@ def correctTrans(cur, config):
 def bfgs(cur, reg_config, c):
     config = dict(default_config)
     config.update(reg_config)
-    config["my"] = c<=1
+    config["my"] = c==1
 
     real_img = config["real_img"]
     noise = config["noise"]

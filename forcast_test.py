@@ -713,9 +713,9 @@ def reg_and_reco(ims, in_params, config):
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input_cgls.nrrd"))
         del rec
-    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+    if False and not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
-        rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 200)
+        rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
         #mask = np.zeros(rec.shape, dtype=bool)
         mask = create_circular_mask(rec.shape)
         rec = rec*mask
@@ -734,7 +734,8 @@ def reg_and_reco(ims, in_params, config):
     cali['max_distance'] = 20
     cali['outlier_confidence'] = 85
 
-    print_stats(config["noise"][1])
+    if "noise" in config:
+        print_stats(config["noise"][1])
         
     perftime = time.perf_counter()
     if mp.cpu_count() > 1:
@@ -776,18 +777,18 @@ def reg_and_reco(ims, in_params, config):
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-output.nrrd"), True)
         del rec
-
-        reg_geo = Ax.create_geo(corrs)
-        rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 200)
-        mask = create_circular_mask(rec.shape)
-        rec = rec*mask
-        del mask
-        #rec = np.swapaxes(rec, 0, 2)
-        #rec = np.swapaxes(rec, 1,2)
-        #rec = rec[::-1, ::-1]
-        rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-output_sirt.nrrd"))
-        del rec
+        if True:
+            reg_geo = Ax.create_geo(corrs)
+            rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
+            mask = create_circular_mask(rec.shape)
+            rec = rec*mask
+            del mask
+            #rec = np.swapaxes(rec, 0, 2)
+            #rec = np.swapaxes(rec, 1,2)
+            #rec = rec[::-1, ::-1]
+            rec = sitk.GetImageFromArray(rec)*100
+            sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-output_sirt.nrrd"))
+            del rec
 
         if False:
             reg_geo = Ax.create_geo(corrs)
@@ -1027,13 +1028,13 @@ def reg_real_data():
             params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
             params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
 
-            for i, (α,β,γ) in enumerate(angles_noise):
-                params[i] = cal.applyRot(params[i], -α, -β, -γ)
+            #for i, (α,β,γ) in enumerate(angles_noise):
+            #    params[i] = cal.applyRot(params[i], -α, -β, -γ)
 
-            #for i, (x,y) in enumerate(trans_noise):
-            #    params[i] = cal.applyTrans(params[i], x, y, 0)
-            #for i, z in enumerate(zoom_noise):
-            #    params[i] = cal.applyTrans(params[i], 0, 0, 1-z)
+            for i, (x,y) in enumerate(trans_noise):
+                params[i] = cal.applyTrans(params[i], x, y, 0)
+            for i, z in enumerate(zoom_noise):
+                params[i] = cal.applyTrans(params[i], 0, 0, 1-z)
 
             projs = Ax(params)
             #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
