@@ -79,7 +79,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     #if images.shape[1] < 600:
     #    skip = 1
 
-    edges = 1
+    edges = 20
 
     sel = np.zeros(images.shape, dtype=bool)
     #sel[:,20*skip:-20*skip:skip,20*skip:-20*skip:skip] = True
@@ -758,7 +758,8 @@ def reg_and_reco(ims, in_params, config):
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-output.nrrd"), True)
         del sino
     
-    print_stats(config["noise"][1])
+    if "noise" in config:
+        print_stats(config["noise"][1])
     print("rough reg done ", perftime)
 
     if not perf:
@@ -910,9 +911,11 @@ def parameter_search(proj_path, cbct_path):
     sitk.WriteImage(sitk.GetImageFromArray(rec), os.path.join("recos", "forcast_reco.nrrd"))
 
 def i0_est(real_img, proj_img):
-    real = float(np.mean(real_img))
-    proj = np.mean(proj_img)
+    real = float(np.median(real_img))
+    proj = np.median(proj_img)
     i0 = real * np.exp(proj)
+    #i0 = i0*1.4
+    i0 += 400
     return i0
 
 def get_proj_paths():

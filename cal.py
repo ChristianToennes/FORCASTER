@@ -200,7 +200,7 @@ def calcGIObjective(old_img, new_img, config):
     GIoldnew = GI(old_img, new_img)
     if "GIoldold" not in config or config["GIoldold"] is None:
         config["GIoldold"] = GI(old_img, old_img)
-    return GIoldnew / config["GIoldold"]
+    return config["GIoldold"] / GIoldnew
 
 def calcPointsObjective(comp, good_new, good_old):
     if comp==10:
@@ -1138,75 +1138,69 @@ def bfgs(cur, reg_config, c):
 
             return ret
 
-        cur = correctTrans(cur, config)
-        
-        eps = [0.5, 0.5, 0.5]
-        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 20, 'eps': eps})
-
-        eps = [0.05, 0.05, 0.05]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 40, 'eps': eps})
-        eps = [0.005, 0.005, 0.005]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 40, 'eps': eps})
-        eps = [0.0025, 0.0025, 0.0025]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 40, 'eps': eps})
-
-        cur = applyRot(cur, ret.x[0], ret.x[1], ret.x[2])
-
+        #cur_x = np.array([0,0,0])
+        #for eps in [0.5, 0.05, 0.005]:
+        #    cur = correctTrans(cur, config)
+        #    ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,[eps,eps,eps]), method='L-BFGS-B',
+        #                                jac=gradf,
+        #                                options={'maxiter': 10, 'eps': [eps,eps,eps]})
+        #    cur_x = np.array(ret.x)
+        #    cur = applyRot(cur, cur_x[0], cur_x[1], cur_x[2])
+        #
         #cur = correctTrans(cur, config)
-        
-        config["angle_noise"] += ret.x
+        # 
+        #config["angle_noise"] += cur_x
     
     else:
         def f(x, cur, eps):
-            cur_x = applyTrans(cur, x[0], x[1], x[2])
-            cur_x = applyRot(cur_x, x[3], x[4], x[5])
+            #cur_x = applyTrans(cur, x[0], x[1], x[2])
+            #cur_x = applyRot(cur_x, x[3], x[4], x[5])
+            cur_x = applyRot(cur, x[0], x[1], x[2])
             proj = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
             ret = calcGIObjective(real_img, proj, config)
             #print(ret)
             return ret
         
         def gradf(x, cur, eps):
-            cur_x = applyTrans(cur, x[0], x[1], x[2])
-            cur_x = applyRot(cur_x, x[3], x[4], x[5])
+            #cur_x = applyTrans(cur, x[0], x[1], x[2])
+            #cur_x = applyRot(cur_x, x[3], x[4], x[5])
+            cur_x = applyRot(cur, x[0], x[1], x[2])
             dvec = [cur_x]
-            dvec.append(applyTrans(cur_x, eps[0], 0, 0))
-            dvec.append(applyTrans(cur_x, 0, eps[1], 0))
-            dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
-            dvec.append(applyRot(cur_x, eps[3], 0, 0))
-            dvec.append(applyRot(cur_x, 0, eps[4], 0))
-            dvec.append(applyRot(cur_x, 0, 0, eps[5]))
+            #dvec.append(applyTrans(cur_x, eps[0], 0, 0))
+            #dvec.append(applyTrans(cur_x, 0, eps[1], 0))
+            #dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
+            #dvec.append(applyRot(cur_x, eps[3], 0, 0))
+            #dvec.append(applyRot(cur_x, 0, eps[4], 0))
+            #dvec.append(applyRot(cur_x, 0, 0, eps[5]))
+            dvec.append(applyRot(cur_x, eps[0], 0, 0))
+            dvec.append(applyRot(cur_x, 0, eps[1], 0))
+            dvec.append(applyRot(cur_x, 0, 0, eps[2]))
             dvec = np.array(dvec)
             projs = Projection_Preprocessing(Ax(dvec))
 
             h0 = calcGIObjective(real_img, projs[:,0], config)
-            ret = [0,0,0,0,0,0]
+            #ret = [0,0,0,0,0,0]
+            ret = [0,0,0]
             for i in range(1, projs.shape[1]):
                 ret[i-1] = (calcGIObjective(real_img, projs[:,i], config)-h0) * 0.5
             
             #print(ret)
-
             return ret
 
-        eps = [0.1, 0.1, 0.1, 0.01, 0.01, 0.01]
-        ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
-        eps = [0.05, 0.05, 0.05, 0.005, 0.005, 0.005]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
-        eps = [0.025, 0.025, 0.025, 0.0025, 0.0025, 0.0025]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
-        
-        cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
-        cur = applyRot(cur, ret.x[3], ret.x[4], ret.x[5])
+    cur_x = np.array([0,0,0])
+    for eps in [0.5, 0.05, 0.005]:
+        cur = correctTrans(cur, config)
+        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,[eps,eps,eps]), method='L-BFGS-B',
+                                    jac=gradf,
+                                    options={'maxiter': 10, 'eps': [eps,eps,eps]})
+        cur_x = np.array(ret.x)
+        cur = applyRot(cur, cur_x[0], cur_x[1], cur_x[2])
 
-        config["trans_noise"] += ret.x[:3]
-        config["angle_noise"] += ret.x[3:]
+    cur = correctTrans(cur, config)
+        
+
+    #config["trans_noise"] += ret.x[:3]
+    config["angle_noise"] += ret.x
 
     reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 
