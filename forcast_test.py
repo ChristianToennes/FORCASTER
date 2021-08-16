@@ -15,6 +15,7 @@ import cProfile, pstats
 import cv2
 import scipy.ndimage
 import re
+from skimage.metrics import structural_similarity,normalized_root_mse
 
 def write_vectors(name, vecs):
     return
@@ -603,13 +604,23 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv'):
     for i in range(len(real)):
         vals5.append(mutual_information_2d(real[i], output[i], normalized=True))
 
+    vals6 = []
+    for i in range(len(real)):
+        vals6.append(structural_similarity(real[i], output[i]))
+
+    vals7 = []
+    for i in range(len(real)):
+        vals7.append(normalized_root_mse(real[i], output[i]))
+
     with open(stats_file, "a") as f:
-        f.write("{0};NGI;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals]) + "\n")
-        f.write("{0};CCORR_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
-        f.write("{0};CCOEFF_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals2]) + "\n")
+        f.write("{0};NGI;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals]) + "\n")
+        f.write("{0};CCORR_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
+        f.write("{0};CCOEFF_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals2]) + "\n")
         #f.write("{0};NCCORR;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals3]) + "\n")
         #f.write("{0};NCCOEFF;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals4]) + "\n")
-        f.write("{0};NMI;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals5]) + "\n")
+        f.write("{0};NMI;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals5]) + "\n")
+        f.write("{0};SSIM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals6]) + "\n")
+        f.write("{0};FSIM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals7]) + "\n")
 
 def evalResults(out_path, in_path, projname):
     ims_un = read_dicoms(in_path)[1]
@@ -620,19 +631,33 @@ def evalResults(out_path, in_path, projname):
     for filename in os.listdir(out_path):
         if re.fullmatch("forcast_(.+?)_sino-output.nrrd", filename) != None and projname in filename:
             img = sitk.ReadImage(os.path.join(out_path, filename))
-            projs.append(sitk.GetArrayFromImage(img))
+            proj = sitk.GetArrayFromImage(img)
+            if proj.dtype != np.float32:
+                proj = np.array(proj, dtype=np.float32)
+            projs.append(proj)
             names.append("_".join(filename.split('_')[1:-1]))
         if re.fullmatch("forcast_(.+?)_sino-input.nrrd", filename) != None and projname in filename and input_sino == False:
             input_sino = True
             img = sitk.ReadImage(os.path.join(out_path, filename))
-            projs.append(sitk.GetArrayFromImage(img))
+            proj = sitk.GetArrayFromImage(img)
+            if proj.dtype != np.float32:
+                proj = np.array(proj, dtype=np.float32)
+            projs.append(proj)
             names.append(projname+"_input")
+        if re.fullmatch("trajtomo_reco_matlab_(.+?)_output.nrrd", filename) != None and projname in filename:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            proj = sitk.GetArrayFromImage(img)
+            if proj.dtype != np.float32:
+                proj = np.array(proj, dtype=np.float32)
+            projs.append(proj)
+            names.append("_".join(filename.split('_')[3:-1])+"_matlab")
 
     for name, proj in zip(names, projs):
+        print(name)
         skip = int(np.ceil(ims_un.shape[0]/proj.shape[1]))
         
         i0s = [i0_est(ims_un[i::skip], proj[:,i]) for i in range(proj.shape[1])]
-        ims = -np.log(ims_un[::skip]/np.mean(i0s))
+        ims = np.array(-np.log(ims_un[::skip]/np.mean(i0s)), dtype=np.float32)
         
         evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
     
@@ -643,12 +668,22 @@ def evalResults(out_path, in_path, projname):
     for filename in os.listdir(out_path):
         if re.fullmatch("forcast_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename:
             img = sitk.ReadImage(os.path.join(out_path, filename))
-            projs.append(sitk.GetArrayFromImage(img))
+            proj = sitk.GetArrayFromImage(img)
+            projs.append(proj)
+            #print(filename, proj.shape)
             names.append("_".join(filename.split('_')[1:]))
         if re.fullmatch("forcast_(.+?)_reco-output.nrrd", filename) != None and projname in filename:
             img = sitk.ReadImage(os.path.join(out_path, filename))
-            projs.append(sitk.GetArrayFromImage(img))
+            proj = sitk.GetArrayFromImage(img)
+            projs.append(proj)
+            #print(filename, proj.shape)
             names.append("_".join(filename.split('_')[1:]))
+        if re.fullmatch("trajtomo_reco_matlab_(.+?)\.nrrd", filename) != None and projname in filename:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            proj = sitk.GetArrayFromImage(img)
+            projs.append(proj)
+            #print(filename, proj.shape)
+            names.append("_".join(filename.split('_')[3:])+"_matlab")
         if re.fullmatch("forcast_(.+?)_sino-input.nrrd", filename) != None and projname in filename and input_sino == False:
             input_sino = True
             img = sitk.ReadImage(os.path.join(out_path, filename))
@@ -660,8 +695,10 @@ def evalResults(out_path, in_path, projname):
 
 
     for name, proj in zip(names, projs):
-        ims = input_recos[name.split('_')[0]]
-        evalPerformance(proj, ims, 0, name, 'stats_rec.csv')
+        print(name)
+        ims = np.array(input_recos[name.split('_')[0]], dtype=np.float32)
+        if ims.shape == proj.shape:
+            evalPerformance(proj, ims, 0, name, 'stats_rec.csv')
 
 def evalAllResults():
     projs = get_proj_paths()
