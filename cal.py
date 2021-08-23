@@ -5,6 +5,8 @@ import matplotlib.pyplot as plt
 import scipy.optimize
 import warnings
 import sys
+import itertools
+import time
 
 default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 4},
 "my": True, "grad_width": (1,25), "noise": None, "both": False, "max_change": 1}
@@ -183,7 +185,53 @@ def unnormalize_points(points, img):
     ret[:,1] *= ydim/1000.0
     return ret
 
-def GI(old_img, new_img):
+def GI_(old_img, new_img):
+    p1di = (old_img[1:]-old_img[:-1]).flatten()
+    p1dj = (old_img[:,1:]-old_img[:,:-1]).flatten()
+    p2di = (new_img[1:]-new_img[:-1]).flatten()
+    p2dj = (new_img[:,1:]-new_img[:,:-1]).flatten()
+    ret = 0
+    for p1 in itertools.product(p1di,p1dj):
+        absp1 = np.linalg.norm(p1)
+        for p2 in itertools.product(p2di,p2dj):
+            absp2 = np.linalg.norm(p2)
+            absGrad = absp1*absp2
+            if absGrad == 0:
+                continue
+            gradDot = p1[0]*p2[0] + p1[1]*p2[1]
+            w = 0.5*(gradDot / absGrad + 1)
+            ret += w * np.min(absp1, absp2)
+    return ret
+
+def GI__(old_img, new_img):
+    s = 1
+    p1 = np.meshgrid(old_img[1::s,::s]-old_img[:-1:s,::s], old_img[::s,1::s]-old_img[::s,:-1:s], copy=False)
+    p2 = np.meshgrid(new_img[1::s,::s]-new_img[:-1:s,::s], new_img[::s,1::s]-new_img[::s,:-1:s], copy=False)
+    absp1 = np.linalg.norm([p1[0].flatten(),p1[1].flatten()], axis=-1)
+    absp2 = np.linalg.norm([p2[0].flatten(),p2[1].flatten()], axis=-1)
+    
+    absGrad = absp1*absp2
+    gradDot = p1[0].flatten()*p2[0].flatten() - p1[1].flatten()*p2[1].flatten()
+    gradDot[absGrad==0] = 0
+    absGrad[absGrad==0] = 1
+    w = 0.5*(gradDot / absGrad + 1)
+    
+    return np.sum(w*np.min(np.array([absp1, absp2]), axis=0))
+
+
+def GI(new_img, p1, absp1):
+    p2 = np.array(np.meshgrid(new_img[1:,:]-new_img[:-1,:], new_img[:,1:]-new_img[:,:-1], copy=False)).reshape(2,-1)
+    absp2 = np.linalg.norm(p2, axis=0)
+    absGrad = absp1*absp2
+    gradDot = p1[0]*p2[0] + p1[1]*p2[1]
+    f = absGrad!=0
+    gradDot = gradDot*f
+    absGrad[~f] = 1
+    w = 0.5*(gradDot / absGrad + 1)
+    ret = np.sum(w*np.min(np.array([absp1, absp2]), axis=0))
+    return ret
+
+def _GI(old_img, new_img):
     p1 = np.array([(old_img[1:,:-1]-old_img[:-1,:-1]).flatten(),(old_img[:-1,1:]-old_img[:-1,:-1]).flatten()]).T
     p2 = np.array([(new_img[1:,:-1]-new_img[:-1,:-1]).flatten(),(new_img[:-1,1:]-new_img[:-1,:-1]).flatten()]).T
     absp1 = np.linalg.norm(p1, axis=-1)
@@ -194,13 +242,23 @@ def GI(old_img, new_img):
     gradDot[absGrad==0] = 0
     absGrad[absGrad==0] = 1
     w = 0.5*(gradDot / absGrad + 1)
+    print(p1.shape, p2.shape, absp1.shape, absp2.shape, w.shape)
+    exit()
     return np.sum(w*np.min(np.array([absp1, absp2]), axis=0))
 
 def calcGIObjective(old_img, new_img, config):
-    GIoldnew = GI(old_img, new_img)
     if "GIoldold" not in config or config["GIoldold"] is None:
-        config["GIoldold"] = GI(old_img, old_img)
-    return config["GIoldold"] / GIoldnew
+        #p1 = np.meshgrid(old_img[1::s,::s]-old_img[:-1:s,::s], old_img[::s,1::s]-old_img[::s,:-1:s], copy=False)
+        p1 = np.array(np.meshgrid(old_img[1:,:]-old_img[:-1,:], old_img[:,1:]-old_img[:,:-1], copy=False)).reshape(2,-1)
+        config["p1"] = p1
+        #config["absp1"] = np.linalg.norm([p1[0].flatten(),p1[1].flatten()], axis=0)
+        config["absp1"] = np.linalg.norm(p1, axis=0)
+        config["GIoldold"] = GI(old_img, config["p1"], config["absp1"])
+    #perftime = time.perf_counter()
+    GIoldnew = GI(new_img, config["p1"], config["absp1"])
+    #print("GI", time.perf_counter()-perftime)
+    #return GIoldnew / config["GIoldold"]
+    return config["GIoldold"] / (GIoldnew+1e-8)
 
 def calcPointsObjective(comp, good_new, good_old):
     if comp==10:
@@ -736,7 +794,7 @@ def roughRegistration(in_cur, reg_config, c):
         return bfgs(cur, reg_config, 0)
     if c==0:
         return bfgs(cur, reg_config, 1)
-    if c==1 or c==2:
+    if c==1 or c==2 or c<=-2:
         return bfgs_trans(cur, reg_config, c)
     config = dict(default_config)
     config.update(reg_config)
@@ -1138,69 +1196,75 @@ def bfgs(cur, reg_config, c):
 
             return ret
 
-        #cur_x = np.array([0,0,0])
-        #for eps in [0.5, 0.05, 0.005]:
-        #    cur = correctTrans(cur, config)
-        #    ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,[eps,eps,eps]), method='L-BFGS-B',
-        #                                jac=gradf,
-        #                                options={'maxiter': 10, 'eps': [eps,eps,eps]})
-        #    cur_x = np.array(ret.x)
-        #    cur = applyRot(cur, cur_x[0], cur_x[1], cur_x[2])
-        #
+        cur = correctTrans(cur, config)
+        
+        eps = [0.5, 0.5, 0.5]
+        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 20, 'eps': eps})
+
+        eps = [0.05, 0.05, 0.05]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 40, 'eps': eps})
+        eps = [0.005, 0.005, 0.005]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 40, 'eps': eps})
+        eps = [0.0025, 0.0025, 0.0025]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 40, 'eps': eps})
+
+        cur = applyRot(cur, ret.x[0], ret.x[1], ret.x[2])
+
         #cur = correctTrans(cur, config)
-        # 
-        #config["angle_noise"] += cur_x
+        
+        config["angle_noise"] += ret.x
     
     else:
         def f(x, cur, eps):
-            #cur_x = applyTrans(cur, x[0], x[1], x[2])
-            #cur_x = applyRot(cur_x, x[3], x[4], x[5])
-            cur_x = applyRot(cur, x[0], x[1], x[2])
+            cur_x = applyTrans(cur, x[0], x[1], x[2])
+            cur_x = applyRot(cur_x, x[3], x[4], x[5])
             proj = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
             ret = calcGIObjective(real_img, proj, config)
             #print(ret)
             return ret
         
         def gradf(x, cur, eps):
-            #cur_x = applyTrans(cur, x[0], x[1], x[2])
-            #cur_x = applyRot(cur_x, x[3], x[4], x[5])
-            cur_x = applyRot(cur, x[0], x[1], x[2])
+            cur_x = applyTrans(cur, x[0], x[1], x[2])
+            cur_x = applyRot(cur_x, x[3], x[4], x[5])
             dvec = [cur_x]
-            #dvec.append(applyTrans(cur_x, eps[0], 0, 0))
-            #dvec.append(applyTrans(cur_x, 0, eps[1], 0))
-            #dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
-            #dvec.append(applyRot(cur_x, eps[3], 0, 0))
-            #dvec.append(applyRot(cur_x, 0, eps[4], 0))
-            #dvec.append(applyRot(cur_x, 0, 0, eps[5]))
-            dvec.append(applyRot(cur_x, eps[0], 0, 0))
-            dvec.append(applyRot(cur_x, 0, eps[1], 0))
-            dvec.append(applyRot(cur_x, 0, 0, eps[2]))
+            dvec.append(applyTrans(cur_x, eps[0], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[1], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
+            dvec.append(applyRot(cur_x, eps[3], 0, 0))
+            dvec.append(applyRot(cur_x, 0, eps[4], 0))
+            dvec.append(applyRot(cur_x, 0, 0, eps[5]))
             dvec = np.array(dvec)
             projs = Projection_Preprocessing(Ax(dvec))
 
             h0 = calcGIObjective(real_img, projs[:,0], config)
-            #ret = [0,0,0,0,0,0]
-            ret = [0,0,0]
+            ret = [0,0,0,0,0,0]
             for i in range(1, projs.shape[1]):
                 ret[i-1] = (calcGIObjective(real_img, projs[:,i], config)-h0) * 0.5
             
             #print(ret)
+
             return ret
 
-    cur_x = np.array([0,0,0])
-    for eps in [0.5, 0.05, 0.005]:
-        cur = correctTrans(cur, config)
-        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,[eps,eps,eps]), method='L-BFGS-B',
-                                    jac=gradf,
-                                    options={'maxiter': 10, 'eps': [eps,eps,eps]})
-        cur_x = np.array(ret.x)
-        cur = applyRot(cur, cur_x[0], cur_x[1], cur_x[2])
-
-    cur = correctTrans(cur, config)
+        eps = [0.1, 0.1, 0.1, 0.01, 0.01, 0.01]
+        ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
+        eps = [0.05, 0.05, 0.05, 0.005, 0.005, 0.005]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
+        eps = [0.025, 0.025, 0.025, 0.0025, 0.0025, 0.0025]
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B', jac=gradf, options={'maxiter': 20, 'eps': eps})
         
+        cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
+        cur = applyRot(cur, ret.x[3], ret.x[4], ret.x[5])
 
-    #config["trans_noise"] += ret.x[:3]
-    config["angle_noise"] += ret.x
+        config["trans_noise"] += ret.x[:3]
+        config["angle_noise"] += ret.x[3:]
 
     reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 
@@ -1251,37 +1315,40 @@ def bfgs_trans(cur, reg_config, c):
             cur_x = applyTrans(cur, x[0], x[1], x[2])
             dvec = [cur_x]
             dvec.append(applyTrans(cur_x, eps[0], 0, 0))
+            dvec.append(applyTrans(cur_x, -eps[0], 0, 0))
+            dvec.append(applyTrans(cur_x, 2*eps[0], 0, 0))
+            dvec.append(applyTrans(cur_x, 2*-eps[0], 0, 0))
             dvec.append(applyTrans(cur_x, 0, eps[1], 0))
+            dvec.append(applyTrans(cur_x, 0, -eps[1], 0))
+            dvec.append(applyTrans(cur_x, 0, 2*eps[1], 0))
+            dvec.append(applyTrans(cur_x, 0, 2*-eps[1], 0))
             dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
+            dvec.append(applyTrans(cur_x, 0, 0, -eps[2]))
+            dvec.append(applyTrans(cur_x, 0, 0, 2*eps[2]))
+            dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[2]))
             dvec = np.array(dvec)
             projs = Projection_Preprocessing(Ax(dvec))
 
-            (p,v), proj = trackFeatures(projs[:,0], data_real, config), projs[:,0]
-            points = normalize_points(p, proj)
-            valid = v==1
-            points = points[valid]
-            cur_obj = []
-            for axis, mult in [(-1,1),(-2,1),(-3,1)]:
-                obj = calcPointsObjective(axis, points, points_real[valid])*mult
-                if obj==-1:
-                    cur_obj.append(50)
-                else:
-                    cur_obj.append(obj)
-
             ret = [0,0,0]
-            for i in range(1, projs.shape[1]):
-                proj = projs[:,i]
-                (p,v), proj = trackFeatures(proj, data_real, config), proj
-                points = normalize_points(p, proj)
-                valid = v==1
-                points = points[valid]
-                part = 0
-                axis, mult = [(-1,1),(-2,1),(-3,1)][i-1]
-                obj = calcPointsObjective(axis, points, points_real[valid])*mult
-                if obj==-1:
-                    obj = 50
-
-                ret[i-1] = (obj-cur_obj[i-1])*0.5
+            for j in range(3):
+                i = j*4+1
+                def calc_obj(i):
+                    proj = projs[:,i]
+                    (p,v), proj = trackFeatures(proj, data_real, config), proj
+                    points = normalize_points(p, proj)
+                    valid = v==1
+                    points = points[valid]
+                    axis, mult = [(-1,1),(-2,1),(-3,1)][j]
+                    obj = calcPointsObjective(axis, points, points_real[valid])*mult
+                    if obj==-1:
+                        obj = 50
+                    return obj
+                
+                h1 = calc_obj(i)
+                h_1 = calc_obj(i+1)
+                h2 = calc_obj(i+2)
+                h_2 = calc_obj(i+3)
+                ret[j] = (-h2+8*h1-8*h_1+h_2)/12
 
             return ret
 
@@ -1289,19 +1356,19 @@ def bfgs_trans(cur, reg_config, c):
         #cur = correctZ(cur, config)
         #cur = correctXY(cur, config)
         
-        eps = [1, 1, 1]
+        eps = [0.5, 0.5, 5]
         ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 30, 'eps': eps})
+                                      options={'maxiter': 50, 'eps': eps})
 
-        eps = [0.25, 0.25, 0.25]
+        eps = [0.25, 0.25, 0.5]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 30, 'eps': eps})
-        eps = [0.05, 0.05, 0.05]
+                                      options={'maxiter': 60, 'eps': eps})
+        eps = [0.05, 0.05, 0.25]
         ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
                                       jac=gradf,
-                                      options={'maxiter': 30, 'eps': eps})
+                                      options={'maxiter': 70, 'eps': eps})
 
         cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
 
@@ -1313,12 +1380,12 @@ def bfgs_trans(cur, reg_config, c):
     
     else:
         
-        config["GIoldold"] = GI(real_img, real_img)
+        config["GIoldold"] = None
 
         def f(x, cur, eps):
             cur_x = applyTrans(cur, x[0], x[1], x[2])
             proj = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
-            ret = 1.0-calcGIObjective(real_img, proj, config)
+            ret = calcGIObjective(real_img, proj, config)
             #print(ret)
             return ret
         
@@ -1326,33 +1393,101 @@ def bfgs_trans(cur, reg_config, c):
             cur_x = applyTrans(cur, x[0], x[1], x[2])
             dvec = [cur_x]
             dvec.append(applyTrans(cur_x, eps[0], 0, 0))
+            #dvec.append(applyTrans(cur_x, -eps[0], 0, 0))
+            #dvec.append(applyTrans(cur_x, 2*eps[0], 0, 0))
+            #dvec.append(applyTrans(cur_x, 2*-eps[0], 0, 0))
             dvec.append(applyTrans(cur_x, 0, eps[1], 0))
+            #dvec.append(applyTrans(cur_x, 0, -eps[1], 0))
+            #dvec.append(applyTrans(cur_x, 0, 2*eps[1], 0))
+            #dvec.append(applyTrans(cur_x, 0, 2*-eps[1], 0))
             dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
+            #dvec.append(applyTrans(cur_x, 0, 0, -eps[2]))
+            #dvec.append(applyTrans(cur_x, 0, 0, 2*eps[2]))
+            #dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[2]))
             dvec = np.array(dvec)
             projs = Projection_Preprocessing(Ax(dvec))
 
-            h0 = 1-calcGIObjective(real_img, projs[:,0], config)
+            #import SimpleITK as sitk
+            #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/jac.nrrd")
+            #exit()
+
+            h0 = calcGIObjective(real_img, projs[:,0], config)
             ret = [0,0,0]
             for i in range(1, projs.shape[1]):
-                ret[i-1] = (1-calcGIObjective(real_img, projs[:,i], config)-h0) * 0.5
+            #for j in range(3):
+            #    i = j*4+1
+                ret[i-1] = (calcGIObjective(real_img, projs[:,i], config)-h0) * 0.5
+            #    h1 = (calcGIObjective(real_img, projs[:,i], config))
+            #    h_1 = (calcGIObjective(real_img, projs[:,i+1], config))
+            #    h2 = (calcGIObjective(real_img, projs[:,i+2], config))
+            #    h_2 = (calcGIObjective(real_img, projs[:,i+3], config))
+            #    ret[j] = (-h2+8*h1-8*h_1+h_2)/12
             
             #print(ret)
 
             return ret
 
-        eps = [1, 1, 1]
-        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
-                                      #jac=gradf,
-                                      options={'maxiter': 40, 'eps': eps})
-        eps = [0.5, 0.5, 0.5]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                      #jac=gradf,
-                                      options={'maxiter': 40, 'eps': eps})
 
-        eps = [0.05, 0.05, 0.05]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                      #jac=gradf,
-                                      options={'maxiter': 40})
+        if c==2:
+            eps = [1, 1, 5]
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps})
+
+            eps = [0.5, 0.5, 1]
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps})
+            
+            eps = [0.1, 0.1, 0.5]
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps})
+
+            eps = [0.05, 0.05, 0.1]
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps})
+        elif c==-2:
+            eps = [1, 1, 5]
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 150, 'eps': eps})
+
+            eps = [0.5, 0.5, 1]
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 150, 'eps': eps})
+        elif c==-3:
+            eps = [0.5, 0.5, 2]
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='BFGS',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps})
+
+            eps = [0.05, 0.05, 0.1]
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='BFGS',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps})
+        elif c==-4:
+            eps = [0.5, 0.5, 2]
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 10, 'eps': eps})
+
+            eps = [0.05, 0.05, 0.1]
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 10, 'eps': eps})
+        elif c==-5:
+            eps = [0.5, 0.5, 2]
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps})
+
+            eps = [0.25, 0.25, 0.5]
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps})
 
         cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
 
