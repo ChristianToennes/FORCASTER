@@ -1033,6 +1033,45 @@ def get_proj_paths():
     ]
     return projs
 
+def calc_images_matlab(name, ims, real_image, detector_shape):
+    vecs = utils.read_matlab_vecs(name)
+    from scipy.io import loadmat
+    runtime = loadmat("runtime")['runtime'][0,0]
+    
+    Ax = utils.Ax_vecs_astra(real_image.shape, detector_shape, real_image)
+    
+    sino = sitk.GetImageFromArray(np.swapaxes(ims, 0,1))
+    sitk.WriteImage(sino, os.path.join("recos", "forcast_matlab_"+name+"_sino-input.nrrd"))
+    del sino
+
+    sino = Ax(vecs)
+    #evalPerformance(np.swapaxes(sino, 0, 1), ims, runtime, name)
+    sino = sitk.GetImageFromArray(sino)
+    sitk.WriteImage(sino, os.path.join("recos", "forcast_matlab_"+name+"_sino-output.nrrd"))
+    del sino
+    
+    if True:
+        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
+        rec = utils.FDK_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1))
+        mask = create_circular_mask(rec.shape)
+        rec = rec*mask
+        del mask
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_matlab_"+name+"_reco-output.nrrd"), True)
+        del rec
+    if False:
+        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
+        rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
+        mask = create_circular_mask(rec.shape)
+        rec = rec*mask
+        del mask
+        #rec = np.swapaxes(rec, 0, 2)
+        #rec = np.swapaxes(rec, 1,2)
+        #rec = rec[::-1, ::-1]
+        rec = sitk.GetImageFromArray(rec)*100
+        sitk.WriteImage(rec, os.path.join("recos", "forcast_matlab_"+name+"_reco-output_sirt.nrrd"))
+        del rec
+
 def reg_real_data():
     projs = get_proj_paths()
 
