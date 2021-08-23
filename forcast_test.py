@@ -317,6 +317,21 @@ def read_dicoms(indir, max_ims=np.inf):
 
     return ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods
 
+def reg_all(ims, params, config, c=0):
+    noise = config["noise"]
+    real_img = cal.Projection_Preprocessing(ims)
+    config["real_img"] = real_img
+    config["noise"] = (noise[0], noise[1])
+    try:
+        cur, noise = cal.bfgs_trans_all(params, config, c)
+    except Exception as ex:
+        print(ex)
+        raise
+    
+    corrs = np.array(cur)
+    config["noise"] = noise
+    return corrs
+
 def reg_rough(ims, params, config, c=0):
     corrs = [None]*len(params)
     noise = config["noise"]
@@ -775,10 +790,11 @@ def reg_and_reco(ims, in_params, config):
         print_stats(config["noise"][1])
         
     perftime = time.perf_counter()
-    if mp.cpu_count() > 1:
+    if False and mp.cpu_count() > 1:
         corrs = reg_rough_parallel(ims, params, config, method)
     else:
-        corrs = reg_rough(ims, params, config, method)
+        #corrs = reg_rough(ims, params, config, method)
+        corrs = reg_all(ims, params, config, method)
 
     vecs = Ax.create_vecs(corrs)
     write_vectors(name+"-rough-corr", corrs)
@@ -1068,13 +1084,14 @@ def reg_real_data():
             params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
             params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
 
-            #for i, (α,β,γ) in enumerate(angles_noise):
-            #    params[i] = cal.applyRot(params[i], -α, -β, -γ)
+            if False:
+                for i, (α,β,γ) in enumerate(angles_noise):
+                    params[i] = cal.applyRot(params[i], -α, -β, -γ)
 
-            for i, (x,y) in enumerate(trans_noise):
-                params[i] = cal.applyTrans(params[i], x, y, 0)
-            for i, z in enumerate(zoom_noise):
-                params[i] = cal.applyTrans(params[i], 0, 0, 1-z)
+                for i, (x,y) in enumerate(trans_noise):
+                    params[i] = cal.applyTrans(params[i], x, y, 0)
+                for i, z in enumerate(zoom_noise):
+                    params[i] = cal.applyTrans(params[i], 0, 0, 1-z)
 
             projs = Ax(params)
             #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
@@ -1083,10 +1100,12 @@ def reg_real_data():
             i0s = [i0_est(ims_un[i], projs[:,i]) for i in range(ims_un.shape[0])]
             ims = -np.log(ims_un/np.mean(i0s))
             
+            #calc_images_matlab("genA_trans", ims, real_image, detector_shape)
+
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
 
-            #for method in [3,4,5,0,6]:
-            for method in [0]:
+            #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
+            for method in [-24]:
                 config["name"] = name + str(method)
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))
