@@ -177,8 +177,8 @@ def normalize_points(points, img):
         return np.array([[1000.0*p.pt[0]/xdim, 1000.0*p.pt[1]/ydim] for p in points])
     else:
         ret = np.array(points)
-        ret[:,0] *= 1000.0/xdim
-        ret[:,1] *= 1000.0/ydim
+        ret[...,0] *= 1000.0/xdim
+        ret[...,1] *= 1000.0/ydim
         return ret
 
 def unnormalize_points(points, img):
@@ -221,14 +221,14 @@ def GI__(old_img, new_img):
     
     return np.sum(w*np.min(np.array([absp1, absp2]), axis=0))
 
-
+gi_skip = 2
 def GI(new_img, p1, absp1):
-    p2 = np.array(np.meshgrid(new_img[1:,:]-new_img[:-1,:], new_img[:,1:]-new_img[:,:-1], copy=False)).reshape(2,-1)
-    absp2 = np.sqrt(p2[0]*p2[0] + p2[1]*p2[1], dtype=float)
+    p2 = np.array(np.meshgrid(new_img[1::gi_skip,::gi_skip]-new_img[:-1:gi_skip,::gi_skip], new_img[::gi_skip,1::gi_skip]-new_img[::gi_skip,:-1:gi_skip], copy=False)).reshape(2,-1)
+    absp2 = np.sqrt(p2[0]*p2[0] + p2[1]*p2[1], dtype=np.float32)
     #absp2 = np.linalg.norm(p2, axis=0)
     absGrad = absp1*absp2
     gradDot = p1[0]*p2[0] + p1[1]*p2[1]
-    f = absGrad>1e-5
+    f = absGrad!=0
     gradDot = gradDot*f
     absGrad[~f] = 1
     
@@ -258,21 +258,21 @@ gis = []
 def calcGIObjective(old_img, new_img, i, cur, config):
     for key in gis[i].keys():
         k=np.array(key)
-        if np.linalg.norm(k[0]-cur[0]) < 0.1 and np.linalg.norm(k[1]-cur[1]) < 0.1 and np.linalg.norm(k[2]-cur[2]) < 0.1:
+        if np.linalg.norm(k[0]-cur[0]) < 0.01 and np.linalg.norm(k[1]-cur[1]) < 0.01 and np.linalg.norm(k[2]-cur[2]) < 0.01:
             return gis[i][key]
 
-    if "GIoldold" not in config or config["GIoldold"] is None:
+    if config["GIoldold"][i] is None:
         #p1 = np.meshgrid(old_img[1::s,::s]-old_img[:-1:s,::s], old_img[::s,1::s]-old_img[::s,:-1:s], copy=False)
-        p1 = np.array(np.meshgrid(old_img[1:,:]-old_img[:-1,:], old_img[:,1:]-old_img[:,:-1], copy=False)).reshape(2,-1)
-        config["p1"] = p1
+        p1 = np.array(np.meshgrid(old_img[1::gi_skip,::gi_skip]-old_img[:-1:gi_skip,::gi_skip], old_img[::gi_skip,1::gi_skip]-old_img[::gi_skip,:-1:gi_skip], copy=False)).reshape(2,-1)
+        config["p1"][i] = p1
         #config["absp1"] = np.linalg.norm([p1[0].flatten(),p1[1].flatten()], axis=0)
-        config["absp1"] = np.sqrt(p1[0]*p1[0] + p1[1]*p1[1],dtype=float)
-        config["GIoldold"] = GI(old_img, config["p1"], config["absp1"])
+        config["absp1"][i] = np.sqrt(p1[0]*p1[0] + p1[1]*p1[1],dtype=np.float32)
+        config["GIoldold"][i] = GI(old_img, config["p1"][i], config["absp1"][i])
     #perftime = time.perf_counter()
-    GIoldnew = GI(new_img, config["p1"], config["absp1"])
+    GIoldnew = GI(new_img, config["p1"][i], config["absp1"][i])
     #print("GI", time.perf_counter()-perftime)
     #return GIoldnew / config["GIoldold"]
-    ngi = config["GIoldold"] / (GIoldnew+1e-8)
+    ngi = config["GIoldold"][i] / (GIoldnew+1e-8)
     gis[i][tuple((tuple(c) for c in cur))] = ngi
     return ngi
 
@@ -1772,7 +1772,7 @@ def bfgs_trans_all(curs, reg_config, c):
     global gis
     config = dict(default_config)
     config.update(reg_config)
-    config["my"] = c==1
+    config["my"] = c==-21
 
     real_img = config["real_img"]
     noise = config["noise"]
@@ -1788,100 +1788,209 @@ def bfgs_trans_all(curs, reg_config, c):
 
     if config["my"]:
         if "data_real" not in config or config["data_real"] is None:
-            config["data_real"] = findInitialFeatures(real_img, config)
+            real_data = []
+            for img in real_img:
+                real_data.append(findInitialFeatures(img, config))
+            config["data_real"] = np.array(real_data)
         data_real = config["data_real"]
-        points_real = normalize_points(data_real[0], real_img)
-        def f(x, cur, eps):
-            cur_x = applyTrans(cur, x[0], x[1], x[2])
-            proj = Projection_Preprocessing(Ax(np.array([cur_x])))[:,0]
+        points_real = normalize_points(data_real[...,0], real_img)
 
-            (p,v), proj = trackFeatures(proj, data_real, config), proj
-            points = normalize_points(p, proj)
-            valid = v==1
-            points = points[valid]
+        def f(x, curs, eps):
+            perftime = time.perf_counter()
+            cur_x = []
+            for i, cur in enumerate(curs):
+                pos = i*3
+                cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
+            cur_x = np.array(cur_x)
+            proj = Projection_Preprocessing(Ax(cur_x))
             ret = 0
-            for axis, mult in [(-1,1),(-2,1),(-3,3)]:
-                obj = calcPointsObjective(axis, points, points_real[valid])
-                if obj==-1:
-                    ret += 50*mult
-                else:
-                    ret += obj*mult
+
+            for i in range(len(cur_x)):
+                (p,v) = trackFeatures(proj[:,i], data_real[i], config)
+                points = normalize_points(p, proj[:,i])
+                valid = v==1
+                points = points[valid]
+                for axis, mult in [(-1,1),(-2,1),(-3,1)]:
+                    obj = calcPointsObjective(axis, points, points_real[i][valid])
+                    if obj==-1:
+                        ret += 50*mult
+                    else:
+                        ret += obj*mult
+            print("obj", time.perf_counter()-perftime)
             return ret
         
-        def gradf(x, cur, eps):
-            cur_x = applyTrans(cur, x[0], x[1], x[2])
-            dvec = [cur_x]
-            dvec.append(applyTrans(cur_x, eps[0], 0, 0))
-            dvec.append(applyTrans(cur_x, -eps[0], 0, 0))
-            dvec.append(applyTrans(cur_x, 2*eps[0], 0, 0))
-            dvec.append(applyTrans(cur_x, 2*-eps[0], 0, 0))
-            dvec.append(applyTrans(cur_x, 0, eps[1], 0))
-            dvec.append(applyTrans(cur_x, 0, -eps[1], 0))
-            dvec.append(applyTrans(cur_x, 0, 2*eps[1], 0))
-            dvec.append(applyTrans(cur_x, 0, 2*-eps[1], 0))
-            dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
-            dvec.append(applyTrans(cur_x, 0, 0, -eps[2]))
-            dvec.append(applyTrans(cur_x, 0, 0, 2*eps[2]))
-            dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[2]))
+        def gradf(x, curs, eps):
+            perftime = time.perf_counter()
+            dvec = []
+            for i, cur in enumerate(curs):
+                pos = i*3
+                cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
+                dvec.append(cur_x)
+                dvec.append(applyTrans(cur_x, eps[0], 0, 0))
+                #dvec.append(applyTrans(cur_x, -eps[0], 0, 0))
+                #dvec.append(applyTrans(cur_x, 2*eps[0], 0, 0))
+                #dvec.append(applyTrans(cur_x, 2*-eps[0], 0, 0))
+                dvec.append(applyTrans(cur_x, 0, eps[1], 0))
+                #dvec.append(applyTrans(cur_x, 0, -eps[1], 0))
+                #dvec.append(applyTrans(cur_x, 0, 2*eps[1], 0))
+                #dvec.append(applyTrans(cur_x, 0, 2*-eps[1], 0))
+                dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
+                #dvec.append(applyTrans(cur_x, 0, 0, -eps[2]))
+                #dvec.append(applyTrans(cur_x, 0, 0, 2*eps[2]))
+                #dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[2]))
             dvec = np.array(dvec)
             projs = Projection_Preprocessing(Ax(dvec))
 
-            ret = [0,0,0]
-            for j in range(3):
-                i = j*4+1
-                def calc_obj(i):
-                    proj = projs[:,i]
-                    (p,v), proj = trackFeatures(proj, data_real, config), proj
-                    points = normalize_points(p, proj)
+            ret = [0,0,0]*len(curs)
+
+            def calc_obj(i, j, k):
+                proj = projs[:,j]
+                (p,v) = trackFeatures(proj, data_real[i], config)
+                points = normalize_points(p, proj)
+                valid = v==1
+                points = points[valid]
+                axis, mult = [(-1,1),(-2,1),(-3,1)][k]
+                obj = calcPointsObjective(axis, points, points_real[i][valid])*mult
+                if obj==-1:
+                    obj = 50
+                return obj
+
+            for i in range(len(curs)):
+                j = i*4
+                h0 = [calc_obj(i, j, k) for k in range(3)]
+                for k in range(3):
+                    ret[i*3+k] = (calc_obj(i, j, k)-h0[k]) * 0.5
+
+            #for j in range(3):
+            #    i = j*4+1
+            #    def calc_obj(i):
+            #        proj = projs[:,i]
+            #        (p,v), proj = trackFeatures(proj, data_real, config), proj
+            #        points = normalize_points(p, proj)
+            #        valid = v==1
+            #        points = points[valid]
+            #        axis, mult = [(-1,1),(-2,1),(-3,1)][j]
+            #        obj = calcPointsObjective(axis, points, points_real[valid])*mult
+            #        if obj==-1:
+            #            obj = 50
+            #        return obj
+            #    
+            #    h1 = calc_obj(i)
+            #    h_1 = calc_obj(i+1)
+            #    h2 = calc_obj(i+2)
+            #    h_2 = calc_obj(i+3)
+            #    ret[j] = (-h2+8*h1-8*h_1+h_2)/12
+            print("grad", time.perf_counter()-perftime)
+            return ret
+        
+        def f_(x, curs, eps):
+            perftime = time.perf_counter()
+            cur_x = []
+            for i, cur in enumerate(curs):
+                pos = i*3
+                cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
+            cur_x = np.array(cur_x)
+            proj = Projection_Preprocessing(Ax(cur_x))
+            ret = 0
+
+            q = queue.Queue()
+            def t_obj(q,start,end):
+                for i in range(start,end):
+                    (p,v) = trackFeatures(proj[:,i], data_real[i], config)
+                    points = normalize_points(p, proj[:,i])
                     valid = v==1
                     points = points[valid]
-                    axis, mult = [(-1,1),(-2,1),(-3,1)][j]
-                    obj = calcPointsObjective(axis, points, points_real[valid])*mult
-                    if obj==-1:
-                        obj = 50
-                    return obj
-                
-                h1 = calc_obj(i)
-                h_1 = calc_obj(i+1)
-                h2 = calc_obj(i+2)
-                h_2 = calc_obj(i+3)
-                ret[j] = (-h2+8*h1-8*h_1+h_2)/12
+                    ret = 0
+                    for axis, mult in [(-1,1),(-2,1),(-3,1)]:
+                        obj = calcPointsObjective(axis, points, points_real[i][valid])
+                        if obj==-1:
+                            ret += 50*mult
+                        else:
+                            ret += obj*mult
+                    q.put(ret)
 
+            for u in np.array_split(list(range(len(curs))), 4):
+                t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
+                t.daemon = True
+                t.start()
+            for _ in range(proj.shape[1]):
+                ret += q.get()
+            
+            print("obj", time.perf_counter()-perftime)
             return ret
-
-        #cur = correctXY(cur, config)
-        #cur = correctZ(cur, config)
-        #cur = correctXY(cur, config)
         
-        eps = [0.5, 0.5, 5]
-        ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 50, 'eps': eps})
+        def gradf_(x, curs, eps):
+            perftime = timpe.perf_counter()
+            dvec = []
+            for i, cur in enumerate(curs):
+                pos = i*3
+                cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
+                dvec.append(cur_x)
+                dvec.append(applyTrans(cur_x, eps[0], 0, 0))
+                dvec.append(applyTrans(cur_x, 0, eps[1], 0))
+                dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
+            dvec = np.array(dvec)
+            projs = Projection_Preprocessing(Ax(dvec))
 
-        eps = [0.25, 0.25, 0.5]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 60, 'eps': eps})
-        eps = [0.05, 0.05, 0.25]
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 70, 'eps': eps})
+            ret = [0,0,0]*len(curs)
 
-        cur = applyTrans(cur, ret.x[0], ret.x[1], ret.x[2])
+            def calc_obj(i, j, k):
+                proj = projs[:,j]
+                (p,v) = trackFeatures(proj, data_real[i], config)
+                points = normalize_points(p, proj)
+                valid = v==1
+                points = points[valid]
+                axis, mult = [(-1,1),(-2,1),(-3,1)][k]
+                obj = calcPointsObjective(axis, points, points_real[i][valid])*mult
+                if obj==-1:
+                    obj = 50
+                return obj
 
-        #cur = correctXY(cur, config)
-        #cur = correctZ(cur, config)
-        #cur = correctXY(cur, config)
+            ret = [0,0,0]*len(curs)
+            
+            q = queue.Queue()
+            def t_obj(q,start,end):
+                for i in range(start,end):
+                    j = i*4
+                    h0 = [calc_obj(i, j, k) for k in range(3)]
+                    for k in range(3):
+                        q.put((i*3+k, (calc_obj(i, j, k)-h0[k]) * 0.5))
+
+            for u in np.array_split(list(range(real_img.shape[0])), 4):
+                t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
+                t.daemon = True
+                t.start()
+
+            for _ in range(len(ret)):
+                i, res = q.get()
+                ret[i] = res
+                
+            print("grad", time.perf_counter()-perftime)
+            return ret
         
-        config["trans_noise"] += ret.x
-    
+        eps = [0.5, 0.5, 5] * len(curs)
+        ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 10, 'eps': eps})
+
+        eps = [0.25, 0.25, 0.5] * len(curs)
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 10, 'eps': eps})
+        eps = [0.05, 0.05, 0.25] * len(curs)
+        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                      jac=gradf,
+                                      options={'maxiter': 10, 'eps': eps})
+
     else:
         
-        config["GIoldold"] = None
+        config["GIoldold"] = [None]*len(curs)
+        config["absp1"] = [None]*len(curs)
+        config["p1"] = [None]*len(curs)
         gis = [{} for _ in range(len(curs))]
 
         def f(x, curs, eps):
-            perftime = time.perf_counter() # 84.5 s
+            perftime = time.perf_counter() # 100 s / 50 s
             ret = 0
             cur_x = []
             for i, cur in enumerate(curs):
@@ -1893,11 +2002,10 @@ def bfgs_trans_all(curs, reg_config, c):
             q = queue.Queue()
             def t_obj(q,start,end):
                 for i in range(start,end):
-                    if i < real_img.shape[0]:
-                        q.put(calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config))
+                    q.put(calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config))
 
-            for u in range(0, proj.shape[1], proj.shape[1]//4):
-                t = threading.Thread(target=t_obj, args = (q,u, u+proj.shape[1]//4))
+            for u in np.array_split(list(range(len(curs))), 4):
+                t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
                 t.daemon = True
                 t.start()
             for _ in range(proj.shape[1]):
@@ -1914,14 +2022,14 @@ def bfgs_trans_all(curs, reg_config, c):
                 pos = i*3
                 cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
             proj = Projection_Preprocessing(Ax(np.array(cur_x)))
-            for i in range(proj.shape[1]):
+            for i in range(len(curs)):
                 ret += calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config)
             
-            print("obj", time.perf_counter()-perftime)
+            print("obj_", time.perf_counter()-perftime)
             return ret
 
         def gradf(x, curs, eps):
-            perftime = time.perf_counter() # 244
+            perftime = time.perf_counter() # 150 s
             dvec = []
             for i, cur in enumerate(curs):
                 pos = i*3
@@ -1934,30 +2042,34 @@ def bfgs_trans_all(curs, reg_config, c):
             projs = Projection_Preprocessing(Ax(dvec))
 
             ret = [0,0,0]*len(curs)
+            ret_set = np.zeros(len(ret), dtype=bool)
             
             q = queue.Queue()
             def t_obj(q,start,end):
                 for j in range(start,end):
-                    if j < real_img.shape[0]:
-                        h0 = calcGIObjective(real_img[j], projs[:,j*4], j, dvec[j*4], config)
-                        for i in range(3):
-                            q.put((j*3+i, (calcGIObjective(real_img[j], projs[:,j*4+i+1], j, dvec[j*4+i+1], config)-h0) * 0.5))
+                    pos = j*4
+                    h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
+                    for i in range(3):
+                        q.put((j*3+i, (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5))
 
-            ts = []
-            for u in range(0, len(curs), len(curs)//4):
-                ts.append(threading.Thread(target=t_obj, args = (q,u, u+len(curs)//4)))
-                ts[-1].daemon = True
-                ts[-1].start()
+            for u in np.array_split(list(range(real_img.shape[0])), 4):
+                t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
+                t.daemon = True
+                t.start()
 
             for _ in range(len(ret)):
                 i, res = q.get()
                 ret[i] = res
+                ret_set[i] = True
+            
+            if not ret_set.all():
+                print("not all grad elements were set")
 
             print("grad", time.perf_counter()-perftime)
             return ret
 
         def gradf_(x, curs, eps):
-            perftime = time.perf_counter() # 917 s
+            perftime = time.perf_counter() # 525 s
             dvec = []
             for i, cur in enumerate(curs):
                 pos = i*3
@@ -1985,9 +2097,9 @@ def bfgs_trans_all(curs, reg_config, c):
             ret = [0,0,0]*len(curs)
             for j in range(len(curs)):
                 pos = j*4
-                h0 = calcGIObjective(real_img[j], projs[:,pos], config)
+                h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
                 for i in range(3):
-                    ret[j*3+i] = (calcGIObjective(real_img[j], projs[:,pos+i+1], config)-h0) * 0.5
+                    ret[j*3+i] = (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5
                 #    h1 = (calcGIObjective(real_img, projs[:,i], config))
                 #    h_1 = (calcGIObjective(real_img, projs[:,i+1], config))
                 #    h2 = (calcGIObjective(real_img, projs[:,i+2], config))
@@ -2063,13 +2175,14 @@ def bfgs_trans_all(curs, reg_config, c):
 
         else:
             print("no method selected", c)
-    ret = []
+    
+    res = []
     for i, cur in enumerate(curs):
-        ret.append(applyTrans(cur, ret.x[i*4+0], ret.x[i*4+1], ret.x[i*4+2]))
+        res.append(applyTrans(cur, ret.x[i*3+0], ret.x[i*3+1], ret.x[i*3+2]))
 
     #config["trans_noise"] += ret.x[:3]
-    trans_noise += ret.x
+    trans_noise += res.x
 
     #reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 
-    return np.array(ret), (trans_noise, angles_noise)
+    return np.array(res), (trans_noise, angles_noise)
