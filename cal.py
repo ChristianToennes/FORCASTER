@@ -221,21 +221,29 @@ def GI__(old_img, new_img):
     
     return np.sum(w*np.min(np.array([absp1, absp2]), axis=0))
 
-gi_skip = 2
+gi_skip = 1
+gi_mask = None
+gi_shape = None
 def GI(new_img, p1, absp1):
     p2 = np.array(np.meshgrid(new_img[1::gi_skip,::gi_skip]-new_img[:-1:gi_skip,::gi_skip], new_img[::gi_skip,1::gi_skip]-new_img[::gi_skip,:-1:gi_skip], copy=False)).reshape(2,-1)
-    absp2 = np.sqrt(p2[0]*p2[0] + p2[1]*p2[1], dtype=np.float32)
+    absp2 = np.sqrt(p2[0]*p2[0] + p2[1]*p2[1], dtype=np.float16)
     #absp2 = np.linalg.norm(p2, axis=0)
     absGrad = absp1*absp2
+    minabs = np.min(np.array([absp1, absp2]), axis=0)
+    del absp2
     gradDot = p1[0]*p2[0] + p1[1]*p2[1]
+    del p2
     f = absGrad!=0
     gradDot = gradDot*f
     absGrad[~f] = 1
     
     w = 0.5*(gradDot / absGrad + 1)
-    minabs = np.min(np.array([absp1, absp2]), axis=0)
+    del gradDot
+    del absGrad
     r = w*minabs
-    ret = np.sum(r)
+    del w
+    ret = np.sum(r, dtype=np.float32)
+    del r
     return ret
 
 def _GI(old_img, new_img):
@@ -255,21 +263,31 @@ def _GI(old_img, new_img):
 
 gis = []
 
-def calcGIObjective(old_img, new_img, i, cur, config):
+def calcGIObjective(old_img_big, new_img_big, i, cur, config):
+    global gi_mask, gi_shape, gi_skip
+    if gi_mask is None:
+        gi_mask = np.zeros_like(old_img_big, dtype=bool)
+        b1 = old_img_big.shape[0]//3
+        b2 = old_img_big.shape[1]//3
+        gi_mask[b1:-b1,b2:-b2] = True
+        gi_shape = (old_img_big.shape[0]-b1-b1, old_img_big.shape[1]-b2-b2)
+
+    old_img = old_img_big[gi_mask].reshape(gi_shape)
+    new_img = new_img_big[gi_mask].reshape(gi_shape)
     for key in gis[i].keys():
         k=np.array(key)
         if np.linalg.norm(k[0]-cur[0]) < 0.01 and np.linalg.norm(k[1]-cur[1]) < 0.01 and np.linalg.norm(k[2]-cur[2]) < 0.01:
             return gis[i][key]
 
+    p1 = np.array(np.meshgrid(old_img[1::gi_skip,::gi_skip]-old_img[:-1:gi_skip,::gi_skip], old_img[::gi_skip,1::gi_skip]-old_img[::gi_skip,:-1:gi_skip], copy=False)).reshape(2,-1)
     if config["GIoldold"][i] is None:
         #p1 = np.meshgrid(old_img[1::s,::s]-old_img[:-1:s,::s], old_img[::s,1::s]-old_img[::s,:-1:s], copy=False)
-        p1 = np.array(np.meshgrid(old_img[1::gi_skip,::gi_skip]-old_img[:-1:gi_skip,::gi_skip], old_img[::gi_skip,1::gi_skip]-old_img[::gi_skip,:-1:gi_skip], copy=False)).reshape(2,-1)
-        config["p1"][i] = p1
+        #config["p1"][i] = p1
         #config["absp1"] = np.linalg.norm([p1[0].flatten(),p1[1].flatten()], axis=0)
-        config["absp1"][i] = np.sqrt(p1[0]*p1[0] + p1[1]*p1[1],dtype=np.float32)
-        config["GIoldold"][i] = GI(old_img, config["p1"][i], config["absp1"][i])
+        config["absp1"][i] = np.sqrt(p1[0]*p1[0] + p1[1]*p1[1],dtype=np.float16)
+        config["GIoldold"][i] = GI(old_img, p1, config["absp1"][i])
     #perftime = time.perf_counter()
-    GIoldnew = GI(new_img, config["p1"][i], config["absp1"][i])
+    GIoldnew = GI(new_img, p1, config["absp1"][i])
     #print("GI", time.perf_counter()-perftime)
     #return GIoldnew / config["GIoldold"]
     ngi = config["GIoldold"][i] / (GIoldnew+1e-8)
@@ -2181,7 +2199,7 @@ def bfgs_trans_all(curs, reg_config, c):
         res.append(applyTrans(cur, ret.x[i*3+0], ret.x[i*3+1], ret.x[i*3+2]))
 
     #config["trans_noise"] += ret.x[:3]
-    trans_noise += res.x
+    trans_noise += ret.x.reshape(trans_noise.shape)
 
     #reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 
