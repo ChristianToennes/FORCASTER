@@ -165,11 +165,16 @@ def findInitialFeatures(img, config):
     #print("findInitialFeatures", time.perf_counter()-perftime)
     return points, features
 
-def Projection_Preprocessing(proj):
+def Projection_Preprocessing(proj, alpha=0, beta=255):
+    proj = np.array(proj, dtype=np.float32)
+    mean = np.mean(proj)
+    std = np.std(proj)
+    return (proj-mean) / std
+
     if len(proj.shape) == 2:
-        return cv2.normalize(proj, None, 0, 255, cv2.NORM_MINMAX).astype('uint8')
+        return cv2.normalize(proj, None, alpha, beta, cv2.NORM_MINMAX).astype('uint8')
     else:
-        return np.swapaxes(np.array([cv2.normalize(proj[:,i], None, 0, 255, cv2.NORM_MINMAX).astype('uint8') for i in range(proj.shape[1])]), 0,1)
+        return np.swapaxes(np.array([cv2.normalize(proj[:,i], None, alpha, beta, cv2.NORM_MINMAX).astype('uint8') for i in range(proj.shape[1])]), 0,1)
 
 def normalize_points(points, img):
     xdim, ydim = img.shape
@@ -221,28 +226,28 @@ def GI__(old_img, new_img):
     
     return np.sum(w*np.min(np.array([absp1, absp2]), axis=0))
 
-gi_skip = 1
 gi_mask = None
 gi_shape = None
-def GI(new_img, p1, absp1):
-    p2 = new_img[1::gi_skip,::gi_skip]-new_img[:-1:gi_skip,::gi_skip], new_img[::gi_skip,1::gi_skip]-new_img[::gi_skip,:-1:gi_skip]
-    absp2 = np.sqrt(p2[0]*p2[0] + p2[1]*p2[1], dtype=np.float16)
-    absGrad = absp1*absp2
-    minabs = np.min(np.array([absp1, absp2]), axis=0)
-    del absp2
-    gradDot = p1[0]*p2[0] + p1[1]*p2[1]
-    del p2
+def GI(new_img, p1, absp1, gi_skip=1):
+    p2 = new_img[1::gi_skip,:-1:gi_skip]-new_img[:-1:gi_skip,:-1:gi_skip], new_img[:-1:gi_skip,1::gi_skip]-new_img[:-1:gi_skip,:-1:gi_skip]
+    absp2 = np.sqrt(p2[0]*p2[0] + p2[1]*p2[1], dtype=np.float32)
+    #absp2 = np.linalg.norm(p2, ord=2, axis=0)
+    absGrad = absp1[::gi_skip, ::gi_skip]*absp2
+    minabs = np.min(np.array([absp1[::gi_skip, ::gi_skip], absp2]), axis=0)
+    #del absp2
+    gradDot = p1[0][::gi_skip, ::gi_skip]*p2[0] + p1[1][::gi_skip, ::gi_skip]*p2[1]
+    #del p2
     f = absGrad!=0
     gradDot = gradDot*f
     absGrad[~f] = 1
     
     w = 0.5*(gradDot / absGrad + 1)
-    del gradDot
-    del absGrad
+    #del gradDot
+    #del absGrad
     r = w*minabs
-    del w
-    ret = np.sum(r)#, dtype=np.float32)
-    del r
+    #del w
+    ret = np.sum(r)
+    #del r
     return ret
 
 def _GI(old_img, new_img):
@@ -263,7 +268,7 @@ def _GI(old_img, new_img):
 gis = []
 
 def calcGIObjective(old_img_big, new_img_big, i, cur, config):
-    global gi_mask, gi_shape, gi_skip
+    global gi_mask, gi_shape
     if gi_mask is None:
         gi_mask = np.zeros_like(old_img_big, dtype=bool)
         b1 = old_img_big.shape[0]//4
@@ -273,22 +278,26 @@ def calcGIObjective(old_img_big, new_img_big, i, cur, config):
 
     old_img = old_img_big[gi_mask].reshape(gi_shape)
     new_img = new_img_big[gi_mask].reshape(gi_shape)
-    for key in gis[i].keys():
-        k=np.array(key)
-        if np.linalg.norm(k[0]-cur[0]) < 0.01 and np.linalg.norm(k[1]-cur[1]) < 0.01 and np.linalg.norm(k[2]-cur[2]) < 0.01:
-            return gis[i][key]
+    #if cur is not None:
+    #    for key in gis[i].keys():
+    #        k=np.array(key)
+    #        if np.linalg.norm(k[0]-cur[0]) < 0.01 and np.linalg.norm(k[1]-cur[1]) < 0.01 and np.linalg.norm(k[2]-cur[2]) < 0.01:
+    #            return gis[i][key]
 
-    p1 = old_img[1::gi_skip,::gi_skip]-old_img[:-1:gi_skip,::gi_skip], old_img[::gi_skip,1::gi_skip]-old_img[::gi_skip,:-1:gi_skip]
     if config["GIoldold"][i] is None:
-        config["absp1"][i] = np.sqrt(p1[0]*p1[0] + p1[1]*p1[1],dtype=np.float16)
-        config["GIoldold"][i] = GI(old_img, p1, config["absp1"][i])
+        p1 = old_img[1:,:-1]-old_img[:-1,:-1], old_img[:-1,1:]-old_img[:-1,:-1]
+        config["p1"][i] = p1
+        config["absp1"][i] = np.sqrt(p1[0]*p1[0] + p1[1]*p1[1],dtype=np.float32)
+        #config["absp1"][i] = np.linalg.norm(p1, ord=2, axis=0)
+        config["GIoldold"][i] = np.array([GI(old_img, p1, config["absp1"][i]), GI(old_img, p1, config["absp1"][i], 2), GI(old_img, p1, config["absp1"][i], 4)])
     #perftime = time.perf_counter()
-    GIoldnew = GI(new_img, p1, config["absp1"][i])
+    GIoldnew =np.array([GI(new_img, config["p1"][i], config["absp1"][i]),GI(new_img, config["p1"][i], config["absp1"][i], 2),GI(new_img, config["p1"][i], config["absp1"][i], 4)])
     #print("GI", time.perf_counter()-perftime)
     #return GIoldnew / config["GIoldold"]
-    ngi = config["GIoldold"][i] / (GIoldnew+1e-8)
-    gis[i][tuple((tuple(c) for c in cur))] = ngi
-    return ngi
+    ngi = np.sum(GIoldnew / config["GIoldold"][i]) / 3
+    #if cur is not None:
+    #    gis[i][tuple((tuple(c) for c in cur))] = ngi
+    return 1.0/(ngi+1e-10)
 
 def calcPointsObjective(comp, good_new, good_old):
     if comp==10:
@@ -2015,18 +2024,19 @@ def bfgs_trans_all(curs, reg_config, c):
 
             q = queue.Queue()
             def t_obj(q,start,end):
+                np.seterr("raise")
                 for i in range(start,end):
                     q.put(calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config))
 
-            for u in np.array_split(list(range(len(curs))), 4):
+            for u in np.array_split(list(range(len(curs))), 8):
                 t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
                 t.daemon = True
                 t.start()
             for _ in range(proj.shape[1]):
                 ret += q.get()
             
-            print("obj", time.perf_counter()-perftime)
-            return ret
+            #print("obj", time.perf_counter()-perftime, ret/len(curs))
+            return ret/len(curs)
 
         def f_(x, curs, eps):
             perftime = time.perf_counter() # 185.5 s
@@ -2060,26 +2070,27 @@ def bfgs_trans_all(curs, reg_config, c):
             
             q = queue.Queue()
             def t_obj(q,start,end):
+                np.seterr("raise")
                 for j in range(start,end):
                     pos = j*4
                     h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
                     for i in range(3):
                         q.put((j*3+i, (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5))
 
-            for u in np.array_split(list(range(real_img.shape[0])), 4):
+            for u in np.array_split(list(range(real_img.shape[0])), 8):
                 t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
                 t.daemon = True
                 t.start()
 
             for _ in range(len(ret)):
                 i, res = q.get()
-                ret[i] = res
+                ret[i] = res/len(curs)
                 ret_set[i] = True
             
             if not ret_set.all():
                 print("not all grad elements were set")
 
-            print("grad", time.perf_counter()-perftime)
+            #print("grad", time.perf_counter()-perftime)
             return ret
 
         def gradf_(x, curs, eps):
@@ -2147,45 +2158,44 @@ def bfgs_trans_all(curs, reg_config, c):
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps})
         elif c==-22:
-            eps = [1, 1, 5]
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 150, 'eps': eps})
-
-            eps = [0.5, 0.5, 1]
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 150, 'eps': eps})
-        elif c==-23:
-            eps = [0.5, 0.5, 2]
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='BFGS',
-                                        jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps})
-
-            eps = [0.05, 0.05, 0.1]
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='BFGS',
-                                        jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps})
-        elif c==-24:
-            eps = [0.5, 0.5, 2] * len(curs)
+            eps = [2, 2, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
-                                        options={'maxiter': 10, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.05, 0.05, 0.1] * len(curs)
+            eps = [0.5, 0.5, 1] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
-                                        options={'maxiter': 10, 'eps': eps, 'disp': True})
-        elif c==-25:
-            eps = [0.5, 0.5, 2]
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.25, 0.25, 0.5]
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
+        elif c==-23:
+            eps = [2, 2, 10] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps})
+                                        options={'maxiter': 200, 'eps': eps, 'disp': True})
+        elif c==-24:
+            eps = [2, 2, 10] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+
+            eps = [0.5, 0.5, 1] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+
+            eps = [0.1, 0.1, 0.5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+
+        elif c==-25:
+            eps = [0.1, 0.1, 0.5]*len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 30, 'disp': True,
+                                        #'eps': eps
+                                        })
 
         else:
             print("no method selected", c)

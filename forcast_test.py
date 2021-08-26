@@ -593,7 +593,7 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv'):
         return
     vals = []
     for i in range(len(real)):
-        vals.append(cal.calcGIObjective(real[i], output[i], {}))
+        vals.append(cal.calcGIObjective(real[i], output[i], 0, None, {"GIoldold":[None], "absp1":[None], "p1":[None]}))
     print("NGI: ", np.mean(vals))
 
     vals1 = []
@@ -737,11 +737,11 @@ def reg_and_reco(ims, in_params, config):
     if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
         sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
     if not perf:
-        sino = sitk.GetImageFromArray(np.swapaxes(ims,0,1))
+        sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims,0,1)))
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_projs-input.nrrd"), True)
         del sino
     if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
-        sino = Ax(params)
+        sino = cal.Projection_Preprocessing(Ax(params))
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-input.nrrd"), True)
         del sino
@@ -831,7 +831,7 @@ def reg_and_reco(ims, in_params, config):
         rec = sitk.GetImageFromArray(rec)*100
         sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-output.nrrd"), True)
         del rec
-        if True:
+        if False:
             reg_geo = Ax.create_geo(corrs)
             rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
             mask = create_circular_mask(rec.shape)
