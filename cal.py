@@ -269,7 +269,7 @@ gis = []
 
 def calcGIObjective(old_img_big, new_img_big, i, cur, config):
     global gi_mask, gi_shape
-    if gi_mask is None:
+    if gi_mask is None or gi_mask.shape != old_img_big.shape:
         gi_mask = np.zeros_like(old_img_big, dtype=bool)
         b1 = old_img_big.shape[0]//4
         b2 = old_img_big.shape[1]//4
@@ -349,7 +349,7 @@ def calcPointsObjective(comp, good_new, good_old):
             std = np.std(r)
             mean = np.mean(r)
             fd = r[np.bitwise_and(r<=mean+3*std, r>=mean-3*std)]
-            f = np.mean( np.abs(fd) )
+            f = np.abs( np.mean( fd ) )
         else: 
             f = -1
     elif comp==1:
@@ -362,7 +362,7 @@ def calcPointsObjective(comp, good_new, good_old):
             std = np.std(r)
             mean = np.mean(r)
             fd = r[np.bitwise_and(r<=mean+3*std, r>=mean-3*std)]
-            f = np.mean( np.abs(fd) )
+            f = np.abs ( np.mean( fd ) )
         else: 
             f = -1
     elif comp==2:
@@ -384,7 +384,7 @@ def calcPointsObjective(comp, good_new, good_old):
             std = np.std(d)
             mean = np.mean(d)
             fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
-            f = np.mean( np.abs(fd) )
+            f = np.abs( np.mean( fd ) )
         else:
             f = -1
     elif comp==22:
@@ -1795,7 +1795,7 @@ def bfgs_trans_all(curs, reg_config, c):
     global gis
     config = dict(default_config)
     config.update(reg_config)
-    config["my"] = c==-21
+    config["my"] = c<=-30
 
     real_img = config["real_img"]
     noise = config["noise"]
@@ -1809,321 +1809,153 @@ def bfgs_trans_all(curs, reg_config, c):
     config["angle_noise"] = np.array(angles_noise)
     config["trans_noise"] = np.array(trans_noise)
 
-    if config["my"]:
-        if "data_real" not in config or config["data_real"] is None:
-            real_data = []
-            for img in real_img:
-                real_data.append(findInitialFeatures(img, config))
-            config["data_real"] = np.array(real_data)
-        data_real = config["data_real"]
-        points_real = normalize_points(data_real[...,0], real_img)
+    def calc_obj(cur_proj, i, k):
+        (p,v) = trackFeatures(cur_proj, config["data_real"][i], config)
+        points = normalize_points(p, cur_proj)
+        valid = v==1
+        points = points[valid]
+        axis, mult = [(-1,1),(-2,1),(-3,1)][k]
+        obj = calcPointsObjective(axis, points, config["points_real"][i][valid])*mult
+        if obj<0:
+            obj = 50
+        return obj
 
-        def f(x, curs, eps):
-            perftime = time.perf_counter()
-            cur_x = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
-            cur_x = np.array(cur_x)
-            proj = Projection_Preprocessing(Ax(cur_x))
-            ret = 0
-
-            for i in range(len(cur_x)):
-                (p,v) = trackFeatures(proj[:,i], data_real[i], config)
-                points = normalize_points(p, proj[:,i])
-                valid = v==1
-                points = points[valid]
-                for axis, mult in [(-1,1),(-2,1),(-3,1)]:
-                    obj = calcPointsObjective(axis, points, points_real[i][valid])
-                    if obj==-1:
-                        ret += 50*mult
-                    else:
-                        ret += obj*mult
-            print("obj", time.perf_counter()-perftime)
-            return ret
+    def f(x, curs, eps):
+        perftime = time.perf_counter() # 100 s / 50 s
+        ret = 0
+        cur_x = []
+        for i, cur in enumerate(curs):
+            pos = i*3
+            cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
+        cur_x = np.array(cur_x)
+        proj = Projection_Preprocessing(Ax(cur_x))
         
-        def gradf(x, curs, eps):
-            perftime = time.perf_counter()
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
-                dvec.append(cur_x)
-                dvec.append(applyTrans(cur_x, eps[0], 0, 0))
-                #dvec.append(applyTrans(cur_x, -eps[0], 0, 0))
-                #dvec.append(applyTrans(cur_x, 2*eps[0], 0, 0))
-                #dvec.append(applyTrans(cur_x, 2*-eps[0], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[1], 0))
-                #dvec.append(applyTrans(cur_x, 0, -eps[1], 0))
-                #dvec.append(applyTrans(cur_x, 0, 2*eps[1], 0))
-                #dvec.append(applyTrans(cur_x, 0, 2*-eps[1], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
-                #dvec.append(applyTrans(cur_x, 0, 0, -eps[2]))
-                #dvec.append(applyTrans(cur_x, 0, 0, 2*eps[2]))
-                #dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[2]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
-
-            ret = [0,0,0]*len(curs)
-
-            def calc_obj(i, j, k):
-                proj = projs[:,j]
-                (p,v) = trackFeatures(proj, data_real[i], config)
-                points = normalize_points(p, proj)
-                valid = v==1
-                points = points[valid]
-                axis, mult = [(-1,1),(-2,1),(-3,1)][k]
-                obj = calcPointsObjective(axis, points, points_real[i][valid])*mult
-                if obj==-1:
-                    obj = 50
-                return obj
-
-            for i in range(len(curs)):
-                j = i*4
-                h0 = [calc_obj(i, j, k) for k in range(3)]
-                for k in range(3):
-                    ret[i*3+k] = (calc_obj(i, j, k)-h0[k]) * 0.5
-
-            #for j in range(3):
-            #    i = j*4+1
-            #    def calc_obj(i):
-            #        proj = projs[:,i]
-            #        (p,v), proj = trackFeatures(proj, data_real, config), proj
-            #        points = normalize_points(p, proj)
-            #        valid = v==1
-            #        points = points[valid]
-            #        axis, mult = [(-1,1),(-2,1),(-3,1)][j]
-            #        obj = calcPointsObjective(axis, points, points_real[valid])*mult
-            #        if obj==-1:
-            #            obj = 50
-            #        return obj
-            #    
-            #    h1 = calc_obj(i)
-            #    h_1 = calc_obj(i+1)
-            #    h2 = calc_obj(i+2)
-            #    h_2 = calc_obj(i+3)
-            #    ret[j] = (-h2+8*h1-8*h_1+h_2)/12
-            print("grad", time.perf_counter()-perftime)
-            return ret
-        
-        def f_(x, curs, eps):
-            perftime = time.perf_counter()
-            cur_x = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
-            cur_x = np.array(cur_x)
-            proj = Projection_Preprocessing(Ax(cur_x))
-            ret = 0
-
-            q = queue.Queue()
-            def t_obj(q,start,end):
-                for i in range(start,end):
-                    (p,v) = trackFeatures(proj[:,i], data_real[i], config)
-                    points = normalize_points(p, proj[:,i])
-                    valid = v==1
-                    points = points[valid]
-                    ret = 0
-                    for axis, mult in [(-1,1),(-2,1),(-3,1)]:
-                        obj = calcPointsObjective(axis, points, points_real[i][valid])
-                        if obj==-1:
-                            ret += 50*mult
-                        else:
-                            ret += obj*mult
-                    q.put(ret)
-
-            for u in np.array_split(list(range(len(curs))), 4):
-                t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
-                t.daemon = True
-                t.start()
-            for _ in range(proj.shape[1]):
-                ret += q.get()
-            
-            print("obj", time.perf_counter()-perftime)
-            return ret
-        
-        def gradf_(x, curs, eps):
-            perftime = timpe.perf_counter()
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
-                dvec.append(cur_x)
-                dvec.append(applyTrans(cur_x, eps[0], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[1], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
-
-            ret = [0,0,0]*len(curs)
-
-            def calc_obj(i, j, k):
-                proj = projs[:,j]
-                (p,v) = trackFeatures(proj, data_real[i], config)
-                points = normalize_points(p, proj)
-                valid = v==1
-                points = points[valid]
-                axis, mult = [(-1,1),(-2,1),(-3,1)][k]
-                obj = calcPointsObjective(axis, points, points_real[i][valid])*mult
-                if obj==-1:
-                    obj = 50
-                return obj
-
-            ret = [0,0,0]*len(curs)
-            
-            q = queue.Queue()
-            def t_obj(q,start,end):
-                for i in range(start,end):
-                    j = i*4
-                    h0 = [calc_obj(i, j, k) for k in range(3)]
-                    for k in range(3):
-                        q.put((i*3+k, (calc_obj(i, j, k)-h0[k]) * 0.5))
-
-            for u in np.array_split(list(range(real_img.shape[0])), 4):
-                t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
-                t.daemon = True
-                t.start()
-
-            for _ in range(len(ret)):
-                i, res = q.get()
-                ret[i] = res
-                
-            print("grad", time.perf_counter()-perftime)
-            return ret
-        
-        eps = [0.5, 0.5, 5] * len(curs)
-        ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 10, 'eps': eps})
-
-        eps = [0.25, 0.25, 0.5] * len(curs)
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 10, 'eps': eps})
-        eps = [0.05, 0.05, 0.25] * len(curs)
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 10, 'eps': eps})
-
-    else:
-        
-        config["GIoldold"] = [None]*len(curs)
-        config["absp1"] = [None]*len(curs)
-        config["p1"] = [None]*len(curs)
-        gis = [{} for _ in range(len(curs))]
-
-        def f(x, curs, eps):
-            perftime = time.perf_counter() # 100 s / 50 s
-            ret = 0
-            cur_x = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
-            cur_x = np.array(cur_x)
-            proj = Projection_Preprocessing(Ax(cur_x))
-
-            q = queue.Queue()
-            def t_obj(q,indices):
-                np.seterr("raise")
+        q = queue.Queue()
+        def t_obj(q,indices):
+            np.seterr("raise")
+            if config["my"]:
+                for i in indices:
+                    q.put(calc_obj(proj[:,i], i, i%3))
+            else:
                 for i in indices:
                     q.put(calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config))
+        
+        for u in np.array_split(list(range(len(curs))), 8):
+            t = threading.Thread(target=t_obj, args = (q, u))
+            t.daemon = True
+            t.start()
+        for _ in range(proj.shape[1]):
+            ret += q.get()
+        
+        #print("obj", time.perf_counter()-perftime, ret/len(curs))
+        return ret/len(curs)
 
-            for u in np.array_split(list(range(len(curs))), 8):
-                t = threading.Thread(target=t_obj, args = (q, u))
-                t.daemon = True
-                t.start()
-            for _ in range(proj.shape[1]):
-                ret += q.get()
-            
-            #print("obj", time.perf_counter()-perftime, ret/len(curs))
-            return ret/len(curs)
-
-        def f_(x, curs, eps):
-            perftime = time.perf_counter() # 185.5 s
-            ret = 0
-            cur_x = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
-            proj = Projection_Preprocessing(Ax(np.array(cur_x)))
+    def f_(x, curs, eps):
+        perftime = time.perf_counter() # 185.5 s
+        ret = 0
+        cur_x = []
+        for i, cur in enumerate(curs):
+            pos = i*3
+            cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
+        proj = Projection_Preprocessing(Ax(np.array(cur_x)))
+        if config["my"]:
+            for i in range(len(curs)):
+                ret += calc_obj(proj[:,i], i, i%3)
+        else:
             for i in range(len(curs)):
                 ret += calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config)
-            
-            print("obj_", time.perf_counter()-perftime)
-            return ret
+        
+        print("obj_", time.perf_counter()-perftime)
+        return ret
 
-        def gradf(x, curs, eps):
-            perftime = time.perf_counter() # 150 s
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
-                dvec.append(cur_x)
-                dvec.append(applyTrans(cur_x, eps[pos], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[pos+1], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[pos+2]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
+    def gradf(x, curs, eps):
+        perftime = time.perf_counter() # 150 s
+        dvec = []
+        for i, cur in enumerate(curs):
+            pos = i*3
+            cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
+            dvec.append(cur_x)
+            dvec.append(applyTrans(cur_x, eps[pos], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[pos+1], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[pos+2]))
+        dvec = np.array(dvec)
+        projs = Projection_Preprocessing(Ax(dvec))
 
-            ret = [0,0,0]*len(curs)
-            ret_set = np.zeros(len(ret), dtype=bool)
-            
-            q = queue.Queue()
-            def t_obj(q,indices):
-                np.seterr("raise")
+        ret = [0,0,0]*len(curs)
+        ret_set = np.zeros(len(ret), dtype=bool)
+        
+        q = queue.Queue()
+        def t_obj(q,indices):
+            np.seterr("raise")
+            if config["my"]:
+                for j in indices:
+                    pos = j*4
+                    h0 = calc_obj(projs[:,pos], j, 0), calc_obj(projs[:,pos], j, 1), calc_obj(projs[:,pos], j, 2)
+                    for i in range(3):
+                        q.put((j*3+i, (calc_obj(projs[:,pos+i+1], j, i)-h0[i])*0.5))
+            else:
                 for j in indices:
                     pos = j*4
                     h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
                     for i in range(3):
                         q.put((j*3+i, (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5))
 
-            for u in np.array_split(list(range(real_img.shape[0])), 8):
-                t = threading.Thread(target=t_obj, args = (q, u))
-                t.daemon = True
-                t.start()
+        for u in np.array_split(list(range(real_img.shape[0])), 8):
+            t = threading.Thread(target=t_obj, args = (q, u))
+            t.daemon = True
+            t.start()
 
-            for _ in range(len(ret)):
-                i, res = q.get()
-                ret[i] = res/len(curs)
-                ret_set[i] = True
-            
-            if not ret_set.all():
-                print("not all grad elements were set")
-
-            #print("grad", time.perf_counter()-perftime)
-            return ret
+        for _ in range(len(ret)):
+            i, res = q.get()
+            ret[i] = res/len(curs)
+            ret_set[i] = True
         
-        def gradf3(x, curs, eps):
-            perftime = time.perf_counter() # 150 s
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
-                #dvec.append(cur_x)
-                dvec.append(applyTrans(cur_x, eps[pos], 0, 0))
-                dvec.append(applyTrans(cur_x, -eps[pos], 0, 0))
-                dvec.append(applyTrans(cur_x, 2*eps[pos], 0, 0))
-                dvec.append(applyTrans(cur_x, 2*-eps[pos], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[pos+1], 0))
-                dvec.append(applyTrans(cur_x, 0, -eps[pos+1], 0))
-                dvec.append(applyTrans(cur_x, 0, 2*eps[pos+1], 0))
-                dvec.append(applyTrans(cur_x, 0, 2*-eps[pos+1], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[pos+2]))
-                dvec.append(applyTrans(cur_x, 0, 0, -eps[pos+2]))
-                dvec.append(applyTrans(cur_x, 0, 0, 2*eps[pos+2]))
-                dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[pos+2]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
+        if not ret_set.all():
+            print("not all grad elements were set")
 
-            ret = [0,0,0]*len(curs)
-            ret_set = np.zeros(len(ret), dtype=bool)
-            
-            q = queue.Queue()
-            def t_obj(q,indices):
-                np.seterr("raise")
+        #print("grad", time.perf_counter()-perftime)
+        return ret
+    
+    def gradf3(x, curs, eps):
+        perftime = time.perf_counter() # 150 s
+        dvec = []
+        for i, cur in enumerate(curs):
+            pos = i*3
+            cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
+            #dvec.append(cur_x)
+            dvec.append(applyTrans(cur_x, eps[pos], 0, 0))
+            dvec.append(applyTrans(cur_x, -eps[pos], 0, 0))
+            dvec.append(applyTrans(cur_x, 2*eps[pos], 0, 0))
+            dvec.append(applyTrans(cur_x, 2*-eps[pos], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[pos+1], 0))
+            dvec.append(applyTrans(cur_x, 0, -eps[pos+1], 0))
+            dvec.append(applyTrans(cur_x, 0, 2*eps[pos+1], 0))
+            dvec.append(applyTrans(cur_x, 0, 2*-eps[pos+1], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[pos+2]))
+            dvec.append(applyTrans(cur_x, 0, 0, -eps[pos+2]))
+            dvec.append(applyTrans(cur_x, 0, 0, 2*eps[pos+2]))
+            dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[pos+2]))
+        dvec = np.array(dvec)
+        projs = Projection_Preprocessing(Ax(dvec))
+
+        ret = [0,0,0]*len(curs)
+        ret_set = np.zeros(len(ret), dtype=bool)
+        
+        q = queue.Queue()
+        def t_obj(q,indices):
+            np.seterr("raise")
+            if config["my"]:
                 for j in indices:
                     pos = j*12
-                    #h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
+                    for i in range(3):
+                        h1 = calc_obj(projs[:,pos+i*4], j, i)
+                        h_1 = calc_obj(projs[:,pos+i*4+1], j, i)
+                        h2 = calc_obj(projs[:,pos+i*4+2], j, i)
+                        h_2 = calc_obj(projs[:,pos+i*4+3], j, i)
+                        q.put((j*3+i, (-h2+8*h1-8*h_1+h_2)/12))
+            else:
+                for j in indices:
+                    pos = j*12
                     for i in range(3):
                         h1 = (calcGIObjective(real_img[j], projs[:,pos+i*4], j, dvec[pos+i], config))
                         h_1 = (calcGIObjective(real_img[j], projs[:,pos+i*4+1], j, dvec[pos+i+1], config))
@@ -2131,64 +1963,110 @@ def bfgs_trans_all(curs, reg_config, c):
                         h_2 = (calcGIObjective(real_img[j], projs[:,pos+i*4+3], j, dvec[pos+i+3], config))
                         q.put((j*3+i, (-h2+8*h1-8*h_1+h_2)/12))
 
-            for u in np.array_split(list(range(real_img.shape[0])), 8):
-                t = threading.Thread(target=t_obj, args = (q, u))
-                t.daemon = True
-                t.start()
+        for u in np.array_split(list(range(real_img.shape[0])), 8):
+            t = threading.Thread(target=t_obj, args = (q, u))
+            t.daemon = True
+            t.start()
 
-            for _ in range(len(ret)):
-                i, res = q.get()
-                ret[i] = res/len(curs)
-                ret_set[i] = True
+        for _ in range(len(ret)):
+            i, res = q.get()
+            ret[i] = res/len(curs)
+            ret_set[i] = True
+        
+        if not ret_set.all():
+            print("not all grad elements were set")
+
+        #print("grad", time.perf_counter()-perftime)
+        return ret
+
+    def gradf_(x, curs, eps):
+        perftime = time.perf_counter() # 525 s
+        dvec = []
+        for i, cur in enumerate(curs):
+            pos = i*3
+            cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
+            dvec.append(cur_x)
+            dvec.append(applyTrans(cur_x, eps[pos], 0, 0))
+            #dvec.append(applyTrans(cur_x, -eps[0], 0, 0))
+            #dvec.append(applyTrans(cur_x, 2*eps[0], 0, 0))
+            #dvec.append(applyTrans(cur_x, 2*-eps[0], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[pos+1], 0))
+            #dvec.append(applyTrans(cur_x, 0, -eps[1], 0))
+            #dvec.append(applyTrans(cur_x, 0, 2*eps[1], 0))
+            #dvec.append(applyTrans(cur_x, 0, 2*-eps[1], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[pos+2]))
+            #dvec.append(applyTrans(cur_x, 0, 0, -eps[2]))
+            #dvec.append(applyTrans(cur_x, 0, 0, 2*eps[2]))
+            #dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[2]))
+        dvec = np.array(dvec)
+        projs = Projection_Preprocessing(Ax(dvec))
+
+        #import SimpleITK as sitk
+        #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/jac.nrrd")
+        #exit()
+
+        ret = [0,0,0]*len(curs)
+        for j in range(len(curs)):
+            pos = j*4
+            h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
+            for i in range(3):
+                ret[j*3+i] = (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5
+            #    h1 = (calcGIObjective(real_img, projs[:,i], config))
+            #    h_1 = (calcGIObjective(real_img, projs[:,i+1], config))
+            #    h2 = (calcGIObjective(real_img, projs[:,i+2], config))
+            #    h_2 = (calcGIObjective(real_img, projs[:,i+3], config))
+            #    ret[j] = (-h2+8*h1-8*h_1+h_2)/12
             
-            if not ret_set.all():
-                print("not all grad elements were set")
+            #print(ret)
 
-            #print("grad", time.perf_counter()-perftime)
-            return ret
+        print("grad", time.perf_counter()-perftime)
+        return ret
 
-        def gradf_(x, curs, eps):
-            perftime = time.perf_counter() # 525 s
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
-                dvec.append(cur_x)
-                dvec.append(applyTrans(cur_x, eps[pos], 0, 0))
-                #dvec.append(applyTrans(cur_x, -eps[0], 0, 0))
-                #dvec.append(applyTrans(cur_x, 2*eps[0], 0, 0))
-                #dvec.append(applyTrans(cur_x, 2*-eps[0], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[pos+1], 0))
-                #dvec.append(applyTrans(cur_x, 0, -eps[1], 0))
-                #dvec.append(applyTrans(cur_x, 0, 2*eps[1], 0))
-                #dvec.append(applyTrans(cur_x, 0, 2*-eps[1], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[pos+2]))
-                #dvec.append(applyTrans(cur_x, 0, 0, -eps[2]))
-                #dvec.append(applyTrans(cur_x, 0, 0, 2*eps[2]))
-                #dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[2]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
 
-            #import SimpleITK as sitk
-            #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/jac.nrrd")
-            #exit()
+    if config["my"]:
+        #if "data_real" not in config or config["data_real"] is None:
+        data_real = []
+        for img in real_img:
+            data_real.append(findInitialFeatures(img, config))
+        #config["data_real"] = np.array(real_data)
+        config["data_real"] = data_real
+        config["points_real"] = [normalize_points(data_real[i][0], real_img[i]) for i in range(len(data_real))]
 
-            ret = [0,0,0]*len(curs)
-            for j in range(len(curs)):
-                pos = j*4
-                h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
-                for i in range(3):
-                    ret[j*3+i] = (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5
-                #    h1 = (calcGIObjective(real_img, projs[:,i], config))
-                #    h_1 = (calcGIObjective(real_img, projs[:,i+1], config))
-                #    h2 = (calcGIObjective(real_img, projs[:,i+2], config))
-                #    h_2 = (calcGIObjective(real_img, projs[:,i+3], config))
-                #    ret[j] = (-h2+8*h1-8*h_1+h_2)/12
-                
-                #print(ret)
+        if c==-34:
+            eps = [0.5, 0.5, 5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp':True})
 
-            print("grad", time.perf_counter()-perftime)
-            return ret
+            eps = [0.25, 0.25, 0.5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp':True})
+            eps = [0.05, 0.05, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp':True})
+        elif c==-37:
+            eps = [0.5, 0.5, 5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp':True})
+
+            eps = [0.25, 0.25, 0.5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp':True})
+            eps = [0.05, 0.05, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp':True})
+
+    else:
+        
+        config["GIoldold"] = [None]*len(curs)
+        config["absp1"] = [None]*len(curs)
+        config["p1"] = [None]*len(curs)
+        gis = [{} for _ in range(len(curs))]
 
 
         if c==2:
@@ -2229,20 +2107,20 @@ def bfgs_trans_all(curs, reg_config, c):
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
         elif c==-24:
-            eps = [2, 2, 10] * len(curs)
+            eps = [1, 1, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.5, 0.5, 1] * len(curs)
+            eps = [0.25, 0.25, 2] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.1, 0.1, 0.5] * len(curs)
+            eps = [0.01, 0.01, 0.25] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
         elif c==-25:
             eps = [2, 2, 10] * len(curs)
@@ -2262,20 +2140,20 @@ def bfgs_trans_all(curs, reg_config, c):
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
         elif c==-27:
-            eps = [2, 2, 10] * len(curs)
+            eps = [1, 1, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.5, 0.5, 1] * len(curs)
+            eps = [0.25, 0.25, 2] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.1, 0.1, 0.5] * len(curs)
+            eps = [0.01, 0.01, 0.25] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
 
         else:
@@ -2297,7 +2175,7 @@ def bfgs_all(curs, reg_config, c):
     global gis
     config = dict(default_config)
     config.update(reg_config)
-    config["my"] = c==-21
+    config["my"] = c<=-30
 
     real_img = config["real_img"]
     noise = config["noise"]
@@ -2311,201 +2189,303 @@ def bfgs_all(curs, reg_config, c):
     config["angle_noise"] = np.array(angles_noise)
     config["trans_noise"] = np.array(trans_noise)
 
-    if config["my"]:
-        if "data_real" not in config or config["data_real"] is None:
-            real_data = []
-            for img in real_img:
-                real_data.append(findInitialFeatures(img, config))
-            config["data_real"] = np.array(real_data)
-        data_real = config["data_real"]
-        points_real = normalize_points(data_real[...,0], real_img)
+    def calc_obj(cur_proj, i, k):
+        (p,v) = trackFeatures(cur_proj, config["data_real"][i], config)
+        valid = v==1
+        p = p[valid]
+        points = normalize_points(p, cur_proj)
+        if "comps" in config:
+            axis, mult = config["comps"][k]
+        else:
+            axis, mult = [(0,1),(1,1),(2,1),(-1,1),(-2,1),(-3,1)][k]
+        obj = calcPointsObjective(axis, points, config["points_real"][i][valid])*mult
+        if obj<0:
+            obj = 50
+        return obj
 
-        def f(x, curs, eps):
-            perftime = time.perf_counter()
-            cur_x = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
-            cur_x = np.array(cur_x)
-            proj = Projection_Preprocessing(Ax(cur_x))
-            ret = 0
-
-            for i in range(len(cur_x)):
-                (p,v) = trackFeatures(proj[:,i], data_real[i], config)
-                points = normalize_points(p, proj[:,i])
-                valid = v==1
-                points = points[valid]
-                for axis, mult in [(-1,1),(-2,1),(-3,1)]:
-                    obj = calcPointsObjective(axis, points, points_real[i][valid])
-                    if obj==-1:
-                        ret += 50*mult
-                    else:
-                        ret += obj*mult
-            print("obj", time.perf_counter()-perftime)
-            return ret
+    def f(x, curs, eps):
+        perftime = time.perf_counter() # 100 s / 50 s
+        ret = 0
+        cur_x = []
+        for i, cur in enumerate(curs):
+            pos = i*6
+            cur_rot = applyRot(cur, x[pos], x[pos+1], x[pos+2])
+            cur_x.append(applyTrans(cur_rot, x[pos+3], x[pos+4], x[pos+5]))
+        cur_x = np.array(cur_x)
+        proj = Projection_Preprocessing(Ax(cur_x))
         
-        def gradf(x, curs, eps):
-            perftime = time.perf_counter()
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
-                dvec.append(cur_x)
-                dvec.append(applyTrans(cur_x, eps[0], 0, 0))
-                #dvec.append(applyTrans(cur_x, -eps[0], 0, 0))
-                #dvec.append(applyTrans(cur_x, 2*eps[0], 0, 0))
-                #dvec.append(applyTrans(cur_x, 2*-eps[0], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[1], 0))
-                #dvec.append(applyTrans(cur_x, 0, -eps[1], 0))
-                #dvec.append(applyTrans(cur_x, 0, 2*eps[1], 0))
-                #dvec.append(applyTrans(cur_x, 0, 2*-eps[1], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
-                #dvec.append(applyTrans(cur_x, 0, 0, -eps[2]))
-                #dvec.append(applyTrans(cur_x, 0, 0, 2*eps[2]))
-                #dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[2]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
+        q = queue.Queue()
+        def t_obj(q,indices):
+            np.seterr("raise")
+            if config["my"]:
+                for i in indices:
+                    q.put(calc_obj(proj[:,i], i, i%6))
+            else:
+                for i in indices:
+                    q.put(calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config))
+        
+        for u in np.array_split(list(range(len(curs))), 8):
+            t = threading.Thread(target=t_obj, args = (q, u))
+            t.daemon = True
+            t.start()
+        for _ in range(proj.shape[1]):
+            ret += q.get()
+        
+        #print("obj", time.perf_counter()-perftime, ret/len(curs))
+        return ret/len(curs)
 
-            ret = [0,0,0]*len(curs)
-
-            def calc_obj(i, j, k):
-                proj = projs[:,j]
-                (p,v) = trackFeatures(proj, data_real[i], config)
-                points = normalize_points(p, proj)
-                valid = v==1
-                points = points[valid]
-                axis, mult = [(-1,1),(-2,1),(-3,1)][k]
-                obj = calcPointsObjective(axis, points, points_real[i][valid])*mult
-                if obj==-1:
-                    obj = 50
-                return obj
-
+    def f_(x, curs, eps):
+        perftime = time.perf_counter() # 185.5 s
+        ret = 0
+        cur_x = []
+        for i, cur in enumerate(curs):
+            pos = i*6
+            cur_rot = applyRot(cur, x[pos], x[pos+1], x[pos+2])
+            cur_x.append(applyTrans(cur_rot, x[pos+3], x[pos+4], x[pos+5]))
+        proj = Projection_Preprocessing(Ax(np.array(cur_x)))
+        if config["my"]:
             for i in range(len(curs)):
-                j = i*4
-                h0 = [calc_obj(i, j, k) for k in range(3)]
-                for k in range(3):
-                    ret[i*3+k] = (calc_obj(i, j, k)-h0[k]) * 0.5
-
-            #for j in range(3):
-            #    i = j*4+1
-            #    def calc_obj(i):
-            #        proj = projs[:,i]
-            #        (p,v), proj = trackFeatures(proj, data_real, config), proj
-            #        points = normalize_points(p, proj)
-            #        valid = v==1
-            #        points = points[valid]
-            #        axis, mult = [(-1,1),(-2,1),(-3,1)][j]
-            #        obj = calcPointsObjective(axis, points, points_real[valid])*mult
-            #        if obj==-1:
-            #            obj = 50
-            #        return obj
-            #    
-            #    h1 = calc_obj(i)
-            #    h_1 = calc_obj(i+1)
-            #    h2 = calc_obj(i+2)
-            #    h_2 = calc_obj(i+3)
-            #    ret[j] = (-h2+8*h1-8*h_1+h_2)/12
-            print("grad", time.perf_counter()-perftime)
-            return ret
+                ret += calc_obj(proj[:,i], i, i%6)
+        else:
+            for i in range(len(curs)):
+                ret += calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config)
         
-        def f_(x, curs, eps):
-            perftime = time.perf_counter()
-            cur_x = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x.append(applyTrans(cur, x[pos], x[pos+1], x[pos+2]))
-            cur_x = np.array(cur_x)
-            proj = Projection_Preprocessing(Ax(cur_x))
-            ret = 0
+        print("obj_", time.perf_counter()-perftime)
+        return ret
 
-            q = queue.Queue()
-            def t_obj(q,start,end):
-                for i in range(start,end):
-                    (p,v) = trackFeatures(proj[:,i], data_real[i], config)
-                    points = normalize_points(p, proj[:,i])
-                    valid = v==1
-                    points = points[valid]
-                    ret = 0
-                    for axis, mult in [(-1,1),(-2,1),(-3,1)]:
-                        obj = calcPointsObjective(axis, points, points_real[i][valid])
-                        if obj==-1:
-                            ret += 50*mult
-                        else:
-                            ret += obj*mult
-                    q.put(ret)
+    def gradf(x, curs, eps):
+        perftime = time.perf_counter() # 150 s
+        dvec = []
+        for i, cur in enumerate(curs):
+            pos = i*6
+            cur_x = applyRot(cur, x[pos], x[pos+1], x[pos+2])
+            cur_x = applyTrans(cur_x, x[pos+3], x[pos+4], x[pos+5])
+            dvec.append(cur_x)
+            dvec.append(applyRot(cur_x, eps[pos], 0, 0))
+            dvec.append(applyRot(cur_x, 0, eps[pos+1], 0))
+            dvec.append(applyRot(cur_x, 0, 0, eps[pos+2]))
+            dvec.append(applyTrans(cur_x, eps[pos+3], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[pos+4], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[pos+5]))
+        dvec = np.array(dvec)
+        projs = Projection_Preprocessing(Ax(dvec))
 
-            for u in np.array_split(list(range(len(curs))), 4):
-                t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
-                t.daemon = True
-                t.start()
-            for _ in range(proj.shape[1]):
-                ret += q.get()
-            
-            print("obj", time.perf_counter()-perftime)
-            return ret
+        ret = [0,0,0,0,0,0]*len(curs)
+        ret_set = np.zeros(len(ret), dtype=bool)
         
-        def gradf_(x, curs, eps):
-            perftime = timpe.perf_counter()
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*3
-                cur_x = applyTrans(cur, x[pos], x[pos+1], x[pos+2])
-                dvec.append(cur_x)
-                dvec.append(applyTrans(cur_x, eps[0], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[1], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[2]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
+        q = queue.Queue()
+        def t_obj(q,indices):
+            np.seterr("raise")
+            if config["my"]:
+                for j in indices:
+                    pos = j*7
+                    for i in range(6):
+                        h0 = calc_obj(projs[:,pos], j, i)
+                        q.put((j*3+i, (calc_obj(projs[:,pos+i+1], j, i)-h0)*0.5))
+            else:
+                for j in indices:
+                    pos = j*7
+                    h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
+                    for i in range(3):
+                        q.put((j*3+i, (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5))
 
-            ret = [0,0,0]*len(curs)
+        for u in np.array_split(list(range(real_img.shape[0])), 8):
+            t = threading.Thread(target=t_obj, args = (q, u))
+            t.daemon = True
+            t.start()
 
-            def calc_obj(i, j, k):
-                proj = projs[:,j]
-                (p,v) = trackFeatures(proj, data_real[i], config)
-                points = normalize_points(p, proj)
-                valid = v==1
-                points = points[valid]
-                axis, mult = [(-1,1),(-2,1),(-3,1)][k]
-                obj = calcPointsObjective(axis, points, points_real[i][valid])*mult
-                if obj==-1:
-                    obj = 50
-                return obj
-
-            ret = [0,0,0]*len(curs)
-            
-            q = queue.Queue()
-            def t_obj(q,start,end):
-                for i in range(start,end):
-                    j = i*4
-                    h0 = [calc_obj(i, j, k) for k in range(3)]
-                    for k in range(3):
-                        q.put((i*3+k, (calc_obj(i, j, k)-h0[k]) * 0.5))
-
-            for u in np.array_split(list(range(real_img.shape[0])), 4):
-                t = threading.Thread(target=t_obj, args = (q, u[0], u[-1]+1))
-                t.daemon = True
-                t.start()
-
-            for _ in range(len(ret)):
-                i, res = q.get()
-                ret[i] = res
-                
-            print("grad", time.perf_counter()-perftime)
-            return ret
+        for _ in range(len(ret)):
+            i, res = q.get()
+            ret[i] = res/len(curs)
+            ret_set[i] = True
         
-        eps = [0.5, 0.5, 5] * len(curs)
-        ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 10, 'eps': eps})
+        if not ret_set.all():
+            print("not all grad elements were set")
 
-        eps = [0.25, 0.25, 0.5] * len(curs)
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 10, 'eps': eps})
-        eps = [0.05, 0.05, 0.25] * len(curs)
-        ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                      jac=gradf,
-                                      options={'maxiter': 10, 'eps': eps})
+        #print("grad", time.perf_counter()-perftime)
+        return ret
+    
+    def gradf3(x, curs, eps):
+        perftime = time.perf_counter() # 150 s
+        dvec = []
+        for i, cur in enumerate(curs):
+            pos = i*6
+            cur_x = applyRot(cur, x[pos], x[pos+1], x[pos+2])
+            cur_x = applyTrans(cur_x, x[pos+3], x[pos+4], x[pos+5])
+            dvec.append(applyRot(cur_x, eps[pos], 0, 0))
+            dvec.append(applyRot(cur_x, -eps[pos], 0, 0))
+            dvec.append(applyRot(cur_x, 2*eps[pos], 0, 0))
+            dvec.append(applyRot(cur_x, 2*-eps[pos], 0, 0))
+            dvec.append(applyRot(cur_x, 0, eps[pos+1], 0))
+            dvec.append(applyRot(cur_x, 0, -eps[pos+1], 0))
+            dvec.append(applyRot(cur_x, 0, 2*eps[pos+1], 0))
+            dvec.append(applyRot(cur_x, 0, 2*-eps[pos+1], 0))
+            dvec.append(applyRot(cur_x, 0, 0, eps[pos+2]))
+            dvec.append(applyRot(cur_x, 0, 0, -eps[pos+2]))
+            dvec.append(applyRot(cur_x, 0, 0, 2*eps[pos+2]))
+            dvec.append(applyRot(cur_x, 0, 0, 2*-eps[pos+2]))
+            dvec.append(applyTrans(cur_x, eps[pos+3], 0, 0))
+            dvec.append(applyTrans(cur_x, -eps[pos+3], 0, 0))
+            dvec.append(applyTrans(cur_x, 2*eps[pos+3], 0, 0))
+            dvec.append(applyTrans(cur_x, 2*-eps[pos+3], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[pos+4], 0))
+            dvec.append(applyTrans(cur_x, 0, -eps[pos+4], 0))
+            dvec.append(applyTrans(cur_x, 0, 2*eps[pos+4], 0))
+            dvec.append(applyTrans(cur_x, 0, 2*-eps[pos+4], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[pos+5]))
+            dvec.append(applyTrans(cur_x, 0, 0, -eps[pos+5]))
+            dvec.append(applyTrans(cur_x, 0, 0, 2*eps[pos+5]))
+            dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[pos+5]))
+        dvec = np.array(dvec)
+        projs = Projection_Preprocessing(Ax(dvec))
+
+        ret = [0,0,0,0,0,0]*len(curs)
+        ret_set = np.zeros(len(ret), dtype=bool)
+        
+        q = queue.Queue()
+        def t_obj(q,indices):
+            np.seterr("raise")
+            if config["my"]:
+                for j in indices:
+                    pos = j*24
+                    for i in range(6):
+                        h1 = calc_obj(projs[:,pos+i*4], j, i)
+                        h_1 = calc_obj(projs[:,pos+i*4+1], j, i)
+                        h2 = calc_obj(projs[:,pos+i*4+2], j, i)
+                        h_2 = calc_obj(projs[:,pos+i*4+3], j, i)
+                        q.put((j*6+i, (-h2+8*h1-8*h_1+h_2)/12))
+            else:
+                for j in indices:
+                    pos = j*24
+                    for i in range(6):
+                        h1 = (calcGIObjective(real_img[j], projs[:,pos+i*4], j, dvec[pos+i], config))
+                        h_1 = (calcGIObjective(real_img[j], projs[:,pos+i*4+1], j, dvec[pos+i+1], config))
+                        h2 = (calcGIObjective(real_img[j], projs[:,pos+i*4+2], j, dvec[pos+i+2], config))
+                        h_2 = (calcGIObjective(real_img[j], projs[:,pos+i*4+3], j, dvec[pos+i+3], config))
+                        q.put((j*6+i, (-h2+8*h1-8*h_1+h_2)/12))
+
+        for u in np.array_split(list(range(real_img.shape[0])), 8):
+            t = threading.Thread(target=t_obj, args = (q, u))
+            t.daemon = True
+            t.start()
+
+        for _ in range(len(ret)):
+            i, res = q.get()
+            ret[i] = res/len(curs)
+            ret_set[i] = True
+        
+        if not ret_set.all():
+            print("not all grad elements were set")
+
+        #print("grad", time.perf_counter()-perftime)
+        return ret
+
+    def gradf_(x, curs, eps):
+        perftime = time.perf_counter() # 525 s
+        dvec = []
+        for i, cur in enumerate(curs):
+            pos = i*6
+            cur_x = applyRot(cur, x[pos], x[pos+1], x[pos+2])
+            cur_x = applyTrans(cur_x, x[pos+3], x[pos+4], x[pos+5])
+            dvec.append(cur_x)
+            dvec.append(applyRot(cur_x, eps[pos], 0, 0))
+            dvec.append(applyRot(cur_x, 0, eps[pos+1], 0))
+            dvec.append(applyRot(cur_x, 0, 0, eps[pos+2]))
+            dvec.append(applyTrans(cur_x, eps[pos+3], 0, 0))
+            dvec.append(applyTrans(cur_x, 0, eps[pos+4], 0))
+            dvec.append(applyTrans(cur_x, 0, 0, eps[pos+5]))
+        dvec = np.array(dvec)
+        projs = Projection_Preprocessing(Ax(dvec))
+
+        #import SimpleITK as sitk
+        #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/jac.nrrd")
+        #exit()
+
+        ret = [0,0,0,0,0,0]*len(curs)
+        if config["my"]:
+            for j in range(len(curs)):
+                pos = j*7
+                for i in range(6):
+                    h0 = calc_obj(projs[:,pos], j, i)
+                    ret[j*6+i] = (calc_obj(projs[:,pos+i+1], j, i)-h0)* 0.5
+        else:
+            for j in range(len(curs)):
+                pos = j*7
+                h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
+                for i in range(6):
+                    ret[j*6+i] = (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5
+
+        print("grad", time.perf_counter()-perftime)
+        return ret
+
+
+    if config["my"]:
+        #if "data_real" not in config or config["data_real"] is None:
+        real_data = []
+        for img in real_img:
+            real_data.append(findInitialFeatures(img, config))
+        config["data_real"] = np.array(real_data)
+        data_real = config["data_real"]
+        config["points_real"] = [normalize_points(data_real[i,:,0], real_img[i]) for i in range(data_real.shape[0])]
+
+        if c==-34:
+            eps = [0.5, 0.5, 0.5, 0.5, 0.5, 5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+
+            eps = [0.25, 0.25, 0.25, 0.25, 0.25, 0.5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            eps = [0.05, 0.05, 0.05, 0.05, 0.05, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+        elif c==-35:
+            config["comps"] = [(10,1),(11,1),(2,1),(-1,1),(-2,1),(-3,1)]
+            eps = [0.5, 0.5, 0.5, 0.5, 0.5, 5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+
+            eps = [0.25, 0.25, 0.25, 0.25, 0.25, 0.5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            eps = [0.05, 0.05, 0.05, 0.05, 0.05, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+        elif c==-36:
+            config["comps"] = [(0,1),(1,1),(12,1),(-1,1),(-2,1),(-3,1)]
+            eps = [0.5, 0.5, 0.5, 0.5, 0.5, 5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+
+            eps = [0.25, 0.25, 0.25, 0.25, 0.25, 0.5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            eps = [0.05, 0.05, 0.05, 0.05, 0.05, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+        elif c==-37:
+            eps = [0.5, 0.5, 0.5, 0.5, 0.5, 5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+
+            eps = [0.25, 0.25, 0.25, 0.25, 0.25, 0.5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            eps = [0.05, 0.05, 0.05, 0.05, 0.05, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
     else:
         
@@ -2514,276 +2494,68 @@ def bfgs_all(curs, reg_config, c):
         config["p1"] = [None]*len(curs)
         gis = [{} for _ in range(len(curs))]
 
-        def f(x, curs, eps):
-            perftime = time.perf_counter() # 100 s / 50 s
-            ret = 0
-            cur_x = []
-            for i, cur in enumerate(curs):
-                pos = i*6
-                cur_x = applyRot(cur, x[pos], x[pos+1], x[pos+2])
-                cur_x.append(applyTrans(cur_x, x[pos+3], x[pos+4], x[pos+5]))
-            cur_x = np.array(cur_x)
-            proj = Projection_Preprocessing(Ax(cur_x))
-
-            q = queue.Queue()
-            def t_obj(q,indices):
-                np.seterr("raise")
-                for i in indices:
-                    q.put(calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config))
-
-            for u in np.array_split(list(range(len(curs))), 8):
-                t = threading.Thread(target=t_obj, args = (q, u))
-                t.daemon = True
-                t.start()
-            for _ in range(proj.shape[1]):
-                ret += q.get()
-            
-            #print("obj", time.perf_counter()-perftime, ret/len(curs))
-            return ret/len(curs)
-
-        def f_(x, curs, eps):
-            perftime = time.perf_counter() # 185.5 s
-            ret = 0
-            cur_x = []
-            for i, cur in enumerate(curs):
-                pos = i*6
-                cur_x = applyRot(cur, x[pos], x[pos+1], x[pos+2])
-                cur_x.append(applyTrans(cur_x, x[pos+3], x[pos+4], x[pos+5]))
-            proj = Projection_Preprocessing(Ax(np.array(cur_x)))
-            for i in range(len(curs)):
-                ret += calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config)
-            
-            print("obj_", time.perf_counter()-perftime)
-            return ret
-
-        def gradf(x, curs, eps):
-            perftime = time.perf_counter() # 150 s
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*6
-                cur_x = applyRot(cur, x[pos], x[pos+1], x[pos+2])
-                cur_x = applyTrans(cur_x, x[pos+3], x[pos+4], x[pos+5])
-                dvec.append(cur_x)
-                dvec.append(applyRot(cur_x, eps[pos], 0, 0))
-                dvec.append(applyRot(cur_x, 0, eps[pos+1], 0))
-                dvec.append(applyRot(cur_x, 0, 0, eps[pos+2]))
-                dvec.append(applyTrans(cur_x, eps[pos+3], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[pos+4], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[pos+5]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
-
-            ret = [0,0,0,0,0,0]*len(curs)
-            ret_set = np.zeros(len(ret), dtype=bool)
-            
-            q = queue.Queue()
-            def t_obj(q,indices):
-                np.seterr("raise")
-                for j in indices:
-                    pos = j*7
-                    h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
-                    for i in range(6):
-                        q.put((j*6+i, (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5))
-
-            for u in np.array_split(list(range(real_img.shape[0])), 8):
-                t = threading.Thread(target=t_obj, args = (q, u))
-                t.daemon = True
-                t.start()
-
-            for _ in range(len(ret)):
-                i, res = q.get()
-                ret[i] = res/len(curs)
-                ret_set[i] = True
-            
-            if not ret_set.all():
-                print("not all grad elements were set")
-
-            #print("grad", time.perf_counter()-perftime)
-            return ret
-        
-        def gradf3(x, curs, eps):
-            perftime = time.perf_counter() # 150 s
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*6
-                cur_x = applyRot(cur, x[pos], x[pos+1], x[pos+2])
-                cur_x = applyTrans(cur_x, x[pos+3], x[pos+4], x[pos+5])
-                #dvec.append(cur_x)
-                dvec.append(applyRot(cur_x, eps[pos], 0, 0))
-                dvec.append(applyRot(cur_x, -eps[pos], 0, 0))
-                dvec.append(applyRot(cur_x, 2*eps[pos], 0, 0))
-                dvec.append(applyRot(cur_x, 2*-eps[pos], 0, 0))
-                dvec.append(applyRot(cur_x, 0, eps[pos+1], 0))
-                dvec.append(applyRot(cur_x, 0, -eps[pos+1], 0))
-                dvec.append(applyRot(cur_x, 0, 2*eps[pos+1], 0))
-                dvec.append(applyRot(cur_x, 0, 2*-eps[pos+1], 0))
-                dvec.append(applyRot(cur_x, 0, 0, eps[pos+2]))
-                dvec.append(applyRot(cur_x, 0, 0, -eps[pos+2]))
-                dvec.append(applyRot(cur_x, 0, 0, 2*eps[pos+2]))
-                dvec.append(applyRot(cur_x, 0, 0, 2*-eps[pos+2]))
-
-                dvec.append(applyTrans(cur_x, eps[pos+3], 0, 0))
-                dvec.append(applyTrans(cur_x, -eps[pos+3], 0, 0))
-                dvec.append(applyTrans(cur_x, 2*eps[pos+3], 0, 0))
-                dvec.append(applyTrans(cur_x, 2*-eps[pos+3], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[pos+4], 0))
-                dvec.append(applyTrans(cur_x, 0, -eps[pos+4], 0))
-                dvec.append(applyTrans(cur_x, 0, 2*eps[pos+4], 0))
-                dvec.append(applyTrans(cur_x, 0, 2*-eps[pos+4], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[pos+5]))
-                dvec.append(applyTrans(cur_x, 0, 0, -eps[pos+5]))
-                dvec.append(applyTrans(cur_x, 0, 0, 2*eps[pos+5]))
-                dvec.append(applyTrans(cur_x, 0, 0, 2*-eps[pos+5]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
-
-            ret = [0,0,0,0,0,0]*len(curs)
-            ret_set = np.zeros(len(ret), dtype=bool)
-            
-            q = queue.Queue()
-            def t_obj(q,indices):
-                np.seterr("raise")
-                for j in indices:
-                    pos = j*24
-                    #h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
-                    for i in range(6):
-                        h1 = (calcGIObjective(real_img[j], projs[:,pos+i*4], j, dvec[pos+i*4], config))
-                        h_1 = (calcGIObjective(real_img[j], projs[:,pos+i*4+1], j, dvec[pos+i*4+1], config))
-                        h2 = (calcGIObjective(real_img[j], projs[:,pos+i*4+2], j, dvec[pos+i*4+2], config))
-                        h_2 = (calcGIObjective(real_img[j], projs[:,pos+i*4+3], j, dvec[pos+i*4+3], config))
-                        q.put((j*6+i, (-h2+8*h1-8*h_1+h_2)/12))
-
-            for u in np.array_split(list(range(real_img.shape[0])), 8):
-                t = threading.Thread(target=t_obj, args = (q, u))
-                t.daemon = True
-                t.start()
-
-            for _ in range(len(ret)):
-                i, res = q.get()
-                ret[i] = res/len(curs)
-                ret_set[i] = True
-            
-            if not ret_set.all():
-                print("not all grad elements were set")
-
-            #print("grad", time.perf_counter()-perftime)
-            return ret
-
-        def gradf_(x, curs, eps):
-            perftime = time.perf_counter() # 525 s
-            dvec = []
-            for i, cur in enumerate(curs):
-                pos = i*6
-                cur_x = applyRot(cur, x[pos], x[pos+1], x[pos+2])
-                cur_x = applyTrans(cur_x, x[pos+3], x[pos+4], x[pos+5])
-                dvec.append(cur_x)
-                dvec.append(applyRot(cur_x, eps[pos], 0, 0))
-                dvec.append(applyRot(cur_x, 0, eps[pos+1], 0))
-                dvec.append(applyRot(cur_x, 0, 0, eps[pos+2]))
-
-                dvec.append(applyTrans(cur_x, eps[pos+3], 0, 0))
-                dvec.append(applyTrans(cur_x, 0, eps[pos+4], 0))
-                dvec.append(applyTrans(cur_x, 0, 0, eps[pos+5]))
-            dvec = np.array(dvec)
-            projs = Projection_Preprocessing(Ax(dvec))
-
-            #import SimpleITK as sitk
-            #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/jac.nrrd")
-            #exit()
-
-            ret = [0,0,0,0,0,0]*len(curs)
-            for j in range(len(curs)):
-                pos = j*7
-                h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
-                for i in range(6):
-                    ret[j*6+i] = (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5
-
-            print("grad", time.perf_counter()-perftime)
-            return ret
-
-
-        if c==2:
-            eps = [1, 1, 5]
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]), args=(cur,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps})
-
-            eps = [0.5, 0.5, 1]
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps})
-            
-            eps = [0.1, 0.1, 0.5]
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps})
-
-            eps = [0.05, 0.05, 0.1]
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps})
-        elif c==-22:
-            eps = [1,1,1,2, 2, 10] * len(curs)
+        if c==-22:
+            eps = [2, 2, 2, 2, 2, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
         elif c==-23:
-            eps = [1,1,1,2, 2, 10] * len(curs)
+            eps = [2, 2, 2, 2, 2, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
-            eps = [0.5,0.5,0.5,0.5, 0.5, 1] * len(curs)
+            eps = [0.5, 0.5, 0.5, 0.5, 0.5, 1] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
         elif c==-24:
-            eps = [1,1,1, 2, 2, 10] * len(curs)
+            eps = [1, 1, 1, 1, 1, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.5, 0.5, 0.5, 0.5, 0.5, 1] * len(curs)
+            eps = [0.25, 0.25, 0.25, 0.25, 0.25, 2] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.1, 0.1, 0.1, 0.1, 0.1, 0.5] * len(curs)
+            eps = [0.01, 0.01, 0.01, 0.01, 0.01, 0.25] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
         elif c==-25:
-            eps = [1,1,1,2, 2, 10] * len(curs)
+            eps = [2, 2, 2, 2, 2, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
         elif c==-26:
-            eps = [1,1,1,2, 2, 10] * len(curs)
+            eps = [2, 2, 2, 2, 2, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
-            eps = [0.5,0.5,0.5,0.5, 0.5, 1] * len(curs)
+            eps = [0.5, 0.5, 0.5, 0.5, 0.5, 1] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
         elif c==-27:
-            eps = [1,1,1,2, 2, 10] * len(curs)
+            eps = [1,1,1,1, 1, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.5,0.5,0.5,0.5, 0.5, 1] * len(curs)
+            eps = [0.25,0.25,0.25,0.25, 0.25, 2] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.1,0.1,0.1,0.1, 0.1, 0.5] * len(curs)
+            eps = [0.01,0.01,0.01,0.01, 0.01, 0.25] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
@@ -2794,12 +2566,12 @@ def bfgs_all(curs, reg_config, c):
     
     res = []
     for i, cur in enumerate(curs):
-        cur = applyRot(cur, ret.x[i*3+0], ret.x[i*3+1], ret.x[i*3+2])
-        res.append(applyTrans(cur, ret.x[i*3+3], ret.x[i*3+4], ret.x[i*3+5]))
+        cur_rot = applyRot(cur, ret.x[i*6], ret.x[i*6+1], ret.x[i*6+2])
+        res.append(applyTrans(cur_rot, ret.x[i*6+3], ret.x[i*6+4], ret.x[i*6+5]))
 
     #config["trans_noise"] += ret.x[:3]
-    trans_noise += ret.x[:,3:].reshape(trans_noise.shape)
-    angles_noise += ret.x[:,:3].reshape(angles_noise.shape)
+    trans_noise += ret.x[3:].reshape(trans_noise.shape)
+    angles_noise += ret.x[:3].reshape(angles_noise.shape)
 
     #reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 
