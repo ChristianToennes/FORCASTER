@@ -1,5 +1,5 @@
 import numpy as np
-import cv2
+#import cv2
 from scipy.interpolate import ndgriddata
 import utils
 import matplotlib.pyplot as plt
@@ -9,6 +9,7 @@ import sys
 import itertools
 import time
 import threading
+import multiprocessing as mp
 import queue
 
 default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 4},
@@ -43,6 +44,7 @@ def applyTrans(in_params, x, y, z):
     return cur
 
 def trackFeatures(next_img, data, config):
+    import cv2
     #perftime = time.perf_counter()
     base_points, f1 = data
     new_points, f2 = findInitialFeatures(next_img, config)
@@ -110,6 +112,7 @@ def trackFeatures(next_img, data, config):
     return new_points[points], valid
 
 def findInitialFeatures(img, config):
+    import cv2
     #global detector, gpu_img, mask, gpu_mask
     #perftime = time.perf_counter()
     gpu_img = None
@@ -1790,6 +1793,79 @@ def bfgs_trans(cur, reg_config, c):
 
     return cur
 
+def calc_obj(cur_proj, i, k, config):
+    config["data_real"][i] = findInitialFeatures(config["real_img"][i], config)
+    config["points_real"][i] = normalize_points(config["data_real"][i][0], config["real_img"][i])
+
+    (p,v) = trackFeatures(cur_proj, config["data_real"][i], config)
+    points = normalize_points(p, cur_proj)
+    valid = v==1
+    points = points[valid]
+    axis, mult = [(-1,1),(-2,1),(-3,1)][k]
+    obj = calcPointsObjective(axis, points, config["points_real"][i][valid])*mult
+    if obj<0:
+        obj = 50
+    return obj
+
+def t_obj(q,indices,config,proj):
+    np.seterr("raise")
+    if config["my"]:
+        for i in indices:
+            q.put(calc_obj(proj[:,i], i, i%3, config))
+    else:
+        for i in indices:
+            q.put(calcGIObjective(config["real_img"][i], proj[:,i], i, None, config))
+
+def t_obj1(q,indices,config,projs):
+    np.seterr("raise")
+    if config["my"]:
+        for j in indices:
+            pos = j*4
+            for i in range(3):
+                h0 = calc_obj(projs[:,pos], j, i, config)
+                q.put((j*3+i, (calc_obj(projs[:,pos+i+1], j, i, config)-h0)*0.5))
+    else:
+        for j in indices:
+            pos = j*4
+            h0 = calcGIObjective(config["real_img"][j], projs[:,pos], j, None, config)
+            for i in range(3):
+                q.put((j*3+i, (calcGIObjective(config["real_img"][j], projs[:,pos+i+1], j, None, config)-h0) * 0.5))
+
+def t_obj2(q,indices,config,projs):
+    np.seterr("raise")
+    if config["my"]:
+        for j in indices:
+            pos = j*12
+            for i in range(3):
+                h1 = calc_obj(projs[:,pos+i*4], j, i, config)
+                h_1 = calc_obj(projs[:,pos+i*4+1], j, i, config)
+                h2 = calc_obj(projs[:,pos+i*4+2], j, i, config)
+                h_2 = calc_obj(projs[:,pos+i*4+3], j, i, config)
+                q.put((j*3+i, (-h2+8*h1-8*h_1+h_2)/12))
+    else:
+        for j in indices:
+            pos = j*12
+            for i in range(3):
+                h1 = (calcGIObjective(config["real_img"][j], projs[:,pos+i*4], j, None, config))
+                h_1 = (calcGIObjective(config["real_img"][j], projs[:,pos+i*4+1], j, None, config))
+                h2 = (calcGIObjective(config["real_img"][j], projs[:,pos+i*4+2], j, None, config))
+                h_2 = (calcGIObjective(config["real_img"][j], projs[:,pos+i*4+3], j, None, config))
+                q.put((j*3+i, (-h2+8*h1-8*h_1+h_2)/12))
+
+
+def filt_conf(config):
+    d = {"real_img": config["real_img"], "my": config["my"], "use_cpu": config["use_cpu"], "AKAZE_params": config["AKAZE_params"]}#, "p1": None, "absp1": None, "GIoldold": None, "data_real": None, "points_real": None}
+    if "p1" in config:
+        d["p1"] = config["p1"]
+    if "absp1" in config:
+        d["absp1"] = config["absp1"]
+    if "GIoldold" in config:
+        d["GIoldold"] = config["GIoldold"]
+    if "data_real" in config:
+        d["data_real"] = [None]*len(config["data_real"])
+    if "points_real" in config:
+        d["points_real"] = [None]*len(config["points_real"])
+    return d
 
 def bfgs_trans_all(curs, reg_config, c):
     global gis
@@ -1809,17 +1885,6 @@ def bfgs_trans_all(curs, reg_config, c):
     config["angle_noise"] = np.array(angles_noise)
     config["trans_noise"] = np.array(trans_noise)
 
-    def calc_obj(cur_proj, i, k):
-        (p,v) = trackFeatures(cur_proj, config["data_real"][i], config)
-        points = normalize_points(p, cur_proj)
-        valid = v==1
-        points = points[valid]
-        axis, mult = [(-1,1),(-2,1),(-3,1)][k]
-        obj = calcPointsObjective(axis, points, config["points_real"][i][valid])*mult
-        if obj<0:
-            obj = 50
-        return obj
-
     def f(x, curs, eps):
         perftime = time.perf_counter() # 100 s / 50 s
         ret = 0
@@ -1830,23 +1895,20 @@ def bfgs_trans_all(curs, reg_config, c):
         cur_x = np.array(cur_x)
         proj = Projection_Preprocessing(Ax(cur_x))
         
-        q = queue.Queue()
-        def t_obj(q,indices):
-            np.seterr("raise")
-            if config["my"]:
-                for i in indices:
-                    q.put(calc_obj(proj[:,i], i, i%3))
-            else:
-                for i in indices:
-                    q.put(calcGIObjective(real_img[i], proj[:,i], i, cur_x[i], config))
-        
+        q = mp.Queue()
+
+        ts = []
         for u in np.array_split(list(range(len(curs))), 8):
-            t = threading.Thread(target=t_obj, args = (q, u))
-            t.daemon = True
+            #t = threading.Thread(target=t_obj, args = (q, u))
+            #t.daemon = True
+            t = mp.Process(target=t_obj, args = (q,u,filt_conf(config),proj))
             t.start()
+            ts.append(t)
         for _ in range(proj.shape[1]):
             ret += q.get()
         
+        for t in ts:
+            t.join()
         #print("obj", time.perf_counter()-perftime, ret/len(curs))
         return ret/len(curs)
 
@@ -1884,26 +1946,15 @@ def bfgs_trans_all(curs, reg_config, c):
         ret = [0,0,0]*len(curs)
         ret_set = np.zeros(len(ret), dtype=bool)
         
-        q = queue.Queue()
-        def t_obj(q,indices):
-            np.seterr("raise")
-            if config["my"]:
-                for j in indices:
-                    pos = j*4
-                    h0 = calc_obj(projs[:,pos], j, 0), calc_obj(projs[:,pos], j, 1), calc_obj(projs[:,pos], j, 2)
-                    for i in range(3):
-                        q.put((j*3+i, (calc_obj(projs[:,pos+i+1], j, i)-h0[i])*0.5))
-            else:
-                for j in indices:
-                    pos = j*4
-                    h0 = calcGIObjective(real_img[j], projs[:,pos], j, dvec[pos], config)
-                    for i in range(3):
-                        q.put((j*3+i, (calcGIObjective(real_img[j], projs[:,pos+i+1], j, dvec[pos+i+1], config)-h0) * 0.5))
-
+        q = mp.Queue()
+        
+        ts = []
         for u in np.array_split(list(range(real_img.shape[0])), 8):
-            t = threading.Thread(target=t_obj, args = (q, u))
-            t.daemon = True
+            #t = threading.Thread(target=t_obj, args = (q, u))
+            #t.daemon = True
+            t = mp.Process(target=t_obj1, args = (q, u, filt_conf(config), projs))
             t.start()
+            ts.append(t)
 
         for _ in range(len(ret)):
             i, res = q.get()
@@ -1912,7 +1963,9 @@ def bfgs_trans_all(curs, reg_config, c):
         
         if not ret_set.all():
             print("not all grad elements were set")
-
+        
+        for t in ts:
+            t.join()
         #print("grad", time.perf_counter()-perftime)
         return ret
     
@@ -1941,32 +1994,15 @@ def bfgs_trans_all(curs, reg_config, c):
         ret = [0,0,0]*len(curs)
         ret_set = np.zeros(len(ret), dtype=bool)
         
-        q = queue.Queue()
-        def t_obj(q,indices):
-            np.seterr("raise")
-            if config["my"]:
-                for j in indices:
-                    pos = j*12
-                    for i in range(3):
-                        h1 = calc_obj(projs[:,pos+i*4], j, i)
-                        h_1 = calc_obj(projs[:,pos+i*4+1], j, i)
-                        h2 = calc_obj(projs[:,pos+i*4+2], j, i)
-                        h_2 = calc_obj(projs[:,pos+i*4+3], j, i)
-                        q.put((j*3+i, (-h2+8*h1-8*h_1+h_2)/12))
-            else:
-                for j in indices:
-                    pos = j*12
-                    for i in range(3):
-                        h1 = (calcGIObjective(real_img[j], projs[:,pos+i*4], j, dvec[pos+i], config))
-                        h_1 = (calcGIObjective(real_img[j], projs[:,pos+i*4+1], j, dvec[pos+i+1], config))
-                        h2 = (calcGIObjective(real_img[j], projs[:,pos+i*4+2], j, dvec[pos+i+2], config))
-                        h_2 = (calcGIObjective(real_img[j], projs[:,pos+i*4+3], j, dvec[pos+i+3], config))
-                        q.put((j*3+i, (-h2+8*h1-8*h_1+h_2)/12))
-
+        q = mp.Queue()
+        
+        ts = []
         for u in np.array_split(list(range(real_img.shape[0])), 8):
-            t = threading.Thread(target=t_obj, args = (q, u))
-            t.daemon = True
+            #t = threading.Thread(target=t_obj2, args = (q, u))
+            #t.daemon = True
+            t = threading.Thread(target=t_obj2, args = (q, u, filt_conf(config), projs))
             t.start()
+            ts.append(t)
 
         for _ in range(len(ret)):
             i, res = q.get()
@@ -1976,6 +2012,9 @@ def bfgs_trans_all(curs, reg_config, c):
         if not ret_set.all():
             print("not all grad elements were set")
 
+        for t in ts:
+            t.join()
+            
         #print("grad", time.perf_counter()-perftime)
         return ret
 
@@ -2033,12 +2072,12 @@ def bfgs_trans_all(curs, reg_config, c):
         config["points_real"] = [normalize_points(data_real[i][0], real_img[i]) for i in range(len(data_real))]
 
         if c==-34:
-            eps = [0.5, 0.5, 5] * len(curs)
+            eps = [2, 2, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp':True})
 
-            eps = [0.25, 0.25, 0.5] * len(curs)
+            eps = [0.5, 0.5, 2] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp':True})
@@ -2047,16 +2086,16 @@ def bfgs_trans_all(curs, reg_config, c):
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp':True})
         elif c==-37:
-            eps = [0.5, 0.5, 5] * len(curs)
+            eps = [2, 2, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp':True})
 
-            eps = [0.25, 0.25, 0.5] * len(curs)
+            eps = [0.25, 0.25, 2] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp':True})
-            eps = [0.05, 0.05, 0.25] * len(curs)
+            eps = [0.01, 0.01, 0.25] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp':True})
@@ -2090,24 +2129,24 @@ def bfgs_trans_all(curs, reg_config, c):
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps})
         elif c==-22:
-            eps = [2, 2, 10] * len(curs)
+            eps = [1, 1, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
         elif c==-23:
-            eps = [2, 2, 10] * len(curs)
+            eps = [1, 1, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.5, 0.5, 1] * len(curs)
+            eps = [0.25, 0.25, 2] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
         elif c==-24:
-            eps = [1, 1, 10] * len(curs)
+            eps = [2, 2, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
@@ -2123,24 +2162,24 @@ def bfgs_trans_all(curs, reg_config, c):
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
         elif c==-25:
-            eps = [2, 2, 10] * len(curs)
+            eps = [1, 1, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
         elif c==-26:
-            eps = [2, 2, 10] * len(curs)
+            eps = [1, 1, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.5, 0.5, 1] * len(curs)
+            eps = [0.25, 0.25, 2] * len(curs)
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
 
         elif c==-27:
-            eps = [1, 1, 10] * len(curs)
+            eps = [2, 2, 10] * len(curs)
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
