@@ -582,7 +582,7 @@ def linsearch(in_cur, axis, config):
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
     if not my:
-        config["GIoldold"] = GI(real_img, real_img)
+        config["GIoldold"] = [None]# = GI(real_img, real_img)
     #print(grad_width, noise)
     #grad_width = (1,25)
     
@@ -656,7 +656,7 @@ def linsearch(in_cur, axis, config):
         else:
             min_ε = mean_mid
     else:
-        values = np.array([calcGIObjective(real_img, projs[:,i], config) for i in range(projs.shape[1])])
+        values = np.array([calcGIObjective(real_img, projs[:,i], 0, None, config) for i in range(projs.shape[1])])
         #p = np.polyfit(εs, values, 2)
         #mid = np.argmax(values)
         #p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
@@ -712,7 +712,9 @@ def binsearch(in_cur, axis, config):
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
     if not my:
-        config["GIoldold"] = GI(real_img, real_img)
+        config["GIoldold"] = [None]# = GI(real_img, real_img)
+        config["p1"] = [None]
+        config["absp1"] = [None]
 
     make_εs = lambda size, count: np.array([-size/(1.1**i) for i in range(count)] + [0] + [size/(1.1**i) for i in range(count)][::-1])
     εs = make_εs(*grad_width)
@@ -741,7 +743,7 @@ def binsearch(in_cur, axis, config):
             p = np.polyfit(εs[values>=0], values[values>=0], 2)
             #p1 = np.polyfit(εs, values1, 2)
         else:
-            values = np.array([1-calcGIObjective(real_img, projs[:,i], config) for i in range(projs.shape[1])])
+            values = np.array([1-calcGIObjective(real_img, projs[:,i], 0, None, config) for i in range(projs.shape[1])])
             p = np.polyfit(εs, values, 2)
         #plt.figure()
         #plt.plot(np.linspace(1.2*εs[0],1.2*εs[-1]), np.polyval(p, np.linspace(1.2*εs[0],1.2*εs[-1])))
@@ -888,8 +890,10 @@ def roughRegistration(in_cur, reg_config, c):
         return bfgs(cur, reg_config, 0)
     if c==0:
         return bfgs(cur, reg_config, 1)
-    if c==1 or c==2 or c<=-20:
+    if c==1 or c==2:
         return bfgs_trans(cur, reg_config, c)
+    if c<=-20:
+        return bfgs_trans_all(cur, reg_config, c)
     config = dict(default_config)
     config.update(reg_config)
 
@@ -989,8 +993,9 @@ def roughRegistration(in_cur, reg_config, c):
     elif c==13:
         config["it"] = 10
         cur = correctXY(cur, config)
-    elif c==15: # 5
+    elif c==15:
         config["my"] = False
+        config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         for grad_width in [(1.5,25), (0.5,25)]:
@@ -1003,6 +1008,7 @@ def roughRegistration(in_cur, reg_config, c):
                 cur = correctXY(cur, config)
                 cur = correctZ(cur, config)
     elif c==16:
+        config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         for grad_width in [(2,25), (1.5,25), (1,25), (0.75,25), (0.75,25), (0.5,25), (0.5,25), (0.25,25)]:
