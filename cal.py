@@ -583,6 +583,8 @@ def linsearch(in_cur, axis, config):
     real_img = Projection_Preprocessing(real_img)
     if not my:
         config["GIoldold"] = [None]# = GI(real_img, real_img)
+        config["p1"] = [None]
+        config["absp1"] = [None]
     #print(grad_width, noise)
     #grad_width = (1,25)
     
