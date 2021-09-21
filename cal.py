@@ -630,7 +630,7 @@ def linsearch(in_cur, axis, config):
         if len(midpoints) == 0:
             #print(values)
             return cur
-        mean_mid = np.mean(εs[midpoints])
+        mean_mid = np.median(εs[midpoints])
         if False and mid > 10 and mid < grad_width[1]*2-10:
             std_mid = np.std(εs[midpoints])
             mid = np.argmin(values[midpoints[np.bitwise_and(εs[midpoints]>mean_mid-3*std_mid, εs[midpoints]<mean_mid+3*std_mid)]])
@@ -691,6 +691,84 @@ def linsearch(in_cur, axis, config):
     if both:
         return cur, min_ε
     return cur
+
+
+def linsearch2d(in_cur, axis, config):
+    warnings.simplefilter("error")
+    data_real = config["data_real"]
+    real_img = config["real_img"]
+    Ax = config["Ax"]
+
+    my = True
+    if "my" in config:
+        my = config["my"]
+    grad_width=(1,25)
+    if "grad_width" in config:
+        grad_width = config["grad_width"]
+    noise=None
+    if "angle_noise" in config:
+        noise = config["angle_noise"]
+    both=False
+    if "both" in config:
+        both = config["both"]
+
+    points_real, features_real = data_real
+    points_real = normalize_points(points_real, real_img)
+    real_img = Projection_Preprocessing(real_img)
+    if not my:
+        config["GIoldold"] = [None]# = GI(real_img, real_img)
+        config["p1"] = [None]
+        config["absp1"] = [None]
+    #print(grad_width, noise)
+    #grad_width = (1,25)
+    
+    if "binsearch" in config and config["binsearch"] == True:
+        make_εs = lambda size, count: np.array([-size/(1.1**i) for i in range(count)] + [0] + [size/(1.1**i) for i in range(count)][::-1])
+    else:
+        make_εs = lambda size, count: np.hstack((np.linspace(-size, 0, count, False), [0], np.linspace(size, 0, count, False)[::-1] ))
+    
+
+    εs = make_εs(*grad_width)
+    cur = np.array(in_cur)
+    dvec = []
+    for ε1 in εs:
+        for ε2 in εs:
+            dvec.append(applyRot(cur, ε1, ε2, 0))
+
+    dvec = np.array(dvec)
+    projs = Projection_Preprocessing(Ax(dvec))
+    if my:
+        points = []
+        valid = []
+        for (p,v), proj in [(trackFeatures(projs[:,i], data_real, config), projs[:,i]) for i in range(projs.shape[1])]:
+            points.append(normalize_points(p, proj))
+            valid.append(v==1)
+        combined_valid = valid[0]
+        for v in valid:
+            combined_valid = np.bitwise_and(combined_valid, v)
+        points = [p[v] for p, v in zip(points, valid)]
+        
+        values = np.array([calcPointsObjective(0, points, points_real[v])+calcPointsObjective(1, points, points_real[v]) for points,v in zip(points,valid)])
+        values = values.reshape(( len(εs),len(εs) ))
+        skip = np.count_nonzero(values<0)
+        midpoints = np.array(np.unravel_index(np.argsort(values,axis=None), values.shape))[skip:skip+5]
+        if len(midpoints) == 0:
+            #print(values)
+            return cur
+        mean_mid = np.median(εs[midpoints], axis=0)
+        min_ε = mean_mid
+    else:
+        values = np.array([calcGIObjective(real_img, projs[:,i], 0, None, config) for i in range(projs.shape[1])])
+        skip = np.count_nonzero(values<0)
+        midpoints = np.array(np.unravel_index(np.argsort(values,axis=None), values.shape))[skip:skip+5]
+        mean_mid = np.mean(εs[midpoints], axis=0)
+        min_ε = mean_mid
+
+    cur = applyRot(cur, min_ε[0], min_ε[1], 0)
+    if both:
+        return cur, min_ε
+    return cur
+
 
 def binsearch(in_cur, axis, config):
     data_real = config["data_real"]
@@ -1224,6 +1302,69 @@ def roughRegistration(in_cur, reg_config, c):
                 cur = linsearch(cur, 0, config)
                 cur = linsearch(cur, 1, config)
                 cur = linsearch(cur, 2, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c==27:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        for grad_width in [(2.5,15), (0.5,15)]:
+            #print()
+            for _ in range(1):
+                config["grad_width"]=grad_width
+                cur = linsearch2d(cur, 0, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c==28:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        for grad_width in [(2.5,25), (0.5,25)]:
+            #print()
+            for _ in range(1):
+                config["grad_width"]=grad_width
+                cur = linsearch2d(cur, 0, config)
+                cur = correctXY(cur, config)
+                cur = correctZ(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c==29:
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        for grad_width in [(1.5,15), (0.5,15)]:
+            #print()
+            for _ in range(1):
+                config["grad_width"]=grad_width
+                cur = linsearch2d(cur, 0, config)
                 cur = correctXY(cur, config)
                 cur = correctZ(cur, config)
         
