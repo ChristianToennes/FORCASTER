@@ -16,6 +16,7 @@ import cv2
 import scipy.ndimage
 import re
 from skimage.metrics import structural_similarity,normalized_root_mse
+from datetime import timedelta as td
 
 def write_vectors(name, vecs):
     return
@@ -588,21 +589,59 @@ def mutual_information_2d(x, y, sigma=1, normalized=False):
 
     return mi
 
+#def evalFWHM(img, name, pos = [241,261,265]):
+def evalFWHM(img, name, pos = [247,268,266]):
+    mask = np.zeros_like(img, dtype=bool)
+    mask[pos[0],pos[1]-10:pos[1]+10,pos[2]-10:pos[2]+10] = True
+    sitk.WriteImage(sitk.GetImageFromArray(img*mask), os.path.join("recos", "fwhm_"+name+"_input1.nrrd"), True)
+    lines = img[mask].reshape((1,20,20))
+    maxpos = np.argmax(lines)
+    maxpos = np.unravel_index(maxpos, lines.shape)
+    mask = np.zeros_like(img, dtype=bool)
+    mask[maxpos[0]+pos[0],maxpos[1]+pos[1]-10,:] = True
+    sitk.WriteImage(sitk.GetImageFromArray(img*mask), os.path.join("recos", "fwhm_"+name+"_input2.nrrd"), True)
+    line = img[mask]
+    maxpos = maxpos[2]+pos[2]-10
+    maxval = line[maxpos]
+    i = maxpos
+    left = 0
+    right = len(line)-1
+    while i > 0:
+        if line[i] == 0.5*maxval:
+            left = i
+            break
+        if line[i] < 0.5*maxval:
+            left = i + (maxval-line[i]) / (line[i+1]-line[i])
+            break
+        i -= 1
+    i = maxpos
+    while i < len(line):
+        if line[i] == 0.5*maxval:
+            right = i
+            break
+        if line[i] < 0.5*maxval:
+            right = i-1 + (maxval-line[i]) / (line[i-1]-line[i])
+            break
+        i += 1
+    print(right,left,maxpos,maxval)
+    print("FWHM: ", right-left)
+    return right-left
+
 def evalPerformance(output, real, runtime, name, stats_file='stats.csv'):
     if np.size(output[0]) != np.size(real[0]):
         return
     vals = []
     for i in range(len(real)):
-        vals.append(cal.calcGIObjective(real[i], output[i], 0, None, {"GIoldold":[None], "absp1":[None], "p1":[None]}))
+        vals.append(1.0/cal.calcGIObjective(real[i], output[i], 0, None, {"GIoldold":[None], "absp1":[None], "p1":[None]}))
     print("NGI: ", np.mean(vals))
 
     vals1 = []
-    for i in range(len(real)):
-        vals1.append(np.mean(cv2.matchTemplate(real[i], output[i], cv2.TM_CCORR_NORMED)))
+    #for i in range(len(real)):
+    #    vals1.append(np.mean(cv2.matchTemplate(real[i], output[i], cv2.TM_CCORR_NORMED)))
 
     vals2 = []
-    for i in range(len(real)):
-        vals2.append(np.mean(cv2.matchTemplate(real[i], output[i], cv2.TM_CCOEFF_NORMED)))
+    #for i in range(len(real)):
+    #    vals2.append(np.mean(cv2.matchTemplate(real[i], output[i], cv2.TM_CCOEFF_NORMED)))
 
     vals3 = []
     vals4 = []
@@ -627,15 +666,19 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv'):
     for i in range(len(real)):
         vals7.append(normalized_root_mse(real[i], output[i]))
 
+    vals8 = []
+    vals8.append(evalFWHM(output, name))
+
     with open(stats_file, "a") as f:
         f.write("{0};NGI;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals]) + "\n")
-        f.write("{0};CCORR_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
-        f.write("{0};CCOEFF_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals2]) + "\n")
+        #f.write("{0};CCORR_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals1]) + "\n")
+        #f.write("{0};CCOEFF_NORM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals2]) + "\n")
         #f.write("{0};NCCORR;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals3]) + "\n")
         #f.write("{0};NCCOEFF;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=MEDIAN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals4]) + "\n")
         f.write("{0};NMI;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals5]) + "\n")
         f.write("{0};SSIM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals6]) + "\n")
-        f.write("{0};FSIM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals7]) + "\n")
+        f.write("{0};NRMSE;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals7]) + "\n")
+        f.write("{0};FWHM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals8]) + "\n")
 
 def evalResults(out_path, in_path, projname):
     ims_un = read_dicoms(in_path)[1]
@@ -681,30 +724,42 @@ def evalResults(out_path, in_path, projname):
     input_sino = False
     input_recos = {}
     for filename in os.listdir(out_path):
-        if re.fullmatch("forcast_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename:
+        if re.fullmatch("forcast_matlab_(.+?)_reco-output.nrrd", filename) != None and projname in filename:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            proj = sitk.GetArrayFromImage(img)
+            projs.append(proj)
+            #print(filename, proj.shape)
+            names.append("_".join(filename.split('_')[2:]))
+        elif re.fullmatch("forcast_matlab_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            proj = sitk.GetArrayFromImage(img)
+            projs.append(proj)
+            #print(filename, proj.shape)
+            names.append("_".join(filename.split('_')[2:]))
+        elif re.fullmatch("forcast_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename:
             img = sitk.ReadImage(os.path.join(out_path, filename))
             proj = sitk.GetArrayFromImage(img)
             projs.append(proj)
             #print(filename, proj.shape)
             names.append("_".join(filename.split('_')[1:]))
-        if re.fullmatch("forcast_(.+?)_reco-output.nrrd", filename) != None and projname in filename:
+        elif re.fullmatch("forcast_(.+?)_reco-output.nrrd", filename) != None and projname in filename:
             img = sitk.ReadImage(os.path.join(out_path, filename))
             proj = sitk.GetArrayFromImage(img)
             projs.append(proj)
             #print(filename, proj.shape)
             names.append("_".join(filename.split('_')[1:]))
-        if re.fullmatch("trajtomo_reco_matlab_(.+?)\.nrrd", filename) != None and projname in filename:
+        elif re.fullmatch("trajtomo_reco_matlab_(.+?)\.nrrd", filename) != None and projname in filename:
             img = sitk.ReadImage(os.path.join(out_path, filename))
             proj = sitk.GetArrayFromImage(img)
             projs.append(proj)
             #print(filename, proj.shape)
             names.append("_".join(filename.split('_')[3:])+"_matlab")
-        if re.fullmatch("forcast_(.+?)_sino-input.nrrd", filename) != None and projname in filename and input_sino == False:
+        elif re.fullmatch("forcast_(.+?)_sino-input.nrrd", filename) != None and projname in filename and input_sino == False:
             input_sino = True
             img = sitk.ReadImage(os.path.join(out_path, filename))
             projs.append(sitk.GetArrayFromImage(img))
             names.append(projname+"_input")
-        if re.fullmatch("forcast_[^_]+_reco-input.nrrd", filename) != None:
+        elif re.fullmatch("forcast_[^_]+_reco-input.nrrd", filename) != None:
             img = sitk.ReadImage(os.path.join(out_path, filename))
             input_recos[filename.split('_')[1]] = sitk.GetArrayFromImage(img)
 
@@ -721,9 +776,24 @@ def evalAllResults(outpath = "recos"):
         f.truncate()
     with open("stats_rec.csv", "w") as f:
         f.truncate()
-    for name, proj_path, _ in projs:
+    for name, proj_path, _, _ in projs:
         evalResults(outpath, proj_path, name)
 
+def write_rec(geo, ims, filepath, mult=1):
+    geo["Vectors"] = geo["Vectors"]*mult
+    out_shape = (out_rec_meta[3][0]*mult, out_rec_meta[3][1]*mult, out_rec_meta[3][2]*mult)
+    rec = utils.FDK_astra(out_shape, geo, np.swapaxes(ims, 0,1))
+    #mask = np.zeros(rec.shape, dtype=bool)
+    mask = create_circular_mask(rec.shape)
+    rec = rec*mask
+    del mask
+    rec = sitk.GetImageFromArray(rec)*100
+    rec.SetOrigin(out_rec_meta[0])
+    out_spacing = (out_rec_meta[2][0]/mult,out_rec_meta[2][1]/mult,out_rec_meta[2][2]/mult)
+    rec.SetSpacing(out_spacing)
+    sitk.WriteImage(rec, filepath, True)
+    del rec
+    
 def reg_and_reco(ims, in_params, config):
     name = config["name"]
     grad_width = config["grad_width"] if "grad_width" in config else (1,25)
@@ -735,8 +805,12 @@ def reg_and_reco(ims, in_params, config):
 
     print(name, grad_width)
     params = np.array(in_params[:])
-    if not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
-        sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
+    if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
+        rec = sitk.GetImageFromArray(real_image)*100
+        rec.SetOrigin(out_rec_meta[0])
+        out_spacing = (out_rec_meta[2][0],out_rec_meta[2][1],out_rec_meta[2][2])
+        rec.SetSpacing(out_spacing)
+        sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
     if not perf:
         sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims,0,1)))
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd"), True)
@@ -748,15 +822,8 @@ def reg_and_reco(ims, in_params, config):
         del sino
     if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
-        rec = utils.FDK_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1))
-        #mask = np.zeros(rec.shape, dtype=bool)
-        mask = create_circular_mask(rec.shape)
-        rec = rec*mask
-        del mask
-        rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"), True)
-        del rec
-    if False and not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
+        write_rec(reg_geo, ims, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"))
+    if False and not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         rec = utils.CGLS_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 75)
         #mask = np.zeros(rec.shape, dtype=bool)
@@ -791,10 +858,12 @@ def reg_and_reco(ims, in_params, config):
         print_stats(config["noise"][1])
         
     perftime = time.perf_counter()
-    if False and mp.cpu_count() > 1:
-        corrs = reg_rough_parallel(ims, params, config, method)
+    if method>-20:
+        if False and mp.cpu_count() > 1:
+            corrs = reg_rough_parallel(ims, params, config, method)
+        else:
+            corrs = reg_rough(ims, params, config, method)
     else:
-        #corrs = reg_rough(ims, params, config, method)
         corrs = reg_all(ims, params, config, method)
 
     vecs = Ax.create_vecs(corrs)
@@ -818,20 +887,8 @@ def reg_and_reco(ims, in_params, config):
 
     if not perf:
         reg_geo = Ax.create_geo(corrs)
-        #sino = Ax(corrs)
-        #sino = sitk.GetImageFromArray(sino)
-        #sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-rough.nrrd"))
-        #del sino
-        rec = utils.FDK_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1))
-        mask = create_circular_mask(rec.shape)
-        rec = rec*mask
-        del mask
-        #rec = np.swapaxes(rec, 0, 2)
-        #rec = np.swapaxes(rec, 1,2)
-        #rec = rec[::-1, ::-1]
-        rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name+"_reco-output.nrrd"), True)
-        del rec
+        mult = 2
+        write_rec(reg_geo, ims, os.path.join(outpath, "forcast_"+name+"_reco-output.nrrd"), mult)
         if False:
             reg_geo = Ax.create_geo(corrs)
             rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
@@ -995,10 +1052,10 @@ def get_proj_paths():
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     #cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
-    #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
-    #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
+    ('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [27,28,29,25,26]),
+    ('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
+    ('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
     #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
@@ -1008,7 +1065,7 @@ def get_proj_paths():
     
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path),
+    #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
     #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
@@ -1073,15 +1130,19 @@ def calc_images_matlab(name, ims, real_image, detector_shape):
         sitk.WriteImage(rec, os.path.join(outpath, "forcast_matlab_"+name+"_reco-output_sirt.nrrd"))
         del rec
 
+out_rec_meta = ()
+
 def reg_real_data():
     projs = get_proj_paths()
 
     np.seterr(all='raise')
 
-    for name, proj_path, cbct_path in projs:
+    for name, proj_path, cbct_path, methods in projs:
         
         try:
-            _, ims_un, _, _, _, coord_systems, sids, sods = read_dicoms(proj_path)
+            _, ims_un, _, _, angles, coord_systems, sids, sods = read_dicoms(proj_path)
+
+
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
             skip = max(1, int(len(ims_un)/500))
@@ -1098,11 +1159,14 @@ def reg_real_data():
             #ims = ims[::skip]
             ims_un = ims_un[::skip]
             coord_systems = coord_systems[::skip]
+            angles = angles[::skip]
             sids = np.mean(sids[::skip])
             sods = np.mean(sods[::skip])
             angles_noise = angles_noise[::skip]
             trans_noise = trans_noise[::skip]
             zoom_noise = zoom_noise[::skip]
+
+            coords_from_angles = utils.angles2coord_system(angles)
 
             origin, size, spacing, image = utils.read_cbct_info(cbct_path)
 
@@ -1112,17 +1176,26 @@ def reg_real_data():
             detector_spacing = np.array((0.125, 0.125)) * detector_mult
 
             real_image = utils.fromHU(sitk.GetArrayFromImage(image))
+
+            global out_rec_meta
+            out_rec_meta = (image.GetOrigin(), image.GetSize(), image.GetSpacing(), real_image.shape)
             del image
 
             Ax = utils.Ax_param_asta(real_image.shape, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing), real_image)
             Ax_gen = (real_image.shape, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing), real_image)
             geo = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
-
+            geo_from_angles = utils.create_astra_geo_coords(coords_from_angles, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+            
             r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
 
-            params = np.zeros((len(geo['Vectors']), 3, 3), dtype=float)
-            params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
-            params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
+            if 'angle' in name or 'both' in name:
+                params = np.zeros((len(geo_from_angles['Vectors']), 3, 3), dtype=float)
+                params[:,1] = np.array([r.dot(v) for v in geo_from_angles['Vectors'][:, 6:9]])
+                params[:,2] = np.array([r.dot(v) for v in geo_from_angles['Vectors'][:, 9:12]])
+            else:
+                params = np.zeros((len(geo['Vectors']), 3, 3), dtype=float)
+                params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
+                params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
 
             if False:
                 for i, (α,β,γ) in enumerate(angles_noise):
@@ -1142,10 +1215,10 @@ def reg_real_data():
             
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape)
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": "Z:\\\\"}
+            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": "Z:\\\\recos"}
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
-            for method in [-24]:
+            for method in methods:
                 config["name"] = name + str(method)
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))

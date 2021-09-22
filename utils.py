@@ -3,6 +3,22 @@ import astra
 import os
 import SimpleITK as sitk
 
+def FP(img, dist_detector_source, ratio):
+    proj_geom = astra.create_proj_geom('cone', 0.25, 0.25, 2480, 1920, [0, np.pi*0.5, np.pi, np.pi*1.5], dist_detector_source*ratio, dist_detector_source*(1.0-ratio)) 
+    proj_id = astra.data3d.create('-proj3d', proj_geom)
+    vol_geom = astra.create_vol_geom(img.shape[1], img.shape[2], img.shape[0])
+    vol_id = astra.data3d.create('-vol', vol_geom, img)
+    cfg = astra.astra_dict('FP3D_CUDA')
+    cfg['ProjectionDataId'] = proj_id
+    cfg['VolumeDataId'] = vol_id
+    alg_id = astra.algorithm.create(cfg)
+    astra.algorithm.run(alg_id, 1)
+    result = astra.data3d.get(proj_id)
+    astra.algorithm.delete(alg_id)
+    astra.data3d.delete(vol_id)
+    astra.data3d.delete(proj_id)
+    return result
+
 def Ax_astra(out_shape, proj_geom):
     proj_id = astra.data3d.create('-proj3d', proj_geom)
     vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
@@ -391,6 +407,77 @@ def δtv_norm(x):
     grad[:, :, 1:] -= dz_diff[:, :, :-1]
     return grad
 
+def read_matlab_vecs(prefix):
+    name = 'vectors_' + prefix + '.mat'
+    if os.path.isfile(name):
+        from scipy.io import loadmat
+        vecs = loadmat(name)['newVectors']
+        r = [rotMat(90, v) for v in np.cross(vecs[:, 6:9], vecs[:, 9:12])]
+        vecs[:, 6:9] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
+        vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
+        
+        r = rotMat(-90, [0,0,1])#.dot(rotMat(-90, [0,0,1]))
+        vecs[:, 0:3] = np.array([r.dot(v) for v in vecs[:, 0:3]])
+        vecs[:, 3:6] = np.array([r.dot(v) for v in vecs[:, 3:6]])
+        vecs[:, 6:9] = np.array([r.dot(v) for v in vecs[:, 6:9]])
+        vecs[:, 9:12] = np.array([r.dot(v) for v in vecs[:, 9:12]])
+        return vecs
+    else:
+        raise FileNotFoundError(name)
+
+def params_to_vecs(params, sid=807, did=391):
+    r = rotMat(90, [0,0,1]).dot(rotMat(-90, [1,0,0]))
+    vecs = np.zeros((len(params), 12), dtype=float)
+    vecs[:, 6:9] = np.array([r.dot(v) for v in params[:,1]])
+    vecs[:, 9:12] = np.array([r.dot(v) for v in params[:,2]])
+    zdir = np.cross(vecs[:, 6:9], vecs[:, 9:12])
+    zdir = zdir/np.linalg.norm(zdir, axis=1)[:,np.newaxis]
+    vecs[:, 0:3] = params[:,0] + zdir*sid
+    vecs[:, 3:6] = params[:,0] + zdir*did
+    return vecs
+
+def vecs_to_params(vecs, sid=807, did=391):
+    r = rotMat(90, [1,0,0]).dot(rotMat(-90, [0,0,1]))
+    params = np.zeros((len(vecs), 3, 3), dtype=float)
+    params[:,1] = np.array([r.dot(v) for v in vecs[:, 6:9]])
+    params[:,2] = np.array([r.dot(v) for v in vecs[:, 9:12]])
+    zdir = np.cross(vecs[:,9:12], vecs[:,6:9])
+    zdir = zdir/np.linalg.norm(zdir, axis=1)[:,np.newaxis]
+    i1 = vecs[:, 0:3] + zdir*sid
+    i2 = vecs[:, 3:6] + zdir*did
+    print(np.linalg.norm(vecs[:5, 0:3]-vecs[:5,3:6], axis=1))
+    print(np.linalg.norm(i1[:5]-i2[:5], axis=1))
+    print(i1[:5])
+    print(i2[:5])
+    #print(np.mean(i1, axis=0))
+    #print(np.mean(i2, axis=0))
+    #params[:,0] = i1
+    params[:,0] = i2
+    return params
+
+def test():
+    vecs = read_matlab_vecs("genA_trans")
+    params = vecs_to_params(vecs)
+    vecs2 = params_to_vecs(params)
+    diff = vecs-vecs2
+    
+    _, tn, zn = get_noise()
+
+    #print(tn[:5,0][:,np.newaxis]*vecs[:5,6:9]+tn[:5,1][:,np.newaxis]*vecs[:5,9:12])
+    #print(params[:5,0])
+    #print(diff[:5,0:3])
+    #print(diff[:5,3:6])
+
+def get_noise(len_ims=496):
+    random = np.random.default_rng(23)
+    angles_noise = random.uniform(low=-1, high=1, size=(len_ims,3))
+    min_trans, max_trans = -10, 10
+    trans_noise = np.array(np.round(random.uniform(low=min_trans, high=max_trans, size=(len_ims,2))), dtype=int)
+    zoom_noise = random.uniform(low=0.9, high=1, size=len_ims)
+
+    return angles_noise, trans_noise, zoom_noise
+
+
 def create_default_astra_geo():
     angles = np.linspace(0, 2*np.pi, 360, False)
     angles_one = np.ones_like(angles)
@@ -477,6 +564,28 @@ def rotMat(θ, u_not_normed):
                 [u[1]*u[0]*(1-cT)+u[2]*sT, cT+u[1]*u[1]*(1-cT), u[1]*u[2]*(1-cT)-u[0]*sT],
                 [u[2]*u[0]*(1-cT)-u[1]*sT, u[2]*u[1]*(1-cT)+u[0]*sT, cT+u[2]*u[2]*(1-cT)]
             ]))
+
+def angles2coord_system(angles):
+    coords = np.zeros((len(angles), 3, 4))
+    for i,(α,β,γ) in enumerate(angles):
+        x = np.array([1,0,0])
+        y = np.array([0,1,0])
+        z = np.array([0,0,1])
+        
+        m = rotMat(-α*180.0/np.pi, x)
+        x = m.dot(x)
+        y = m.dot(y)
+        z = m.dot(z)
+        
+        m = rotMat(β*180/np.pi, y)
+        x = m.dot(x)
+        y = m.dot(y)
+        z = m.dot(z)
+
+        coords[i,:,0] = x/np.linalg.norm(x)
+        coords[i,:,1] = y/np.linalg.norm(y)
+        coords[i,:,2] = z/np.linalg.norm(z)
+    return coords
 
 def coord_systems2vecs(coord_systems, detector_spacing, dist_source_origin, dist_origin_detector, image_spacing):
     vectors = np.zeros((len(coord_systems), 12))
