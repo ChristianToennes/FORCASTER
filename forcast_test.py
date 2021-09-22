@@ -715,14 +715,14 @@ def evalResults(out_path, in_path, projname):
         if ims.shape == proj.shape:
             evalPerformance(proj, ims, 0, name, 'stats_rec.csv')
 
-def evalAllResults():
+def evalAllResults(outpath = "recos"):
     projs = get_proj_paths()
     with open("stats_proj.csv", "w") as f:
         f.truncate()
     with open("stats_rec.csv", "w") as f:
         f.truncate()
     for name, proj_path, _ in projs:
-        evalResults("recos", proj_path, name)
+        evalResults(outpath, proj_path, name)
 
 def reg_and_reco(ims, in_params, config):
     name = config["name"]
@@ -731,21 +731,22 @@ def reg_and_reco(ims, in_params, config):
     Ax = config["Ax"]
     method = config["method"]
     real_image = config["real_cbct"]
+    outpath = config["outpath"]
 
     print(name, grad_width)
     params = np.array(in_params[:])
-    if not perf and not os.path.exists(os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
-        sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join("recos", "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
+    if not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
+        sitk.WriteImage(sitk.GetImageFromArray(real_image)*100, os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
     if not perf:
         sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims,0,1)))
-        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_projs-input.nrrd"), True)
+        sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd"), True)
         del sino
-    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
         sino = cal.Projection_Preprocessing(Ax(params))
         sino = sitk.GetImageFromArray(sino)
-        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-input.nrrd"), True)
+        sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd"), True)
         del sino
-    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         rec = utils.FDK_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1))
         #mask = np.zeros(rec.shape, dtype=bool)
@@ -753,9 +754,9 @@ def reg_and_reco(ims, in_params, config):
         rec = rec*mask
         del mask
         rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input.nrrd"), True)
+        sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"), True)
         del rec
-    if False and not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+    if False and not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         rec = utils.CGLS_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 75)
         #mask = np.zeros(rec.shape, dtype=bool)
@@ -763,9 +764,9 @@ def reg_and_reco(ims, in_params, config):
         rec = rec*mask
         del mask
         rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input_cgls.nrrd"))
+        sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name+"_reco-input_cgls.nrrd"))
         del rec
-    if False and not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
+    if False and not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
         #mask = np.zeros(rec.shape, dtype=bool)
@@ -773,7 +774,7 @@ def reg_and_reco(ims, in_params, config):
         rec = rec*mask
         del mask
         rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-input_sirt.nrrd"))
+        sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name+"_reco-input_sirt.nrrd"))
         del rec
 
     cali = {}
@@ -804,11 +805,11 @@ def reg_and_reco(ims, in_params, config):
     perftime = time.perf_counter()-perftime
 
     #print(params, corrs)
-    if not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_sino-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
         sino = Ax(corrs)
         evalPerformance(np.swapaxes(sino, 0, 1), ims, perftime, name)
         sino = sitk.GetImageFromArray(sino)
-        sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-output.nrrd"), True)
+        sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-output.nrrd"), True)
         del sino
     
     if "noise" in config:
@@ -819,7 +820,7 @@ def reg_and_reco(ims, in_params, config):
         reg_geo = Ax.create_geo(corrs)
         #sino = Ax(corrs)
         #sino = sitk.GetImageFromArray(sino)
-        #sitk.WriteImage(sino, os.path.join("recos", "forcast_"+name+"_sino-rough.nrrd"))
+        #sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-rough.nrrd"))
         #del sino
         rec = utils.FDK_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1))
         mask = create_circular_mask(rec.shape)
@@ -829,7 +830,7 @@ def reg_and_reco(ims, in_params, config):
         #rec = np.swapaxes(rec, 1,2)
         #rec = rec[::-1, ::-1]
         rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-output.nrrd"), True)
+        sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name+"_reco-output.nrrd"), True)
         del rec
         if False:
             reg_geo = Ax.create_geo(corrs)
@@ -841,7 +842,7 @@ def reg_and_reco(ims, in_params, config):
             #rec = np.swapaxes(rec, 1,2)
             #rec = rec[::-1, ::-1]
             rec = sitk.GetImageFromArray(rec)*100
-            sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-output_sirt.nrrd"))
+            sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name+"_reco-output_sirt.nrrd"))
             del rec
 
         if False:
@@ -854,7 +855,7 @@ def reg_and_reco(ims, in_params, config):
             #rec = np.swapaxes(rec, 1,2)
             #rec = rec[::-1, ::-1]
             rec = sitk.GetImageFromArray(rec)*100
-            sitk.WriteImage(rec, os.path.join("recos", "forcast_"+name+"_reco-rough_cgls.nrrd"))
+            sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name+"_reco-rough_cgls.nrrd"))
             del rec
 
     return vecs, corrs
@@ -889,11 +890,11 @@ def parameter_search(proj_path, cbct_path):
     #print(angles, prims, secs)
 
     input_sino = np.swapaxes(ims,0,1)
-    sitk.WriteImage(sitk.GetImageFromArray(input_sino), os.path.join("recos", "forcast_input.nrrd"))
+    sitk.WriteImage(sitk.GetImageFromArray(input_sino), os.path.join(outpath, "forcast_input.nrrd"))
 
     Ax = utils.Ax_geo_astra(real_image.shape, real_image)
     sino = Ax(geo)
-    sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join("recos", "forcast_sino.nrrd"))
+    sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join(outpath, "forcast_sino.nrrd"))
 
     geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], geo['Vectors'][0:1])
     proj_d = forcast.Projection_Preprocessing(Ax(geo_d))[:,0]
@@ -903,7 +904,7 @@ def parameter_search(proj_path, cbct_path):
     vecs = np.array([vec])
     geo_d = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
     proj_d = forcast.Projection_Preprocessing(Ax(geo_d))
-    sitk.WriteImage(sitk.GetImageFromArray(proj_d), os.path.join("recos", "forcast_rough.nrrd"))
+    sitk.WriteImage(sitk.GetImageFromArray(proj_d), os.path.join(outpath, "forcast_rough.nrrd"))
 
     with open('stats.csv','w') as f:
         good_values= [
@@ -927,8 +928,8 @@ def parameter_search(proj_path, cbct_path):
                     if fun < 12000:
                         bfgs_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], np.array([bfgs_vecs]))
                         sino = Ax(bfgs_geo)
-                        #sitk.WriteImage(sitk.GetImageFromArray(input_sino), os.path.join("recos", "forcast_input.nrrd"))
-                        sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join("recos", "forcast_sino_bfgs--"+str(fun)+"--"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
+                        #sitk.WriteImage(sitk.GetImageFromArray(input_sino), os.path.join(outpath, "forcast_input.nrrd"))
+                        sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join(outpath, "forcast_sino_bfgs--"+str(fun)+"--"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
                 except Exception as ex:
                     print(ex)
             for xy in itertools.chain(np.linspace(0.1,1,10), np.linspace(1,10,10)):
@@ -946,8 +947,8 @@ def parameter_search(proj_path, cbct_path):
                             if fun < 12000:
                                 bfgs_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], np.array([bfgs_vecs]))
                                 sino = Ax(bfgs_geo)
-                                #sitk.WriteImage(sitk.GetImageFromArray(input_sino), os.path.join("recos", "forcast_input.nrrd"))
-                                sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join("recos", "forcast_sino_bfgs--"+str(fun)+"--"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
+                                #sitk.WriteImage(sitk.GetImageFromArray(input_sino), os.path.join(outpath, "forcast_input.nrrd"))
+                                sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join(outpath, "forcast_sino_bfgs--"+str(fun)+"--"+str(xy)+"_"+str(z)+"_"+str(r)+".nrrd"))
                         except Exception as ex:
                             print(ex)
         #with open('stats.csv','w') as f:
@@ -955,13 +956,13 @@ def parameter_search(proj_path, cbct_path):
         my_vecs = forcast.FORCAST(i, ims, real_image, cali, geo, real_image.shape, np.array([2.3,2.3*3,2.3,2.3*0.1,2.3*0.1]), Ax)
         my_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], np.array([my_vecs]))
         sino = Ax(my_geo)
-        sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join("recos", "forcast_sino_my.nrrd"))
+        sitk.WriteImage(sitk.GetImageFromArray(sino), os.path.join(outpath, "forcast_sino_my.nrrd"))
 
     rec = utils.FDK_astra(real_image.shape, geo)(np.swapaxes(ims, 0,1))
     rec = np.swapaxes(rec, 0, 2)
     rec = np.swapaxes(rec, 1,2)
     rec = rec[::-1, ::-1]
-    sitk.WriteImage(sitk.GetImageFromArray(rec), os.path.join("recos", "forcast_reco.nrrd"))
+    sitk.WriteImage(sitk.GetImageFromArray(rec), os.path.join(outpath, "forcast_reco.nrrd"))
 
 def i0_est(real_img, proj_img):
     real = float(np.median(real_img))
@@ -1041,13 +1042,13 @@ def calc_images_matlab(name, ims, real_image, detector_shape):
     Ax = utils.Ax_vecs_astra(real_image.shape, detector_shape, real_image)
     
     sino = sitk.GetImageFromArray(np.swapaxes(ims, 0,1))
-    sitk.WriteImage(sino, os.path.join("recos", "forcast_matlab_"+name+"_sino-input.nrrd"))
+    sitk.WriteImage(sino, os.path.join(outpath, "forcast_matlab_"+name+"_sino-input.nrrd"))
     del sino
 
     sino = Ax(vecs)
     #evalPerformance(np.swapaxes(sino, 0, 1), ims, runtime, name)
     sino = sitk.GetImageFromArray(sino)
-    sitk.WriteImage(sino, os.path.join("recos", "forcast_matlab_"+name+"_sino-output.nrrd"))
+    sitk.WriteImage(sino, os.path.join(outpath, "forcast_matlab_"+name+"_sino-output.nrrd"))
     del sino
     
     if True:
@@ -1057,7 +1058,7 @@ def calc_images_matlab(name, ims, real_image, detector_shape):
         rec = rec*mask
         del mask
         rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_matlab_"+name+"_reco-output.nrrd"), True)
+        sitk.WriteImage(rec, os.path.join(outpath, "forcast_matlab_"+name+"_reco-output.nrrd"), True)
         del rec
     if False:
         reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
@@ -1069,7 +1070,7 @@ def calc_images_matlab(name, ims, real_image, detector_shape):
         #rec = np.swapaxes(rec, 1,2)
         #rec = rec[::-1, ::-1]
         rec = sitk.GetImageFromArray(rec)*100
-        sitk.WriteImage(rec, os.path.join("recos", "forcast_matlab_"+name+"_reco-output_sirt.nrrd"))
+        sitk.WriteImage(rec, os.path.join(outpath, "forcast_matlab_"+name+"_reco-output_sirt.nrrd"))
         del rec
 
 def reg_real_data():
@@ -1126,7 +1127,7 @@ def reg_real_data():
             if False:
                 for i, (α,β,γ) in enumerate(angles_noise):
                     params[i] = cal.applyRot(params[i], -α, -β, -γ)
-
+            if False:
                 for i, (x,y) in enumerate(trans_noise):
                     params[i] = cal.applyTrans(params[i], x, y, 0)
                 for i, z in enumerate(zoom_noise):
@@ -1141,7 +1142,7 @@ def reg_real_data():
             
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape)
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image}
+            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": "Z:\\\\"}
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
             for method in [-24]:
