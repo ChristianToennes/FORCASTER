@@ -232,13 +232,13 @@ def GI__(old_img, new_img):
 gi_mask = None
 gi_shape = None
 def GI(new_img, p1, absp1, gi_skip=1):
-    p2 = new_img[1::gi_skip,:-1:gi_skip]-new_img[:-1:gi_skip,:-1:gi_skip], new_img[:-1:gi_skip,1::gi_skip]-new_img[:-1:gi_skip,:-1:gi_skip]
-    absp2 = np.sqrt(p2[0]*p2[0] + p2[1]*p2[1], dtype=np.float32)
+    p2 = new_img[1::gi_skip,:-1:gi_skip,:-1:gi_skip]-new_img[:-1:gi_skip,:-1:gi_skip,:-1:gi_skip], new_img[:-1:gi_skip,1::gi_skip,:-1:gi_skip]-new_img[:-1:gi_skip,:-1:gi_skip,:-1:gi_skip], new_img[:-1:gi_skip,:-1:gi_skip,1::gi_skip]-new_img[:-1:gi_skip,:-1:gi_skip,:-1:gi_skip]
+    absp2 = np.sqrt(p2[0]*p2[0] + p2[1]*p2[1] + p2[2]*p2[2], dtype=np.float32)
     #absp2 = np.linalg.norm(p2, ord=2, axis=0)
-    absGrad = absp1[::gi_skip, ::gi_skip]*absp2
-    minabs = np.min(np.array([absp1[::gi_skip, ::gi_skip], absp2]), axis=0)
+    absGrad = absp1[::gi_skip, ::gi_skip,::gi_skip]*absp2
+    minabs = np.min(np.array([absp1[::gi_skip, ::gi_skip, ::gi_skip], absp2]), axis=0)
     #del absp2
-    gradDot = p1[0][::gi_skip, ::gi_skip]*p2[0] + p1[1][::gi_skip, ::gi_skip]*p2[1]
+    gradDot = p1[0][::gi_skip, ::gi_skip]*p2[0] + p1[1][::gi_skip, ::gi_skip, ::gi_skip]*p2[1] + p1[2][::gi_skip, ::gi_skip, ::gi_skip]*p2[2]
     #del p2
     f = absGrad!=0
     gradDot = gradDot*f
@@ -274,10 +274,11 @@ def calcGIObjective(old_img_big, new_img_big, i, cur, config):
     global gi_mask, gi_shape
     if gi_mask is None or gi_mask.shape != old_img_big.shape:
         gi_mask = np.zeros_like(old_img_big, dtype=bool)
-        b1 = old_img_big.shape[0]//4
-        b2 = old_img_big.shape[1]//4
-        gi_mask[b1:-b1,b2:-b2] = True
-        gi_shape = (old_img_big.shape[0]-b1-b1, old_img_big.shape[1]-b2-b2)
+        b1 = old_img_big.shape[0]//5
+        b2 = old_img_big.shape[1]//5
+        b3 = old_img_big.shape[2]//5
+        gi_mask[b1:-b1,b2:-b2,b3:-b3] = True
+        gi_shape = (old_img_big.shape[0]-b1-b1, old_img_big.shape[1]-b2-b2, old_img_big.shape[2]-b3-b3)
 
     old_img = old_img_big[gi_mask].reshape(gi_shape)
     new_img = new_img_big[gi_mask].reshape(gi_shape)
@@ -288,16 +289,18 @@ def calcGIObjective(old_img_big, new_img_big, i, cur, config):
     #            return gis[i][key]
 
     if config["GIoldold"][i] is None:
-        p1 = old_img[1:,:-1]-old_img[:-1,:-1], old_img[:-1,1:]-old_img[:-1,:-1]
+        p1 = old_img[1:,:-1,:-1]-old_img[:-1,:-1,:-1], old_img[:-1,1:,:-1]-old_img[:-1,:-1,:-1], old_img[:-1,:-1,1:]-old_img[:-1,:-1,:-1]
         config["p1"][i] = p1
-        config["absp1"][i] = np.sqrt(p1[0]*p1[0] + p1[1]*p1[1],dtype=np.float32)
+        config["absp1"][i] = np.sqrt(p1[0]*p1[0] + p1[1]*p1[1] + p1[2]*p1[2],dtype=np.float32)
         #config["absp1"][i] = np.linalg.norm(p1, ord=2, axis=0)
-        config["GIoldold"][i] = np.array([GI(old_img, p1, config["absp1"][i]), GI(old_img, p1, config["absp1"][i], 2), GI(old_img, p1, config["absp1"][i], 4)])
+        #config["GIoldold"][i] = np.array([GI(old_img, p1, config["absp1"][i]), GI(old_img, p1, config["absp1"][i], 2), GI(old_img, p1, config["absp1"][i], 4)])
+        config["GIoldold"][i] = GI(old_img, p1, config["absp1"][i])
     #perftime = time.perf_counter()
-    GIoldnew =np.array([GI(new_img, config["p1"][i], config["absp1"][i]),GI(new_img, config["p1"][i], config["absp1"][i], 2),GI(new_img, config["p1"][i], config["absp1"][i], 4)])
+    #GIoldnew =np.array([GI(new_img, config["p1"][i], config["absp1"][i]),GI(new_img, config["p1"][i], config["absp1"][i], 2),GI(new_img, config["p1"][i], config["absp1"][i], 4)])
+    GIoldnew =GI(new_img, config["p1"][i], config["absp1"][i])
     #print("GI", time.perf_counter()-perftime)
     #return GIoldnew / config["GIoldold"]
-    ngi = np.sum(GIoldnew / config["GIoldold"][i]) / 3
+    ngi = np.sum(GIoldnew / config["GIoldold"][i])
     #if cur is not None:
     #    gis[i][tuple((tuple(c) for c in cur))] = ngi
     return 1.0/(ngi+1e-10)
@@ -1263,7 +1266,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
-    elif c==25:
+    elif c==25: # bad
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
@@ -1272,7 +1275,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
 
         config["it"] = 3
-        for grad_width in [(2.5,25), (0.5,15)]:
+        for grad_width in [(0.5,15), (0.05,15)]:
             #print()
             for _ in range(2):
                 config["grad_width"]=grad_width
@@ -1330,7 +1333,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
-    elif c==28:
+    elif c==28: # bad
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
@@ -1339,7 +1342,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
 
         config["it"] = 3
-        for grad_width in [(2.5,25), (0.5,25)]:
+        for grad_width in [(0.5,15), (0.05,15)]:
             #print()
             for _ in range(1):
                 config["grad_width"]=grad_width
