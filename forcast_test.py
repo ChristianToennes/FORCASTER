@@ -18,7 +18,7 @@ import re
 from skimage.metrics import structural_similarity,normalized_root_mse
 import skimage.measure
 from datetime import timedelta as td
-
+from scipy.spatial import distance
 
 def write_vectors(name, vecs):
     return
@@ -594,7 +594,7 @@ def mutual_information_2d(x, y, sigma=1, normalized=False):
 
     return mi
 
-def evalNeedleArea(img, projname, name):
+def evalNeedleArea(img, img2, projname, name):
     if projname in ("genA", "201020"):
         if img.shape[0] > 500:
             pos = [408, 472, 498]
@@ -632,14 +632,35 @@ def evalNeedleArea(img, projname, name):
     #sitk.WriteImage(rec, os.path.join("recos", "area_"+name+"_input2.nrrd"), True)
 
     labels = skimage.measure.label(mask)
-    mask = labels==labels[maxpos]
+    mask1 = labels==labels[maxpos]
     #rec = sitk.GetImageFromArray(mask*1.0)
     #rec.SetOrigin(out_rec_meta[0])
     out_spacing = (out_rec_meta[2][0]/mult,out_rec_meta[2][1]/mult,out_rec_meta[2][2]/mult)
     #rec.SetSpacing(out_spacing)
     #sitk.WriteImage(rec, os.path.join("recos", "area_"+name+"_input3.nrrd"), True)
 
-    return np.count_nonzero(mask) * out_spacing[2] * out_spacing[2]
+    mask = np.zeros_like(img, dtype=bool)
+    mask[pos[0],pos[1]-2:pos[1]+2,pos[2]-2:pos[2]+2] = True
+    lines = img2*mask
+    maxpos = np.argmax(lines)
+    maxpos = np.unravel_index(maxpos, lines.shape)
+    maxval = lines[maxpos]
+    mask = np.zeros_like(img, dtype=bool)
+    mask[pos[0]] = True
+    mask = mask*(img>(maxval*0.5))
+    labels = skimage.measure.label(mask)
+    mask2 = labels==labels[maxpos]
+
+    intersection = np.logical_and(im1, im2)
+
+    dice = 2. * intersection.sum() / im_sum
+
+    dice2 =  distance.dice(mask1, mask2)
+
+    print(dice, dice2)
+    return dice
+
+    #return np.count_nonzero(mask) * out_spacing[2] * out_spacing[2]
 
 #def evalFWHM(img, name, pos = [241,261,265]):
 def evalFWHM(img, name, pos = [232, 262, 257]):
@@ -754,10 +775,10 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
     
     vals9 = []
     if "rec" in stats_file:
-        vals9.append(evalNeedleArea(output, "genB", name))
-        if real_fwhm is None:
-            real_area = evalNeedleArea(real, "genB", name)
-        vals9.append(vals9[-1]-real_area)
+        vals9.append(evalNeedleArea(output, real, "genB", name))
+        #if real_area is None:
+        #    real_area = evalNeedleArea(real, "genB", name)
+        #vals9.append(vals9[-1]-real_area)
     
     with open(stats_file, "a") as f:
         f.write("{0};NGI;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals]) + "\n")
