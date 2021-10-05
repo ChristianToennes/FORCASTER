@@ -853,7 +853,7 @@ def evalRecoResults(out_path, in_path, projname):
             out_rec_meta = metas[real_name]
             print(real_name)
             input_fwhm[real_name] = evalFWHM(real_img, real_name)
-            input_area[real_name] = evalNeedleArea(real_img, real_name, real_name)
+            input_area[real_name] = evalNeedleArea(real_img, real_img, real_name, real_name)
 
             evalPerformance(real_img, real_img, 0, real_name, 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
 
