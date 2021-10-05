@@ -651,9 +651,10 @@ def evalNeedleArea(img, img2, projname, name):
     labels = skimage.measure.label(mask)
     mask2 = labels==labels[maxpos]
 
-    intersection = np.logical_and(im1, im2)
+    im_sum = np.sum(mask1) + np.sum(mask2)
+    intersection = np.logical_and(mask1, mask22)
 
-    dice = 2. * intersection.sum() / im_sum
+    dice = 2. * np.sum(intersection) / im_sum
 
     dice2 =  distance.dice(mask1, mask2)
 
@@ -853,7 +854,7 @@ def evalRecoResults(out_path, in_path, projname):
             out_rec_meta = metas[real_name]
             print(real_name)
             input_fwhm[real_name] = evalFWHM(real_img, real_name)
-            input_area[real_name] = evalNeedleArea(real_img, real_name, real_name)
+            input_area[real_name] = evalNeedleArea(real_img, real_img, real_name, real_name)
 
             evalPerformance(real_img, real_img, 0, real_name, 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
 
@@ -1210,9 +1211,9 @@ def get_proj_paths():
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     #cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    ('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [27,28,29,25,26]),
-    ('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
-    ('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
+    ('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4,20,21,22,23,24,25,26,-39,-37,-29,-27]),
+    #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
+    #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
