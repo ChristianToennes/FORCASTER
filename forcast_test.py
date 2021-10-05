@@ -633,21 +633,16 @@ def evalNeedleArea(img, img2, projname, name):
 
     labels = skimage.measure.label(mask)
     mask1 = labels==labels[maxpos]
-    #rec = sitk.GetImageFromArray(mask*1.0)
-    #rec.SetOrigin(out_rec_meta[0])
-    out_spacing = (out_rec_meta[2][0]/mult,out_rec_meta[2][1]/mult,out_rec_meta[2][2]/mult)
-    #rec.SetSpacing(out_spacing)
-    #sitk.WriteImage(rec, os.path.join("recos", "area_"+name+"_input3.nrrd"), True)
 
-    mask = np.zeros_like(img, dtype=bool)
+    mask = np.zeros_like(img2, dtype=bool)
     mask[pos[0],pos[1]-2:pos[1]+2,pos[2]-2:pos[2]+2] = True
     lines = img2*mask
     maxpos = np.argmax(lines)
     maxpos = np.unravel_index(maxpos, lines.shape)
     maxval = lines[maxpos]
-    mask = np.zeros_like(img, dtype=bool)
+    mask = np.zeros_like(img2, dtype=bool)
     mask[pos[0]] = True
-    mask = mask*(img>(maxval*0.5))
+    mask = mask*(img2>(maxval*0.5))
     labels = skimage.measure.label(mask)
     mask2 = labels==labels[maxpos]
 
@@ -656,6 +651,18 @@ def evalNeedleArea(img, img2, projname, name):
 
     dice = 2. * np.sum(intersection) / im_sum
 
+
+    rec = sitk.GetImageFromArray(mask1*1.0)
+    rec.SetOrigin(out_rec_meta[0])
+    out_spacing = (out_rec_meta[2][0]/mult,out_rec_meta[2][1]/mult,out_rec_meta[2][2]/mult)
+    rec.SetSpacing(out_spacing)
+    sitk.WriteImage(rec, os.path.join("recos", "area_"+name+"_input1.nrrd"), True)
+
+    rec = sitk.GetImageFromArray(mask2*1.0)
+    rec.SetOrigin(out_rec_meta[0])
+    out_spacing = (out_rec_meta[2][0]/mult,out_rec_meta[2][1]/mult,out_rec_meta[2][2]/mult)
+    rec.SetSpacing(out_spacing)
+    sitk.WriteImage(rec, os.path.join("recos", "area_"+name+"_input2.nrrd"), True)
     #dice2 =  distance.dice(mask1, mask2)
 
     #print(dice, dice2)
