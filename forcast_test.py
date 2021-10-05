@@ -656,9 +656,9 @@ def evalNeedleArea(img, img2, projname, name):
 
     dice = 2. * np.sum(intersection) / im_sum
 
-    dice2 =  distance.dice(mask1, mask2)
+    #dice2 =  distance.dice(mask1, mask2)
 
-    print(dice, dice2)
+    #print(dice, dice2)
     return dice
 
     #return np.count_nonzero(mask) * out_spacing[2] * out_spacing[2]
