@@ -80,6 +80,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
         skip = 2
     #if images.shape[1] < 600:
     #    skip = 1
+    skip = 2
 
     edges = 20
 
@@ -421,6 +422,8 @@ def it_func(con, Ax_params, ready, name):
 def reg_rough_parallel(ims, params, config, c=0):
     corrs = []
     pool_size = mp.cpu_count()
+    if c==28:
+        pool_size = 2
     pool = []
     proc_count = 0
     #corrsq = mp.Queue()
@@ -859,7 +862,7 @@ def reg_and_reco(ims, in_params, config):
         
     perftime = time.perf_counter()
     if method>-20:
-        if False and mp.cpu_count() > 1:
+        if mp.cpu_count() > 1:
             corrs = reg_rough_parallel(ims, params, config, method)
         else:
             corrs = reg_rough(ims, params, config, method)
