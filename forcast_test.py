@@ -1288,26 +1288,81 @@ def get_proj_paths():
     ]
     return projs
 
-def calc_images_matlab(name, ims, real_image, detector_shape):
+def calc_images_matlab(name, ims, real_image, detector_shape, outpath, geo):
     vecs = utils.read_matlab_vecs(name)
     from scipy.io import loadmat
     runtime = loadmat("runtime")['runtime'][0,0]
-    
-    Ax = utils.Ax_vecs_astra(real_image.shape, detector_shape, real_image)
-    
-    sino = sitk.GetImageFromArray(np.swapaxes(ims, 0,1))
-    sitk.WriteImage(sino, os.path.join(outpath, "forcast_matlab_"+name+"_sino-input.nrrd"))
-    del sino
 
+    #skip = ims_all.shape[0] // len(vecs)
+    #ims = ims_all[::skip]
+    
+    # [0,1,2], [0,2,1], [2,0,1], [2,1,0], [1,0,2], [1,2,0]
+    print(real_image.shape)
+    real_image = np.transpose(real_image, axes=[0,2,1])[::-1,::,::]
+    print(real_image.shape)
+    Ax = utils.Ax_vecs_astra(real_image.shape, (detector_shape[0],detector_shape[1]), real_image)
+    
+    #sino = np.swapaxes(Ax(geo['Vectors']), 0,1)
+    #print(sino.shape)
+
+    #sino = np.transpose(Ax(vecs), axes=[2,1,0])[::,::,::-1]
+    #r = [utils.rotMat(-90, v) for v in np.cross(vecs[:, 6:9], vecs[:, 9:12])]
+    #vecs[:, 0:3] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 0:3])])
+    #vecs[:, 3:6] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 3:6])])
+    #vecs[:, 6:9] = -np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
+    #vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
     sino = Ax(vecs)
+    print(sino.shape)
     #evalPerformance(np.swapaxes(sino, 0, 1), ims, runtime, name)
     sino = sitk.GetImageFromArray(sino)
     sitk.WriteImage(sino, os.path.join(outpath, "forcast_matlab_"+name+"_sino-output.nrrd"))
     del sino
     
     if True:
-        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
-        write_rec(reg_geo, ims, os.path.join("recos", "forcast_matlab_"+name+"_reco-output.nrrd"), mult=2)
+        sino = sitk.GetImageFromArray(np.transpose(ims, axes=[1,0,2])[::,::,::-1])
+        sitk.WriteImage(sino, os.path.join(outpath, "forcast_matlab_"+name+"_sino-input.nrrd"))
+        del sino
+
+    if True:
+        #a = vecs[:,6:9]
+        #vecs[:,6:9] = -vecs[:,9:12]
+        #vecs[:,9:12] = -a
+        #r = [utils.rotMat(-90, v) for v in np.cross(vecs[:, 6:9], vecs[:, 9:12])]
+        #vecs[:, 0:3] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 0:3])])
+        #vecs[:, 3:6] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 3:6])])
+        #vecs[:, 6:9] = -np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
+        #vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
+        reg_geo = astra.create_proj_geom('cone_vec', detector_shape[1], detector_shape[0], vecs)
+        #write_rec(reg_geo, np.transpose(ims, axes=[2,0,1])[::-1,::,::], os.path.join(outpath, "forcast_matlab_"+name+"_reco-output.nrrd"), mult=1)
+        filepath = os.path.join(outpath, "forcast_matlab_"+name+"_reco-output.nrrd")
+        mult = 1
+        reg_geo["Vectors"] = reg_geo["Vectors"]*mult
+        out_shape = (out_rec_meta[3][0]*mult, out_rec_meta[3][1]*mult, out_rec_meta[3][2]*mult)
+        #sino = Ax(vecs)
+        proj_id = astra.data3d.create('-proj3d', reg_geo, np.transpose(ims, axes=[2,0,1])[::-1,::,::])
+        #proj_id = astra.data3d.create('-proj3d', reg_geo, np.transpose(ims, axes=[1,0,2])[::,::,::-1])
+        vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
+        rec_id = astra.data3d.create('-vol', vol_geom)
+        cfg = astra.astra_dict('SIRT3D_CUDA')
+        cfg['ReconstructionDataId'] = rec_id
+        cfg['ProjectionDataId'] = proj_id
+        cfg['Option'] = {#"VoxelSuperSampling": 3, 
+                        #"ShortScan": True
+                        }
+        alg_id = astra.algorithm.create(cfg)
+        iterations = 200
+        astra.algorithm.run(alg_id, iterations)
+        rec = astra.data3d.get(rec_id)
+        astra.data3d.delete(proj_id)
+        astra.data3d.delete(rec_id)
+        astra.algorithm.delete(alg_id)
+        #rec = utils.FDK_astra(out_shape, reg_geo, np.transpose(ims, axes=[2,0,1])[::-1,::,::])
+
+        #mask = np.zeros(rec.shape, dtype=bool)
+        mask = create_circular_mask(rec.shape)
+        rec = rec*mask
+        del mask
+        write_images(rec, filepath, mult)
     if False:
         reg_geo = astra.create_proj_geom('cone_vec', detector_shape[0], detector_shape[1], vecs)
         rec = utils.SIRT_astra(real_image.shape, reg_geo, np.swapaxes(ims, 0,1), 250)
@@ -1404,9 +1459,15 @@ def reg_real_data():
             i0s = [i0_est(ims_un[i], projs[:,i]) for i in range(ims_un.shape[0])]
             ims = -np.log(ims_un/np.mean(i0s))
             
-            #calc_images_matlab("genA_trans", ims, real_image, detector_shape)
+            if os.path.exists("Z:\\\\recos"):
+                outpath = "Z:\\\\recos"
+            else:
+                outpath = r"D:\lumbal_spine_13.10.2020\recos"
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": "Z:\\\\recos"}
+            #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
+            #calc_images_matlab("genA_trans", ims, real_image, detector_shape, outpath, geo); exit(0)
+
+            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath}
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
             for method in methods:

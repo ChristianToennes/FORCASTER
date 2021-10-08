@@ -411,16 +411,53 @@ def read_matlab_vecs(prefix):
     name = 'vectors_' + prefix + '.mat'
     if os.path.isfile(name):
         from scipy.io import loadmat
-        vecs = loadmat(name)['newVectors']
+        mat = loadmat(name)
+        vecs = mat['newVectors']
+
+        #r = [rotMat(-90, v) for v in np.cross(vecs[:, 6:9], vecs[:, 9:12])]
+        #vecs[:, 0:3] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 0:3])])
+        #vecs[:, 3:6] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 3:6])])
+        #vecs[:, 6:9] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
+        #vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
+
+        #r = [rotMat(0, [0,0,1]) for v in vecs[:, 6:9]]
+        #vecs[:, 0:3] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 0:3])])
+        #vecs[:, 3:6] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 3:6])])
+        #vecs[:, 6:9] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
+        #vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
+
+        #r = [rotMat(180, v) for v in vecs[:, 9:12]]
+        #vecs[:, 0:3] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 0:3])])
+        #vecs[:, 3:6] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 3:6])])
+        #vecs[:, 6:9] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
+        #vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
+
+        #r = [rotMat(0, [1,0,0]) for v in vecs[:, 9:12]]
+        #vecs[:, 0:3] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 0:3])])
+        #vecs[:, 3:6] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 3:6])])
+        #vecs[:, 6:9] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
+        #vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
+
+
+        #a = np.array(vecs[:, 6:9])
+        #vecs[:, 6:9] = -vecs[:, 9:12]
+        #vecs[:, 9:12] = -a
         r = [rotMat(90, v) for v in np.cross(vecs[:, 6:9], vecs[:, 9:12])]
-        vecs[:, 6:9] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
-        vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
-        
-        r = rotMat(-90, [0,0,1])#.dot(rotMat(-90, [0,0,1]))
-        vecs[:, 0:3] = np.array([r.dot(v) for v in vecs[:, 0:3]])
-        vecs[:, 3:6] = np.array([r.dot(v) for v in vecs[:, 3:6]])
-        vecs[:, 6:9] = np.array([r.dot(v) for v in vecs[:, 6:9]])
-        vecs[:, 9:12] = np.array([r.dot(v) for v in vecs[:, 9:12]])
+        #vecs[:, 0:3] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 0:3])])
+        #vecs[:, 3:6] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 3:6])])
+        #vecs[:, 6:9] = -np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
+        #vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
+
+        #r = [rotMat(180, v) for v in vecs[:, 9:12]]
+        #vecs[:, 0:3] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 0:3])])
+        #vecs[:, 3:6] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 3:6])])
+        #vecs[:, 6:9] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 6:9])])
+        #vecs[:, 9:12] = np.array([r.dot(v) for r,v in zip(r, vecs[:, 9:12])])
+        #vecs[:, 6:9] = vecs[:,6:9] * np.array([-1,-1,-1])[np.newaxis,:]
+        #vecs[:, 9:12] = vecs[:,9:12] * np.array([1,1,1])[np.newaxis,:]
+
+        #print(vecs[0])
+        #exit()
         return vecs
     else:
         raise FileNotFoundError(name)
