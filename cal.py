@@ -238,7 +238,29 @@ def GI(new_img, p1, absp1, gi_skip=1):
     absGrad = absp1[::gi_skip, ::gi_skip,::gi_skip]*absp2
     minabs = np.min(np.array([absp1[::gi_skip, ::gi_skip, ::gi_skip], absp2]), axis=0)
     #del absp2
-    gradDot = p1[0][::gi_skip, ::gi_skip]*p2[0] + p1[1][::gi_skip, ::gi_skip, ::gi_skip]*p2[1] + p1[2][::gi_skip, ::gi_skip, ::gi_skip]*p2[2]
+    gradDot = p1[0][::gi_skip, ::gi_skip, ::gi_skip]*p2[0] + p1[1][::gi_skip, ::gi_skip, ::gi_skip]*p2[1] + p1[2][::gi_skip, ::gi_skip, ::gi_skip]*p2[2]
+    #del p2
+    f = absGrad!=0
+    gradDot = gradDot*f
+    absGrad[~f] = 1
+    
+    w = 0.5*(gradDot / absGrad + 1)
+    #del gradDot
+    #del absGrad
+    r = w*minabs
+    #del w
+    ret = np.sum(r)
+    #del r
+    return ret
+
+def GI2D(new_img, p1, absp1, gi_skip=1):
+    p2 = new_img[1::gi_skip,:-1:gi_skip]-new_img[:-1:gi_skip,:-1:gi_skip], new_img[:-1:gi_skip,1::gi_skip]-new_img[:-1:gi_skip,:-1:gi_skip]
+    absp2 = np.sqrt(p2[0]*p2[0] + p2[1]*p2[1], dtype=np.float32)
+    #absp2 = np.linalg.norm(p2, ord=2, axis=0)
+    absGrad = absp1[::gi_skip, ::gi_skip]*absp2
+    minabs = np.min(np.array([absp1[::gi_skip, ::gi_skip], absp2]), axis=0)
+    #del absp2
+    gradDot = p1[0][::gi_skip, ::gi_skip]*p2[0] + p1[1][::gi_skip, ::gi_skip]*p2[1]
     #del p2
     f = absGrad!=0
     gradDot = gradDot*f
@@ -271,6 +293,8 @@ def _GI(old_img, new_img):
 gis = []
 
 def calcGIObjective(old_img_big, new_img_big, i, cur, config):
+    if len(old_img_big.shape) == 2:
+        return calcGIObjective2D(old_img_big, new_img_big, i, cur, config)
     global gi_mask, gi_shape
     if gi_mask is None or gi_mask.shape != old_img_big.shape:
         gi_mask = np.zeros_like(old_img_big, dtype=bool)
@@ -298,6 +322,40 @@ def calcGIObjective(old_img_big, new_img_big, i, cur, config):
     #perftime = time.perf_counter()
     #GIoldnew =np.array([GI(new_img, config["p1"][i], config["absp1"][i]),GI(new_img, config["p1"][i], config["absp1"][i], 2),GI(new_img, config["p1"][i], config["absp1"][i], 4)])
     GIoldnew =GI(new_img, config["p1"][i], config["absp1"][i])
+    #print("GI", time.perf_counter()-perftime)
+    #return GIoldnew / config["GIoldold"]
+    ngi = np.sum(GIoldnew / config["GIoldold"][i])
+    #if cur is not None:
+    #    gis[i][tuple((tuple(c) for c in cur))] = ngi
+    return 1.0/(ngi+1e-10)
+
+def calcGIObjective2D(old_img_big, new_img_big, i, cur, config):
+    global gi_mask, gi_shape
+    if gi_mask is None or gi_mask.shape != old_img_big.shape:
+        gi_mask = np.zeros_like(old_img_big, dtype=bool)
+        b1 = old_img_big.shape[0]//5
+        b2 = old_img_big.shape[1]//5
+        gi_mask[b1:-b1,b2:-b2] = True
+        gi_shape = (old_img_big.shape[0]-b1-b1, old_img_big.shape[1]-b2-b2)
+
+    old_img = old_img_big[gi_mask].reshape(gi_shape)
+    new_img = new_img_big[gi_mask].reshape(gi_shape)
+    #if cur is not None:
+    #    for key in gis[i].keys():
+    #        k=np.array(key)
+    #        if np.linalg.norm(k[0]-cur[0]) < 0.01 and np.linalg.norm(k[1]-cur[1]) < 0.01 and np.linalg.norm(k[2]-cur[2]) < 0.01:
+    #            return gis[i][key]
+
+    if config["GIoldold"][i] is None:
+        p1 = old_img[1:,:-1]-old_img[:-1,:-1], old_img[:-1,1:]-old_img[:-1,:-1]
+        config["p1"][i] = p1
+        config["absp1"][i] = np.sqrt(p1[0]*p1[0] + p1[1]*p1[1],dtype=np.float32)
+        #config["absp1"][i] = np.linalg.norm(p1, ord=2, axis=0)
+        #config["GIoldold"][i] = np.array([GI(old_img, p1, config["absp1"][i]), GI(old_img, p1, config["absp1"][i], 2), GI(old_img, p1, config["absp1"][i], 4)])
+        config["GIoldold"][i] = GI2D(old_img, p1, config["absp1"][i])
+    #perftime = time.perf_counter()
+    #GIoldnew =np.array([GI(new_img, config["p1"][i], config["absp1"][i]),GI(new_img, config["p1"][i], config["absp1"][i], 2),GI(new_img, config["p1"][i], config["absp1"][i], 4)])
+    GIoldnew =GI2D(new_img, config["p1"][i], config["absp1"][i])
     #print("GI", time.perf_counter()-perftime)
     #return GIoldnew / config["GIoldold"]
     ngi = np.sum(GIoldnew / config["GIoldold"][i])
