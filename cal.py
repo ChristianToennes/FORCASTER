@@ -2251,6 +2251,15 @@ def bfgs_trans_all(curs, reg_config, c):
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp':True})
+        elif c==-39:
+            eps = [0.25, 0.25, 2] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp':True})
+            eps = [0.01, 0.01, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp':True})
 
     else:
         
@@ -2345,6 +2354,17 @@ def bfgs_trans_all(curs, reg_config, c):
             ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
+        elif c==-29:
+            eps = [0.25, 0.25, 2] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+
+            eps = [0.01, 0.01, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+
 
 
         else:
