@@ -96,13 +96,20 @@ def trackFeatures(next_img, data, config):
                 if m.trainIdx == i:
                     matchesMask[i2,0] = 0
 
-    if len(dists[valid])==0:
-        #real_img = config["real_img"]
-        #img = cv2.drawMatchesKnn(real_img,base_points,next_img,new_points,matches,None,matchesMask=matchesMask)
-        ##plt.imshow(img)
-        #plt.show()
-        #plt.close()
-        pass
+    if False and len(dists[valid])==0:
+        real_img = config["real_img"]
+        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=np.zeros_like(matchesMask), matchColor=(0,255,0), singlePointColor=(0,0,255))
+        cv2.imwrite("featurepoints.png", img)
+        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=matchesMask, matchColor=(0,255,0), singlePointColor=(0,0,255))
+        cv2.imwrite("knnmath.png", img)
+        f = plt.imshow(img)
+        plt.show()
+        #f.savefig("knnmath.png")
+        plt.close()
+        exit()
+        #pass
     else:
         m = np.mean(dists[valid])
         std = np.std(dists[valid])

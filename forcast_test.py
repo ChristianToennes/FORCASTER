@@ -858,12 +858,12 @@ def evalRecoResults(out_path, in_path, projname):
     metas = {}
     for filename in os.listdir(out_path):
         #if re.fullmatch("forcast_[^_]+_reco-input.nrrd", filename) != None:
-        if re.fullmatch("forcast_2010201_imbu_cbct_4_reco-output_sirt.nrrd", filename) != None:
+        if re.fullmatch("forcast_2010201_imbu_cbct_4_reco-output.nrrd", filename) != None:
             img = sitk.ReadImage(os.path.join(out_path, filename))
             real_img = np.array(sitk.GetArrayFromImage(img), dtype=np.float32)
-            print(real_img.shape, end=" -> ")
-            real_img = scipy.ndimage.zoom(real_img, 0.5, order=1)
-            print(real_img.shape)
+            #print(real_img.shape, end=" -> ")
+            #real_img = scipy.ndimage.zoom(real_img, 0.5, order=1)
+            #print(real_img.shape)
             real_name = filename.split('_')[1]
             real_name = "genB"
             metas[real_name] = (img.GetOrigin(), img.GetSize(), img.GetSpacing(), real_img.shape)
@@ -1248,13 +1248,13 @@ def get_proj_paths():
     cbct_path = prefix + r"\CKM_LumbalSpine\20201020-151825.858000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     #cbct_path = prefix + r"\CKM_LumbalSpine\20201020-093446.875000\DCT Head Clear Nat Fill Full HU Normal [AX3D] 70kV"
     projs += [
-    ('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [-39,-29]),
+    #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
     #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
-    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path),
+    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [4,25]),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
-    #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path),
+    ('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4,25]),
     #('201020_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path),
     #('201020_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path),
     ]
@@ -1344,7 +1344,7 @@ def calc_images_matlab(name, ims, real_image, detector_shape, outpath, geo):
         proj_id = astra.data3d.create('-proj3d', reg_geo, np.transpose(ims, axes=[1,0,2])[::,::,::-1])
         vol_geom = astra.create_vol_geom(out_shape[1], out_shape[2], out_shape[0])
         rec_id = astra.data3d.create('-vol', vol_geom)
-        cfg = astra.astra_dict('SIRT3D_CUDA')
+        cfg = astra.astra_dict('FDK_CUDA')
         cfg['ReconstructionDataId'] = rec_id
         cfg['ProjectionDataId'] = proj_id
         cfg['Option'] = {#"VoxelSuperSampling": 3, 
