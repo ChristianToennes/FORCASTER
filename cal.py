@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.core.numeric import count_nonzero
 #import cv2
 from scipy.interpolate import ndgriddata
 import utils
@@ -11,6 +12,7 @@ import time
 import threading
 import multiprocessing as mp
 import queue
+from utils import bcolors
 
 default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 4},
 "my": True, "grad_width": (1,25), "noise": None, "both": False, "max_change": 1}
@@ -96,7 +98,13 @@ def trackFeatures(next_img, data, config):
                 if m.trainIdx == i:
                     matchesMask[i2,0] = 0
 
-    if False and len(dists[valid])==0:
+    if len(dists[valid])>=0:
+        m = np.mean(dists[valid])
+        std = np.std(dists[valid])
+        out = np.bitwise_or(dists<m-3*std, dists>m+3*std)
+        valid[out] = False
+    
+    if False:
         real_img = config["real_img"]
         img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
             np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=np.zeros_like(matchesMask), matchColor=(0,255,0), singlePointColor=(0,0,255))
@@ -109,12 +117,16 @@ def trackFeatures(next_img, data, config):
         #f.savefig("knnmath.png")
         plt.close()
         exit()
-        #pass
+
+    if np.count_nonzero(valid) > 100:
+        pass
+        #drop = np.arange(len(valid))[valid][100:]
+        #valid[drop] = False
+        #drop = np.random.choice(np.arange(len(valid))[valid], 100)
+        #valid = np.zeros_like(valid)
+        #valid[drop] = True
     else:
-        m = np.mean(dists[valid])
-        std = np.std(dists[valid])
-        out = np.bitwise_or(dists<m-3*std, dists>m+3*std)
-        valid[out] = False
+        print(np.count_nonzero(valid))
 
     return new_points[points], valid
 
@@ -399,7 +411,7 @@ def calcPointsObjective(comp, good_new, good_old):
             else:
                 f = np.std( fd )
     elif comp==12:
-        d = np.linalg.norm(good_new-good_old, axis=1)
+        d = np.sqrt( (good_new[:,0]-good_old[:,0])**2 + (good_new[:,1]-good_old[:,1])**2 )
         if len(d)==0:
             f = -1
         else:
@@ -532,16 +544,6 @@ def calcMyObjective(axis, proj, config):
     points = points[valid]
     value = calcPointsObjective(axis, points, data_real[0][valid])
     return value
-
-class bcolors:
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    END = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
 
 def correctXY(in_cur, config):
     cur = np.array(in_cur)
@@ -683,10 +685,14 @@ def linsearch(in_cur, axis, config):
         combined_valid = valid[0]
         for v in valid:
             combined_valid = np.bitwise_and(combined_valid, v)
-        points = [p[v] for p, v in zip(points, valid)]
+        points = [p[combined_valid] for p, v in zip(points, valid)]
         
         #print(points.shape, points_real.shape)
-        values = np.array([calcPointsObjective(axis, points, points_real[v]) for points,v in zip(points,valid)])
+        values = np.array([calcPointsObjective({0:10, 1:11, 2:12}[axis], points, points_real[combined_valid]) for points,v in zip(points,valid)])
+        avalues = []
+        for comp in [0,1,2,10,11,12,22,32,-1,-2,-3]:
+            avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[combined_valid]) for points,v in zip(points,valid)])) )
+        
         #p = np.polyfit(εs, values, 2)
 
         #values_out = values>(np.mean(values)+3*np.std(values))
@@ -724,7 +730,16 @@ def linsearch(in_cur, axis, config):
             p2 = np.polyfit(εs[mid:], values[mid:], 1)
             min_ε = np.roots(p1-p2)[0]
         else:
-            min_ε = mean_mid
+            p = np.polyfit(εs, (values-np.min(values))/(np.max(values)-np.min(values)), 2)
+            r = np.real(np.roots(p))
+            r = [v for v in r if v>εs[0] and v<εs[-1]]
+            if len(r) == 0:
+                min_ε = mean_mid
+            else:
+                min_r = np.argmin(np.polyval(p, r))
+                min_ε = np.real(r[min_r])
+            if axis == 2:
+                min_ε = mean_mid
     else:
         values = np.array([calcGIObjective(real_img, projs[:,i], 0, None, config) for i in range(projs.shape[1])])
         #p = np.polyfit(εs, values, 2)
@@ -741,6 +756,25 @@ def linsearch(in_cur, axis, config):
         mean_mid = np.mean(εs[midpoints])
         min_ε = mean_mid
 
+    if False:
+        plt.figure()
+        plt.title(str(axis) + " " + str(my))
+        plt.vlines(min_ε, 0, 1)
+        pv = np.polyval(p, np.linspace(εs[0],εs[-1]))
+        plt.plot(np.linspace(εs[0],εs[-1]), pv)
+        for c, v in avalues:
+            if axis==0 and c in [-3, 2, -1, -2, 32, 22, 1, 11]:
+                continue
+            if axis==1 and c in [22, 2,  32, -1, -2, -3, 0, 12, 10]:
+                continue
+            if axis==2 and c in [-2, 1, -1, 0, -3, 32, 22, 10, 11]:
+                continue
+            plt.scatter(εs, (v-np.min(v))/(np.max(v)-np.min(v)), label=str(c))
+        plt.legend()
+        plt.show()
+        plt.close()
+    
+
     if axis==0:
         cur = applyRot(cur, min_ε, 0, 0)
     if axis==1:
@@ -756,6 +790,9 @@ def linsearch(in_cur, axis, config):
         else:
             print("{}{: .3f}{}".format(bcolors.YELLOW, noise[axis]-min_ε, bcolors.END), end=", ")
         #noise[axis] -= min_ε
+    if noise is not None:
+        noise[axis] -= min_ε
+
     if both:
         return cur, min_ε
     return cur
@@ -986,7 +1023,6 @@ def binsearch(in_cur, axis, config):
     if both:
         return cur, change
     return cur
-
 
 def roughRegistration(in_cur, reg_config, c):
     cur = np.array(in_cur)
@@ -1316,9 +1352,9 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
 
         config["it"] = 3
-        for grad_width in [(2.5,15), (0.5,15)]:
+        for grad_width in [(1.5,15), (1,15), (0.5,15), (0.25,15)]:
             #print()
-            for _ in range(2):
+            for _ in range(1):
                 config["grad_width"]=grad_width
                 cur = linsearch(cur, 0, config)
                 cur = linsearch(cur, 1, config)
@@ -1326,6 +1362,16 @@ def roughRegistration(in_cur, reg_config, c):
                 cur = correctXY(cur, config)
                 cur = correctZ(cur, config)
                 cur = correctXY(cur, config)
+                for axis in [0,1,2]:
+                    print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
+                    bcolors.print_val(np.mean(config["angle_noise"][axis]))
+                    bcolors.print_val(np.std(config["angle_noise"][axis]))
+                    bcolors.print_val(np.min(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.25))
+                    bcolors.print_val(np.median(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.75))
+                    bcolors.print_val(np.max(config["angle_noise"][axis]))
+                    print()
         
         config["it"] = 3
         cur = correctXY(cur, config)
@@ -1340,16 +1386,37 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
 
         config["it"] = 3
-        for grad_width in [(0.5,15), (0.05,15)]:
-            #print()
-            for _ in range(2):
-                config["grad_width"]=grad_width
-                cur = linsearch(cur, 0, config)
-                cur = linsearch(cur, 1, config)
-                cur = linsearch(cur, 2, config)
-                cur = correctXY(cur, config)
-                cur = correctZ(cur, config)
-        
+        config["both"] = True
+        grad_width = [[1.5,15],[1.5,15],[1.5,15]]
+        for _ in range(4):
+
+            config["grad_width"]=grad_width[2]
+            cur, min_ε = linsearch(cur, 2, config)
+            grad_width[2][0] = max(0.1, np.abs(min_ε)*1.5)
+
+            config["grad_width"]=grad_width[0]
+            cur, min_ε = linsearch(cur, 0, config)
+            grad_width[0][0] = max(0.1, np.abs(min_ε)*1.5)
+
+            config["grad_width"]=grad_width[1]
+            cur, min_ε = linsearch(cur, 1, config)
+            grad_width[1][0] = max(0.1, np.abs(min_ε)*1.5)
+
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+
+            if True:
+                for axis in [0,1,2]:
+                    print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
+                    bcolors.print_val(np.mean(config["angle_noise"][axis]))
+                    bcolors.print_val(np.std(config["angle_noise"][axis]))
+                    bcolors.print_val(np.min(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.25))
+                    bcolors.print_val(np.median(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.75))
+                    bcolors.print_val(np.max(config["angle_noise"][axis]))
+                    print()
+    
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)

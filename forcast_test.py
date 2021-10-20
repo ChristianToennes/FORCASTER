@@ -3,6 +3,7 @@ import SimpleITK as sitk
 #import forcast
 import cal
 import utils
+from utils import bcolors
 #import i0
 import os
 import pydicom
@@ -512,24 +513,6 @@ def create_circular_mask(shape, center=None, radius=None, radius_off=5, end_off=
         mask[-i-1] = (dist_from_center <= (i/30)*(radius-radius_off))
 
     return mask
-
-class bcolors:
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    END = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-    
-    def print_val(val):
-        if np.abs(val) > 0.1:
-            print("{}{: .3f}{}".format(bcolors.RED, val, bcolors.END), end=", ")
-        elif np.abs(val) < 0.1:
-            print("{}{: .3f}{}".format(bcolors.GREEN, val, bcolors.END), end=", ")
-        else:
-            print("{}{: .3f}{}".format(bcolors.YELLOW, val, bcolors.END), end=", ")
 
 
 def print_stats(noise):
@@ -1251,7 +1234,7 @@ def get_proj_paths():
     #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
     #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
-    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [4,25]),
+    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [25]),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path),
     ('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4,25]),
@@ -1410,6 +1393,7 @@ def reg_real_data():
             sids = np.mean(sids[::skip])
             sods = np.mean(sods[::skip])
             angles_noise = angles_noise[::skip]
+            angles_noise = np.ones_like(angles_noise)*-1
             trans_noise = trans_noise[::skip]
             zoom_noise = zoom_noise[::skip]
 
@@ -1444,7 +1428,7 @@ def reg_real_data():
                 params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
                 params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
 
-            if False:
+            if True:
                 for i, (α,β,γ) in enumerate(angles_noise):
                     params[i] = cal.applyRot(params[i], -α, -β, -γ)
             if False:

@@ -1125,3 +1125,22 @@ def sort_projs(projs, geo):
     #print(lens[shortest])
     #print(visited[shortest])
     return projs[:,visited[shortest],:], visited[shortest]
+
+
+class bcolors:
+    HEADER = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    END = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    
+    def print_val(val):
+        if np.abs(val) > 0.1:
+            print("{}{: .3f}{}".format(bcolors.RED, val, bcolors.END), end=", ")
+        elif np.abs(val) < 0.1:
+            print("{}{: .3f}{}".format(bcolors.GREEN, val, bcolors.END), end=", ")
+        else:
+            print("{}{: .3f}{}".format(bcolors.YELLOW, val, bcolors.END), end=", ")
