@@ -574,14 +574,10 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         mid_old = np.array([img_shape[0]//2, img_shape[1]//2])
         d_new = np.linalg.norm(good_new-mid_new[np.newaxis,:], axis=1)
         d_old = np.linalg.norm(good_old-mid_old[np.newaxis,:], axis=1)
-        if len(d_new) > 0:
-                
-            d_new = d_new / np.median(d_new)
-            d_old = d_old / np.median(d_old)
-            
-            f = np.std( d_new-d_old )
-        else:
-            f = 1000
+        d_new = d_new / np.median(d_new)
+        d_old = d_old / np.median(d_old)
+    
+        f = np.std( d_new-d_old )
 
     elif comp==42:
         d_new = np.linalg.norm(good_new, axis=1)
@@ -750,6 +746,10 @@ def linsearch(in_cur, axis, config):
     if "both" in config:
         both = config["both"]
 
+    objectives = {0:41, 1:41, 2:41}
+    if "objectives" in config:
+        objectives = config["objectives"]
+
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
@@ -790,7 +790,7 @@ def linsearch(in_cur, axis, config):
         points = [p[combined_valid] for p, v in zip(points, valid)]
         
         #print(points.shape, points_real.shape)
-        values = np.array([calcPointsObjective({0:41, 1:41, 2:41}[axis], points, points_real[combined_valid]) for points,v in zip(points,valid)])
+        values = np.array([calcPointsObjective(objectives[axis], points, points_real[combined_valid]) for points,v in zip(points,valid)])
         avalues = []
         #for comp in [-4, 2, 11, 20, 21, 40, 41]:#[0,1,2,10,11,12,22,32,-1,-2,-3,-4,20,21, 40,41,42]:
         #    avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[combined_valid], img_shape = projs[:,0].shape) for points,v in zip(points,valid)])) )
@@ -1733,18 +1733,17 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
 
         config["it"] = 3
-        for grad_width in [(1.5,15), (0.5,15)]:
-            #print()
-            for _ in range(1):
-                config["grad_width"]=grad_width
-                cur = linsearch2d(cur, 0, config)
-                cur = correctXY(cur, config)
-                cur = correctZ(cur, config)
-        
-        config["it"] = 3
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
+        config["both"] = True
+        config["objectives"] = {0:42, 1:42, 2:42}
+        for grad_width in [(1.5,7), (0.25,7)]:
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
 
     elif c==30:
         config["my"] = False
