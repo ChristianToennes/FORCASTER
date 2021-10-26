@@ -82,9 +82,9 @@ def normalize(images, mAs_array, kV_array, percent_gain):
         skip = 2
     #if images.shape[1] < 600:
     #    skip = 1
-    skip = 2
+    #skip = 2
 
-    edges = 20
+    edges = 30
 
     sel = np.zeros(images.shape, dtype=bool)
     #sel[:,20*skip:-20*skip:skip,20*skip:-20*skip:skip] = True
@@ -979,6 +979,7 @@ def reg_and_reco(ims, in_params, config):
     perf = config["perf"] if "perf" in config else False
     Ax = config["Ax"]
     method = config["method"]
+    use_saved = config["use_saved"] if "use_saved" in config else False
     real_image = config["real_cbct"]
     outpath = config["outpath"]
 
@@ -999,7 +1000,7 @@ def reg_and_reco(ims, in_params, config):
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd"), True)
         del sino
-    if False and not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
+    if not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         write_rec(reg_geo, ims, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"))
     if False and not perf:# and not os.path.exists(os.path.join("recos", "forcast_"+name+"_reco-input.nrrd")):
@@ -1037,13 +1038,17 @@ def reg_and_reco(ims, in_params, config):
         print_stats(config["noise"][1])
         
     perftime = time.perf_counter()
-    if method>-20:
-        if mp.cpu_count() > 1:
-            corrs = reg_rough_parallel(ims, params, config, method)
-        else:
-            corrs = reg_rough(ims, params, config, method)
+    if use_saved:
+        vecs = read_vectors(name+"-rough")
+        corrs = read_vectors(name+"-rough-corr")
     else:
-        corrs = reg_all(ims, params, config, method)
+        if method>-20:
+            if False and mp.cpu_count() > 1:
+                corrs = reg_rough_parallel(ims, params, config, method)
+            else:
+                corrs = reg_rough(ims, params, config, method)
+        else:
+            corrs = reg_all(ims, params, config, method)
 
     vecs = Ax.create_vecs(corrs)
     write_vectors(name+"-rough-corr", corrs)
@@ -1378,12 +1383,12 @@ def reg_real_data():
             skip = max(1, int(len(ims_un)/500))
             random = np.random.default_rng(23)
             #angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
-            angles_noise = random.uniform(low=-2, high=2, size=(len(ims_un),3))
+            angles_noise = random.uniform(low=-0.5, high=0.5, size=(len(ims_un),3))
             #angles_noise = np.zeros_like(angles_noise)
             #trans_noise = random.normal(loc=0, scale=20, size=(len(ims), 3))
             min_trans, max_trans = -5, 5
             trans_noise = random.uniform(low=min_trans, high=max_trans, size=(len(ims_un),2))
-            zoom_noise = random.uniform(low=0.95, high=1, size=len(ims_un))
+            zoom_noise = random.uniform(low=0.98, high=1, size=len(ims_un))
 
             #skip = 4
             #ims = ims[::skip]
@@ -1393,9 +1398,14 @@ def reg_real_data():
             sids = np.mean(sids[::skip])
             sods = np.mean(sods[::skip])
             angles_noise = angles_noise[::skip]
-            angles_noise = np.ones_like(angles_noise)*-1
             trans_noise = trans_noise[::skip]
             zoom_noise = zoom_noise[::skip]
+            angles_noise = np.ones_like(angles_noise)*0
+            trans_noise = np.ones_like(trans_noise)*0
+            zoom_noise = np.ones_like(zoom_noise)
+            #angles_noise[0][0] = -0.05
+            #angles_noise[0][1] = -0.166
+            #angles_noise[0][2] = -0.393
 
             coords_from_angles = utils.angles2coord_system(angles)
 
@@ -1431,7 +1441,7 @@ def reg_real_data():
             if True:
                 for i, (α,β,γ) in enumerate(angles_noise):
                     params[i] = cal.applyRot(params[i], -α, -β, -γ)
-            if False:
+            if True:
                 for i, (x,y) in enumerate(trans_noise):
                     params[i] = cal.applyTrans(params[i], x, y, 0)
                 for i, z in enumerate(zoom_noise):

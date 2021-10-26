@@ -126,7 +126,8 @@ def trackFeatures(next_img, data, config):
         #valid = np.zeros_like(valid)
         #valid[drop] = True
     else:
-        print(np.count_nonzero(valid))
+        pass
+        #print(np.count_nonzero(valid))
 
     return new_points[points], valid
 
@@ -383,6 +384,8 @@ def calcGIObjective2D(old_img_big, new_img_big, i, cur, config):
     return 1.0/(ngi+1e-10)
 
 def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
+    if len(good_new) == 0:
+        return 10000
     if comp==10:
         d = good_new[:,0]-good_old[:,0]
         if len(d)==0:
@@ -512,8 +515,10 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
     elif comp==21:
         d_new = (good_new[:,1]-good_new[:,1].T[:,np.newaxis]).flatten()
         d_old = (good_old[:,1]-good_old[:,1].T[:,np.newaxis]).flatten()
-        d_new = d_new / np.median(np.abs(d_new))
-        d_old = d_old / np.median(np.abs(d_old))
+        if np.median(np.abs(d_new)) != 0:
+            d_new = d_new / np.median(np.abs(d_new))
+        if np.median(np.abs(d_old)) != 0:
+            d_old = d_old / np.median(np.abs(d_old))
 
         d = np.abs(d_new-d_old)
         std = np.std(d)
@@ -569,20 +574,22 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         mid_old = np.array([img_shape[0]//2, img_shape[1]//2])
         d_new = np.linalg.norm(good_new-mid_new[np.newaxis,:], axis=1)
         d_old = np.linalg.norm(good_old-mid_old[np.newaxis,:], axis=1)
+        if len(d_new) > 0:
+                
+            d_new = d_new / np.median(d_new)
+            d_old = d_old / np.median(d_old)
+            
+            f = np.std( d_new-d_old )
+        else:
+            f = 1000
+
+    elif comp==42:
+        d_new = np.linalg.norm(good_new, axis=1)
+        d_old = np.linalg.norm(good_old, axis=1)
         d_new = d_new / np.median(d_new)
         d_old = d_old / np.median(d_old)
         
         f = np.std( d_new-d_old )
-
-    elif comp==42:
-        mid_new = np.array([img_shape[0]//2, img_shape[1]//2])
-        mid_old = np.array([img_shape[0]//2, img_shape[1]//2])
-        d_new = np.linalg.norm(good_new-mid_new[np.newaxis,:], axis=1)
-        d_old = np.linalg.norm(good_old-mid_old[np.newaxis,:], axis=1)
-        d_new = d_new# / np.median(d_new)
-        d_old = d_old# / np.median(d_old)
-        
-        f = np.median( np.abs( d_new-d_old ) )
 
     elif comp==-1:
         d = good_new[:,0]-good_old[:,0]
@@ -825,35 +832,94 @@ def linsearch(in_cur, axis, config):
             p2 = np.polyfit(εs[mid:], values[mid:], 1)
             min_ε = np.roots(p1-p2)[0]
         else:
-            p = np.polyfit(εs, (values-np.min(values))/(np.max(values)-np.min(values)), 4)
-            p1 = None
-            r = np.real(np.roots(np.polyder(p)))
-            r = [v for v in r if v>εs[0] and v<εs[-1]]
-            if len(r) == 0:
-                min_ε = mean_mid
-            else:
-                min_r = np.argmin(np.polyval(p, r))
-                min_ε = np.real(r[min_r])
+            if np.max(values) == np.min(values):
+                min_ε = εs[len(εs)//2]
+                print(" opt failed objectives null ", axis, end=";")
+                if False:
+                    avalues = []
+                    for comp in [-4, 2, 11, 20, 21, 40, 41]:#[0,1,2,10,11,12,22,32,-1,-2,-3,-4,20,21, 40,41,42]:
+                        avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[combined_valid], img_shape = projs[:,0].shape) for points,v in zip(points,valid)])) )
+                    plt.figure()
+                    plt.title(str(axis) + " " + str(my))
+                    #plt.vlines(min_ε, 0, 1)
+                    #pv = np.polyval(p, np.linspace(εs[0],εs[-1]))
+                    #plt.plot(np.linspace(εs[0],εs[-1]), pv, label="p")
+                    #if p1 is not None:
+                    #    pv1 = np.polyval(p1, np.linspace(εs[0],εs[-1]))
+                    #    f = pv1<=np.max(pv)
+                        #plt.plot(np.linspace(εs[0],εs[-1]), pv1, label="p1")
+                    for c, v in avalues:
+                        if (np.max(v)-np.min(v)) != 0:
+                            v_norm = (v-np.min(v))/(np.max(v)-np.min(v))
+                        else:
+                            v_norm = v
+                        if axis==0 and (c in [0, 1, 2, -1, -2, -3, 11, 32, 22, 21, 42, 12, 10, -4] or c in []): # 41 20 40
+                            continue
+                        if axis==1 and (c in [1, 40, 42, 32, -1, -2, -3, 0, 2, 10, 12, 22, 20, -4] or c in []): # 11 21 41
+                            continue
+                        if axis==2 and (c in [0, 1, -1, -2, -3, 32, 42, 11, 12, 22] or c in [21, 10]): # 2 40 41 -4
+                            continue
+                        if (np.max(v)-np.min(v)) == 0:
+                            plt.scatter(εs, v, label=str(c))
+                        else:
+                            plt.scatter(εs, v_norm, label=str(c))
+                        p0 = np.polyfit(εs, v_norm, 4)
 
-                #mid = np.argmin(np.abs(εs-min_ε))
-                #s = max(0, mid-len(εs)//3)
-                #e = min(len(εs)-1, mid+len(εs)//3)
-                #p1 = np.polyfit(εs[s:e], (values[s:e]-np.min(values))/(np.max(values)-np.min(values)), 2)
-                #r = np.real(np.roots(np.polyder(p1)))
-                #r = [v for v in r if v>εs[0] and v<εs[-1]]
-                #if len(r) == 0:
-                #    min_ε = mean_mid
-                #else:
-                #    min_r = np.argmin(np.polyval(p, r))
-                #    min_ε = np.real(r[min_r])
-            if axis == 3:
-                mid = np.argmin(values)
-                if mid > 1 and mid < len(values)-2:
-                    p = np.polyfit(εs[:mid], (values[:mid]-np.min(values))/(np.max(values)-np.min(values)), 1)
-                    p1 = np.polyfit(εs[mid+1:], (values[mid+1:]-np.min(values))/(np.max(values)-np.min(values)), 1)
-                    min_ε = np.roots(p-p1)[0]
-                else:
+                        pv = np.polyval(p0, εs)
+                        f = np.zeros_like(εs, dtype=bool)
+                        dv = pv-v_norm
+                        f[np.abs(dv)<3*np.std(dv)] = True
+                        #p1 = np.polyfit(εs[f], v_norm[f], 4)
+                        dv = np.argsort(np.abs(pv-v_norm))
+                        f = np.zeros_like(εs, dtype=bool)
+                        f[dv[:-5]] = True
+                        #p2 = np.polyfit(εs[f], v_norm[f], 4)
+
+                        def plot_p(p, c):
+                            rs = np.real(np.roots(np.polyder(p)))
+                            pv = np.polyval(p, np.linspace(εs[0],εs[-1]))
+                            l = plt.plot(np.linspace(εs[0],εs[-1]), pv, label=str(c))
+                            for r in rs:
+                                if r>εs[0] and r<εs[-1]:
+                                    plt.vlines(r, 0, 1, label=str(c), colors=l[0].get_color())
+                        
+                        plot_p(p0, str(c))
+                        #plot_p(p1, str(c)+"std")
+                        #plot_p(p2, str(c)+"quant")
+                    plt.legend()
+                    plt.ylim(0, 1)
+                    plt.show()
+                    plt.close()
+            else:
+                p = np.polyfit(εs, (values-np.min(values))/(np.max(values)-np.min(values)), 4)
+                p1 = None
+                r = np.real(np.roots(np.polyder(p)))
+                r = [v for v in r if v>εs[0] and v<εs[-1]]
+                if len(r) == 0:
                     min_ε = mean_mid
+                else:
+                    min_r = np.argmin(np.polyval(p, r))
+                    min_ε = np.real(r[min_r])
+
+                    #mid = np.argmin(np.abs(εs-min_ε))
+                    #s = max(0, mid-len(εs)//3)
+                    #e = min(len(εs)-1, mid+len(εs)//3)
+                    #p1 = np.polyfit(εs[s:e], (values[s:e]-np.min(values))/(np.max(values)-np.min(values)), 2)
+                    #r = np.real(np.roots(np.polyder(p1)))
+                    #r = [v for v in r if v>εs[0] and v<εs[-1]]
+                    #if len(r) == 0:
+                    #    min_ε = mean_mid
+                    #else:
+                    #    min_r = np.argmin(np.polyval(p, r))
+                    #    min_ε = np.real(r[min_r])
+                if axis == 3:
+                    mid = np.argmin(values)
+                    if mid > 1 and mid < len(values)-2:
+                        p = np.polyfit(εs[:mid], (values[:mid]-np.min(values))/(np.max(values)-np.min(values)), 1)
+                        p1 = np.polyfit(εs[mid+1:], (values[mid+1:]-np.min(values))/(np.max(values)-np.min(values)), 1)
+                        min_ε = np.roots(p-p1)[0]
+                    else:
+                        min_ε = mean_mid
     else:
         values = np.array([calcGIObjective(real_img, projs[:,i], 0, None, config) for i in range(projs.shape[1])])
         #p = np.polyfit(εs, values, 2)
@@ -1508,16 +1574,17 @@ def roughRegistration(in_cur, reg_config, c):
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
-            for axis in [0,1,2]:
-                print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
-                bcolors.print_val(np.mean(config["angle_noise"][axis]))
-                bcolors.print_val(np.std(config["angle_noise"][axis]))
-                bcolors.print_val(np.min(config["angle_noise"][axis]))
-                bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.25))
-                bcolors.print_val(np.median(config["angle_noise"][axis]))
-                bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.75))
-                bcolors.print_val(np.max(config["angle_noise"][axis]))
-                print()
+            if False:
+                for axis in [0,1,2]:
+                    print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
+                    bcolors.print_val(np.mean(config["angle_noise"][axis]))
+                    bcolors.print_val(np.std(config["angle_noise"][axis]))
+                    bcolors.print_val(np.min(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.25))
+                    bcolors.print_val(np.median(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.75))
+                    bcolors.print_val(np.max(config["angle_noise"][axis]))
+                    print()
     elif c==25: # bad
         config["it"] = 3
         cur = correctXY(cur, config)
@@ -1547,7 +1614,7 @@ def roughRegistration(in_cur, reg_config, c):
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
 
-            if True:
+            if False:
                 for axis in [0,1,2]:
                     print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
                     bcolors.print_val(np.mean(config["angle_noise"][axis]))
@@ -1568,7 +1635,7 @@ def roughRegistration(in_cur, reg_config, c):
 
         config["it"] = 3
         config["both"] = True
-        for grad_width in [(1.5,15), (0.25,15)]:
+        for grad_width in [(1.5,7), (0.25,7)]:
             config["grad_width"]=grad_width
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
@@ -1577,16 +1644,17 @@ def roughRegistration(in_cur, reg_config, c):
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
-            for axis in [0,1,2]:
-                print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
-                bcolors.print_val(np.mean(config["angle_noise"][axis]))
-                bcolors.print_val(np.std(config["angle_noise"][axis]))
-                bcolors.print_val(np.min(config["angle_noise"][axis]))
-                bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.25))
-                bcolors.print_val(np.median(config["angle_noise"][axis]))
-                bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.75))
-                bcolors.print_val(np.max(config["angle_noise"][axis]))
-                print()
+            if False:
+                for axis in [0,1,2]:
+                    print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
+                    bcolors.print_val(np.mean(config["angle_noise"][axis]))
+                    bcolors.print_val(np.std(config["angle_noise"][axis]))
+                    bcolors.print_val(np.min(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.25))
+                    bcolors.print_val(np.median(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.75))
+                    bcolors.print_val(np.max(config["angle_noise"][axis]))
+                    print()
     elif c==27:
         config["it"] = 3
         cur = correctXY(cur, config)
@@ -1615,7 +1683,7 @@ def roughRegistration(in_cur, reg_config, c):
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
 
-            if True:
+            if False:
                 for axis in [0,1,2]:
                     print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
                     bcolors.print_val(np.mean(config["angle_noise"][axis]))
@@ -1645,16 +1713,17 @@ def roughRegistration(in_cur, reg_config, c):
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
-            for axis in [0,1,2]:
-                print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
-                bcolors.print_val(np.mean(config["angle_noise"][axis]))
-                bcolors.print_val(np.std(config["angle_noise"][axis]))
-                bcolors.print_val(np.min(config["angle_noise"][axis]))
-                bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.25))
-                bcolors.print_val(np.median(config["angle_noise"][axis]))
-                bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.75))
-                bcolors.print_val(np.max(config["angle_noise"][axis]))
-                print()
+            if False:
+                for axis in [0,1,2]:
+                    print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
+                    bcolors.print_val(np.mean(config["angle_noise"][axis]))
+                    bcolors.print_val(np.std(config["angle_noise"][axis]))
+                    bcolors.print_val(np.min(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.25))
+                    bcolors.print_val(np.median(config["angle_noise"][axis]))
+                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.75))
+                    bcolors.print_val(np.max(config["angle_noise"][axis]))
+                    print()
     elif c==29:
         config["it"] = 3
         cur = correctXY(cur, config)
