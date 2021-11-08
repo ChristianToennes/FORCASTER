@@ -3156,3 +3156,79 @@ def bfgs_all(curs, reg_config, c):
     #reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 
     return np.array(res), (trans_noise, angles_noise)
+
+
+def est_position(in_cur, Ax, real_img):
+    cur = np.array(in_cur)
+    config = dict(default_config)
+
+    data_real = findInitialFeatures(real_img, config)
+    
+    points_real = normalize_points(data_real[0], real_img)
+
+    primary = np.linspace(-200, 200, 400, True)
+    #primary = [0]
+    secondary = np.linspace(-200, 200, 400, True)
+    #secondary = [0]
+    tertiary = np.linspace(-90, 90, 180, True)
+    tertiary = [0]
+
+    bp = 0
+    bs = 0
+    bt = 0
+
+    for _ in range(3):
+        curs = []
+        pos = []
+        for p in primary:
+            dcur = applyRot(cur, p, bs, bt)
+            curs.append(dcur)
+            pos.append([p, bs, bt])
+        for s in secondary:
+            dcur = applyRot(cur, bp, s, bt)
+            curs.append(dcur)
+            pos.append([bp, s, bt])
+        for t in tertiary:
+            dcur = applyRot(cur, bp, bs, t)
+            curs.append(dcur)
+            pos.append([bp, bs, t])
+
+        pos = np.array(pos)
+        curs = np.array(curs)
+        
+        projs = Projection_Preprocessing(Ax(curs))
+
+        if len(curs) > 10:
+            sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
+
+        no_valid = []
+        for i in range(projs.shape[1]):
+            proj = projs[:,i]
+            (p,v) = trackFeatures(proj, data_real, config)
+            valid = v==1
+            no_valid.append(np.count_nonzero(valid))
+
+        no_valid = np.array(no_valid)
+
+        lv = np.argsort(no_valid)[::-1]
+        b = lv[0]
+
+        title = str(b)
+        if b < len(primary):
+            bp = primary[b]
+            primary = []
+            title += " " + str(bp) + " primary"
+        elif b < (len(primary)+len(secondary)):
+            bs = secondary[b-len(primary)]
+            secondary = []
+            title += " " + str(bs) + " secondary"
+        else:
+            bt = tertiary[b-len(primary)-len(secondary)]
+            tertiary = []
+            title += " " + str(bt) + " tertiary"
+        
+        #plt.figure()
+        #plt.title(title)
+        #plt.plot(np.arange(len(no_valid)), no_valid)
+
+    return applyRot(in_cur, bp, bs, bt), np.array([bp, bs, bt])

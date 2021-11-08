@@ -20,6 +20,7 @@ from skimage.metrics import structural_similarity,normalized_root_mse
 import skimage.measure
 from datetime import timedelta as td
 from scipy.spatial import distance
+import matplotlib.pyplot as plt
 
 def write_vectors(name, vecs):
     with open(name+".csv", "w") as f:
@@ -133,6 +134,7 @@ def read_dicoms(indir, max_ims=np.inf):
     ims = []
     percent_gain = []
     coord_systems = []
+    cs_interpol = []
     sids = []
     sods = []
 
@@ -184,7 +186,47 @@ def read_dicoms(indir, max_ims=np.inf):
                 μas = xray_info[2::4]*0.001
 
             elif "NumberOfFrames" in dir(ds):
-                ims = ds.pixel_array
+                if len(ims) == 0:
+                    ims = ds.pixel_array
+                else:
+                    ims = np.vstack([ims, ds.pixel_array])
+
+
+                #thetas.append(float(ds.PositionerPrimaryAngle))
+                #phis.append(float(ds.PositionerSecondaryAngle))
+
+                stparmdata = utils.unpack_sh_stparm(ds[0x0021,0x1012].value)
+
+                cs = np.array(stparmdata["COORD_SYS_C_ARM"]).reshape((3, 4))
+                #cs[:,2] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,2])
+                #cs[:,1] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,1])
+
+                coord_systems.append(cs)
+                cs_interpol.append([cs, float(ds.PositionerPrimaryAngle), float(ds.PositionerSecondaryAngle), int(ds.NumberOfFrames)])
+
+                rv = cs[:,2]
+                rv /= np.sum(rv**2, axis=-1)
+                prim = np.arctan2(np.sqrt(rv[0]**2+rv[1]**2), rv[2])
+                prim = np.arccos(rv[2] / np.sqrt(rv[0]**2+rv[1]**2+rv[2]**2) )
+                prim = prim*180 / np.pi
+                
+
+                if cs[1,2]<0:
+                    prim *= -1
+
+                if (prim > 50 and prim < 135) or (prim <-45 and prim > -135):
+                    sec = np.arctan2(rv[1], rv[0])
+                    sec = sec * 180 / np.pi
+                    if cs[1,2]<0:
+                        sec *= -1
+                    sec -= 90
+                else:
+                    sec = np.arctan2(rv[2], rv[0])
+                    sec = sec * 180 / np.pi - 90
+
+                prims.append(prim)
+                secs.append(sec)
+
                 for i in range(int(ds.NumberOfFrames)):
                     ts.append(len(ts))
                     kvs.append(float(ds.KVP))
@@ -193,41 +235,10 @@ def read_dicoms(indir, max_ims=np.inf):
                         μas.append(float(ds[0x0021,0x1004].value)*0.001)
                     else:
                         μas.append(struct.unpack("<l", ds[0x0021,0x1004].value)[0]*0.001)
-                    thetas.append(float(ds.PositionerPrimaryAngle))
-                    phis.append(float(ds.PositionerSecondaryAngle))
-
-                    stparmdata = utils.unpack_sh_stparm(ds[0x0021,0x1012].value)
-
-                    cs = np.array(stparmdata["COORD_SYS_C_ARM"]).reshape((3, 4))
-                    cs[:,2] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,2])
-                    cs[:,1] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,1])
-
-                    coord_systems.append(cs)
+                    
                     sids.append(np.array(stparmdata["SID_A"]))
                     sods.append(np.array(stparmdata["SOD_A"]))
-
-                    rv = cs[:,2]
-                    rv /= np.sum(rv**2, axis=-1)
-                    prim = np.arctan2(np.sqrt(rv[0]**2+rv[1]**2), rv[2])
-                    prim = np.arccos(rv[2] / np.sqrt(rv[0]**2+rv[1]**2+rv[2]**2) )
-                    prim = prim*180 / np.pi
                     
-
-                    if cs[1,2]<0:
-                        prim *= -1
-
-                    if (prim > 50 and prim < 135) or (prim <-45 and prim > -135):
-                        sec = np.arctan2(rv[1], rv[0])
-                        sec = sec * 180 / np.pi
-                        if cs[1,2]<0:
-                            sec *= -1
-                        sec -= 90
-                    else:
-                        sec = np.arctan2(rv[2], rv[0])
-                        sec = sec * 180 / np.pi - 90
-
-                    prims.append(prim)
-                    secs.append(sec)
                     if ds[0x0019,0x1008].VR == "US":
                         percent_gain.append(ds[0x0019,0x1008].value)
                     else:
@@ -291,12 +302,23 @@ def read_dicoms(indir, max_ims=np.inf):
     mas = np.array(mas)
     μas = np.array(μas)
     percent_gain = np.array(percent_gain)
-    thetas = np.array(thetas)
-    phis = np.array(phis)
     ims = np.array(ims)
-    coord_systems = np.array(coord_systems)
     sids = np.array(sids)
     sods = np.array(sods)
+
+        
+        #ims = ims[:no_ims]
+        #kvs = kvs[:no_ims]
+        #mas = mas[:no_ims]
+        #μas = μas[:no_ims]
+        #percent_gain = percent_gain[:no_ims]
+        #sids = sids[:no_ims]
+        #sods = sods[:no_ims]
+
+    thetas = np.array(thetas)
+    phis = np.array(phis)
+    
+    coord_systems = np.array(coord_systems)
 
     cs = coord_systems
     
@@ -318,6 +340,9 @@ def read_dicoms(indir, max_ims=np.inf):
     angles = np.vstack((thetas*np.pi/180.0, phis*np.pi/180.0, np.zeros_like(thetas))).T
 
     ims_gained, ims_ungained, i0s_gained, i0s_ungained = normalize(ims, μas, kvs, percent_gain)
+
+    if len(cs_interpol) > 0:
+        coord_systems = np.array(cs_interpol)
 
     return ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods
 
@@ -349,7 +374,10 @@ def reg_rough(ims, params, config, c=0):
         for si in range(1):
             try:
                 old_cur = np.array(cur)
-                cur = cal.roughRegistration(cur, config, c)
+                if config["estimate"]:
+                    cur = cal.est_position(cur, config)
+                else:
+                    cur = cal.roughRegistration(cur, config, c)
                 noise[0][i], noise[1][i] = config["noise"]
             except Exception as ex:
                 print(i, ex, cur)
@@ -1367,6 +1395,96 @@ def calc_images_matlab(name, ims, real_image, detector_shape, outpath, geo):
 
 out_rec_meta = ()
 
+def interpol_positions(cs_interpol, Ax, projs, detector_spacing, detector_shape, dist_source_origin, dist_origin_detector, image_spacing):
+    no_ims = 0
+    coord_systems = []
+    thetas = []
+    phis = []
+    params = []
+    for i, (cs, primary, secondary, number) in enumerate(cs_interpol):
+
+        vec = utils.coord_systems2vecs(np.array([cs]), detector_spacing, dist_source_origin, dist_origin_detector, image_spacing)[0]
+        cur = np.zeros((3, 3), dtype=float)
+        r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
+        cur[1] = r.dot(vec[6:9])
+        cur[2] = r.dot(vec[9:12])
+        #cur[1] = vec[6:9]
+        #cur[2] = vec[9:12]
+        print(projs.shape, detector_shape)
+
+        config = dict(cal.default_config)
+        data_real = cal.findInitialFeatures(projs[no_ims+2], config)
+        config["data_real"] = data_real
+        config["real_img"] = projs[no_ims+2]
+        config["Ax"] = Ax
+        config["it"] = 3
+        #cur = cal.correctXY(cur, config)
+        #cur = cal.correctZ(cur, config)
+        #cur = cal.correctXY(cur, config)
+        #cur = cal.correctZ(cur, config)
+        #cur = cal.correctXY(cur, config)
+
+        print(cur)
+        cur_start, pos = cal.est_position(cur, Ax, projs[no_ims+2])
+        plt.figure()
+        plt.gray()
+        plt.imshow(projs[no_ims+2])
+        no_ims += number
+        print(cur)
+        cur_end, pos_end = cal.est_position(cur, Ax, projs[no_ims-2])
+        print(primary, secondary, pos, pos_end)
+        cur_end, pos_end = cal.est_position(cur_end, Ax, projs[no_ims-2])
+        print(primary, secondary, pos, pos_end)
+        plt.figure()
+        plt.gray()
+        plt.imshow(projs[no_ims-2])
+        sims = cal.Projection_Preprocessing(Ax(np.array([cur, cur_start, cur_end])))
+        plt.figure()
+        plt.gray()
+        plt.imshow(sims[:,0])
+        plt.figure()
+        plt.gray()
+        plt.imshow(sims[:,1])
+        plt.figure()
+        plt.gray()
+        plt.imshow(sims[:,2])
+        plt.show()
+        plt.close()
+        #if np.abs(pos_end[0]-pos[0])%180 > np.abs(pos_end[1]-pos[1])%180:
+        for p,s,t in zip(np.linspace(pos[0], pos_end[0], number, True), np.linspace(pos[1], pos_end[1], number, True), np.linspace(pos[2], pos_end[2], number, True)):
+            params.append(cal.applyRot(cur, p, s, t))
+            r = utils.rotMat(p-pos[0], [0,0,1])
+            ncs = np.array(cs)
+            ncs[:,0] = r.dot(cs[:,0])
+            ncs[:,1] = r.dot(cs[:,1])
+            ncs[:,2] = r.dot(cs[:,2])
+            coord_systems.append(ncs)
+            thetas.append(p)
+            phis.append(s)
+            #phis.append(pos[1])
+        #else:
+        for i,s in enumerate(np.linspace(pos[1], pos_end[1], number, True)):
+            break
+            params[i] = cal.applyRot(params[i], 0, s, 0)
+            r1 = utils.rotMat(thetas[i], [0,0,1])
+            r2 = utils.rotMat(s-pos[1], [1,0,0])
+            r = r1.dot(r2)
+            ncs = coord_systems[i]
+            #cs = np.array(cs)
+            ncs[:,0] = r.dot(cs[:,0])
+            ncs[:,1] = r.dot(cs[:,1])
+            ncs[:,2] = r.dot(cs[:,2])
+            coord_systems[i] = ncs
+            #coord_systems.append(ncs)
+            phis.append(s)
+            #thetas.append(pos[0])
+    
+    coord_systems = np.array(coord_systems)
+    thetas = np.array(thetas)
+    phis = np.array(phis)
+    params = np.array(params)
+    return coord_systems, thetas, phis, params
+
 def reg_real_data():
     projs = get_proj_paths()
 
@@ -1423,13 +1541,21 @@ def reg_real_data():
             del image
 
             Ax = utils.Ax_param_asta(real_image.shape, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing), real_image)
+
+            if coord_systems.shape[1] == 4:
+                coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+                params = params[skip]
+            coord_systems = coord_systems[skip]
+
             Ax_gen = (real_image.shape, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing), real_image)
             geo = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
             geo_from_angles = utils.create_astra_geo_coords(coords_from_angles, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
             
             r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
 
-            if 'angle' in name or 'both' in name:
+            if 'arc' in name:
+                pass
+            elif 'angle' in name or 'both' in name:
                 params = np.zeros((len(geo_from_angles['Vectors']), 3, 3), dtype=float)
                 params[:,1] = np.array([r.dot(v) for v in geo_from_angles['Vectors'][:, 6:9]])
                 params[:,2] = np.array([r.dot(v) for v in geo_from_angles['Vectors'][:, 9:12]])
@@ -1462,7 +1588,7 @@ def reg_real_data():
             #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape, outpath, geo); exit(0)
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath}
+            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False}
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
             for method in methods:
