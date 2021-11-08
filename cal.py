@@ -727,6 +727,24 @@ def correctZ(in_cur, config):
             cur = np.array(in_cur)
     return cur
 
+def correctFlip(in_cur, config):
+    data_real = config["data_real"]
+    real_img = config["real_img"]
+    Ax = config["Ax"]
+
+    curs = np.array([np.array(in_cur), applyRot(in_cur, 0, 0, 180)])
+    projs = Projection_Preprocessing(Ax(curs))
+
+    features = [trackFeatures(projs[:,i], data_real, config) for i in range(projs.shape[1])]
+
+    points_real, features_real = data_real
+    points_real = normalize_points(points_real, real_img)
+    real_img = Projection_Preprocessing(real_img)
+
+    values = np.array([calcPointsObjective(-4, normalize_points(points[v], projs[:,i]), points_real[v]) for i,(points,v) in enumerate(features)])
+
+    return curs[np.argmin(values)]
+
 def linsearch(in_cur, axis, config):
     warnings.simplefilter("error")
     data_real = config["data_real"]
