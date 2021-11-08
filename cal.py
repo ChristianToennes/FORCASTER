@@ -98,25 +98,40 @@ def trackFeatures(next_img, data, config):
                 if m.trainIdx == i:
                     matchesMask[i2,0] = 0
 
-    if len(dists[valid])>=0:
-        m = np.mean(dists[valid])
-        std = np.std(dists[valid])
-        out = np.bitwise_or(dists<m-3*std, dists>m+3*std)
+    matchesMask2 = np.array(matchesMask)
+
+    if len(dists[valid])>0:
+        p_new = np.array([[p.pt[0], p.pt[1]] for p in new_points[points]])
+        p_old = np.array([[p.pt[0], p.pt[1]] for p in base_points])
+        ps = p_new-p_old
+        m = np.mean(ps[valid], axis=0)
+        std = np.std(ps[valid], axis=0)
+        #print((ps-m)[valid], m, std)
+        out = np.bitwise_or(ps<m-1*std, ps>m+1*std)
+        out = np.bitwise_or(out[:,0], out[:,1])
+        matchesMask2[out, 0] = 0
+        #print(np.count_nonzero(out[valid]))
         valid[out] = False
+
     
     if False:
         real_img = config["real_img"]
-        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
-            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=np.zeros_like(matchesMask), matchColor=(0,255,0), singlePointColor=(0,0,255))
-        cv2.imwrite("featurepoints.png", img)
+        #img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+        #    np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=np.zeros_like(matchesMask), matchColor=(0,255,0), singlePointColor=(0,0,255))
+        #cv2.imwrite("featurepoints.png", img)
         img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
             np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=matchesMask, matchColor=(0,255,0), singlePointColor=(0,0,255))
-        cv2.imwrite("knnmath.png", img)
-        f = plt.imshow(img)
-        plt.show()
+        #cv2.imwrite("knnmath.png", img)
+        f, (ax1, ax2) = plt.subplots(1,2, squeeze=True)
+        ax1.imshow(img)
         #f.savefig("knnmath.png")
+        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,
+            matchesMask=matchesMask2, matchColor=(0,255,0), singlePointColor=(0,0,255))
+        ax2.imshow(img)
+        plt.show()
         plt.close()
-        exit()
+        #exit()
 
     if np.count_nonzero(valid) > 100:
         pass
@@ -628,6 +643,29 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
 
         f = np.median( fd )
+    elif comp==-5:
+        d = good_new-good_old
+        std = np.std(d, axis=0)
+        mean = np.mean(d, axis=0)
+        filt = np.bitwise_and(d<=mean+2*std, d>=mean-2*std)
+        filt = np.bitwise_or(filt[:,0], filt[:,1])
+
+        d = np.linalg.norm(good_new-good_old, ord=2, axis=1)
+        f = np.median( d[filt] )
+    elif comp==-6:
+        d = np.linalg.norm(good_new-good_old, ord=2, axis=1)
+        std = np.std(d)
+        mean = np.mean(d)
+        fd = d[np.bitwise_and(d<=mean+1*std, d>=mean-1*std)]
+
+        f = np.median( fd )
+    elif comp==-7:
+        d = np.linalg.norm(good_new-good_old, ord=1, axis=1)
+        std = np.std(d)
+        mean = np.mean(d)
+        fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
+
+        f = np.median( fd )
     
     else:
         f = -2
@@ -727,6 +765,9 @@ def correctZ(in_cur, config):
             cur = np.array(in_cur)
     return cur
 
+class OptimizationFailedException(Exception):
+    pass
+
 def linsearch(in_cur, axis, config):
     warnings.simplefilter("error")
     data_real = config["data_real"]
@@ -746,7 +787,7 @@ def linsearch(in_cur, axis, config):
     if "both" in config:
         both = config["both"]
 
-    objectives = {0:41, 1:41, 2:41}
+    objectives = {0:-5, 1:-5, 2:-5}
     if "objectives" in config:
         objectives = config["objectives"]
 
@@ -781,16 +822,36 @@ def linsearch(in_cur, axis, config):
     if my:
         points = []
         valid = []
+        valid2 = []
         for (p,v), proj in [(trackFeatures(projs[:,i], data_real, config), projs[:,i]) for i in range(projs.shape[1])]:
             points.append(normalize_points(p, proj))
             valid.append(v==1)
         combined_valid = valid[0]
         for v in valid:
             combined_valid = np.bitwise_and(combined_valid, v)
-        points = [p[combined_valid] for p, v in zip(points, valid)]
+        if np.count_nonzero(combined_valid) > 5:
+            points = [p[combined_valid] for p, v in zip(points, valid)]
+            values = np.array([calcPointsObjective(objectives[axis], points, points_real[combined_valid], projs[:,0].shape) for points,v in zip(points,valid)])
+        else:
+            combined_valid = valid[len(valid)//3]
+            for v in valid[len(valid)//3:len(valid)-len(valid)//3]:
+                combined_valid = np.bitwise_and(combined_valid, v)
+            if False and np.count_nonzero(combined_valid) > 5:
+                for i,v in enumerate(valid):
+                    if i>=len(valid)//3 and i < len(valid)-len(valid)//3:
+                        valid2.append(combined_valid)
+                    else:
+                        valid2.append(v)
+                
+                points = [p[v] for p, v in zip(points, valid2)]
+                values = np.array([calcPointsObjective(objectives[axis], points, points_real[v], projs[:,0].shape) for points,v in zip(points,valid2)])
+            else:
+                combined_valid = np.zeros_like(combined_valid)
+                points = [p[v] for p, v in zip(points, valid)]
+                values = np.array([calcPointsObjective(objectives[axis], points, points_real[v], projs[:,0].shape) for points,v in zip(points,valid)])
         
         #print(points.shape, points_real.shape)
-        values = np.array([calcPointsObjective(objectives[axis], points, points_real[combined_valid]) for points,v in zip(points,valid)])
+        #values = np.array([calcPointsObjective(objectives[axis], points, points_real[combined_valid]) for points,v in zip(points,valid)])
         avalues = []
         #for comp in [-4, 2, 11, 20, 21, 40, 41]:#[0,1,2,10,11,12,22,32,-1,-2,-3,-4,20,21, 40,41,42]:
         #    avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[combined_valid], img_shape = projs[:,0].shape) for points,v in zip(points,valid)])) )
@@ -839,6 +900,13 @@ def linsearch(in_cur, axis, config):
                     avalues = []
                     for comp in [-4, 2, 11, 20, 21, 40, 41]:#[0,1,2,10,11,12,22,32,-1,-2,-3,-4,20,21, 40,41,42]:
                         avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[combined_valid], img_shape = projs[:,0].shape) for points,v in zip(points,valid)])) )
+                    fig, axs = plt.subplots(int(np.sqrt(projs.shape[1])), int(np.ceil(projs.shape[1]/int(np.sqrt(projs.shape[1])))), squeeze = True)
+                    plt.gray()
+                    for i, ax in enumerate(axs.flatten()):
+                        ax.imshow(projs[:,i])
+                    plt.figure()
+                    plt.gray()
+                    plt.imshow(real_img)
                     plt.figure()
                     plt.title(str(axis) + " " + str(my))
                     #plt.vlines(min_ε, 0, 1)
@@ -890,6 +958,7 @@ def linsearch(in_cur, axis, config):
                     plt.ylim(0, 1)
                     plt.show()
                     plt.close()
+                raise OptimizationFailedException()
             else:
                 p = np.polyfit(εs, (values-np.min(values))/(np.max(values)-np.min(values)), 4)
                 p1 = None
@@ -936,7 +1005,18 @@ def linsearch(in_cur, axis, config):
         mean_mid = np.mean(εs[midpoints])
         min_ε = mean_mid
 
-    if False and axis==1:
+    if False and axis==0:
+        avalues = []
+        #for comp in [-4, 2, 11, 20, 21, 40, 41]:
+        #for comp in [0,1,2,10,11,12,22,32,-1,-2,-3,-4,20,21, 40,41,42]:
+        for comp in [-4, -5, -6, -7]:
+            if len(valid2) > 0:
+                avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[v], img_shape = projs[:,0].shape) for points,v in zip(points,valid2)])) )
+            elif np.count_nonzero(combined_valid)>0:
+                avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[combined_valid], img_shape = projs[:,0].shape) for points,v in zip(points,valid)])) )
+            else:
+                avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[v], img_shape = projs[:,0].shape) for points,v in zip(points,valid)])) )
+        
         plt.figure()
         plt.title(str(axis) + " " + str(my))
         #plt.vlines(min_ε, 0, 1)
@@ -948,11 +1028,11 @@ def linsearch(in_cur, axis, config):
             #plt.plot(np.linspace(εs[0],εs[-1]), pv1, label="p1")
         for c, v in avalues:
             v_norm = (v-np.min(v))/(np.max(v)-np.min(v))
-            if axis==0 and (c in [0, 1, 2, -1, -2, -3, 11, 32, 22, 21, 42, 12, 10, -4] or c in []): # 41 20 40
+            if axis==0 and (c in [0,1,2,-1,-2,-3,11,10,12,22,32,20] or c in [41,40]): # 42 41 20 40
                 continue
-            if axis==1 and (c in [1, 40, 42, 32, -1, -2, -3, 0, 2, 10, 12, 22, 20, -4] or c in []): # 11 21 41
+            if axis==1 and (c in [1, 40, 32, -1, -2, -3, 0, 2, 10, 12, 22, 20] or c in []): # 42 11 21 41
                 continue
-            if axis==2 and (c in [0, 1, -1, -2, -3, 32, 42, 11, 12, 22] or c in [21, 10]): # 2 40 41 -4
+            if axis==2 and (c in [0, 1, -1, -2, -3, 32, 11, 12, 22] or c in [21, 10]): # 42 2 40 41 -4
                 continue
             if (np.max(v)-np.min(v)) == 0:
                 plt.scatter(εs, v, label=str(c))
@@ -1595,25 +1675,38 @@ def roughRegistration(in_cur, reg_config, c):
 
         config["it"] = 3
         config["both"] = True
-        grad_width = [[1.5,15],[1.5,15],[1.5,15]]
-        for _ in range(4):
-
-            config["grad_width"]=grad_width[2]
-            cur, min_ε = linsearch(cur, 2, config)
-            grad_width[2][0] = max(0.1, np.abs(min_ε)*1.5)
-
-            config["grad_width"]=grad_width[0]
-            cur, min_ε = linsearch(cur, 0, config)
-            grad_width[0][0] = max(0.1, np.abs(min_ε)*1.5)
-
-            config["grad_width"]=grad_width[1]
-            cur, min_ε = linsearch(cur, 1, config)
-            grad_width[1][0] = max(0.1, np.abs(min_ε)*1.5)
-
+        grad_widths = [(0.25,7), (1.5,7)]
+        failed_counter = 0
+        while len(grad_widths) > 0:
+            grad_width = grad_widths.pop()
+            config["grad_width"]=grad_width
+            d0 = 0
+            d1 = 0
+            d2 = 0
+            failed = False
+            try:
+                _cur, d2 = linsearch(cur, 2, config)
+            except OptimizationFailedException as e:
+                failed = True
+            try:
+                _cur, d0 = linsearch(cur, 0, config)
+            except OptimizationFailedException as e:
+                failed = True
+            try:
+                _cur, d1 = linsearch(cur, 1, config)
+            except OptimizationFailedException as e:
+                failed = True
+            if failed:
+                if failed_counter < 3:
+                    grad_widths.append(grad_width)
+                    failed_counter += 1
+                    print("failed restart", failed_counter)
+                else:
+                    failed_counter = 0
+            cur = applyRot(cur, d0, d1, d2)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
-
             if False:
                 for axis in [0,1,2]:
                     print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
@@ -1734,8 +1827,7 @@ def roughRegistration(in_cur, reg_config, c):
 
         config["it"] = 3
         config["both"] = True
-        config["objectives"] = {0:42, 1:42, 2:42}
-        for grad_width in [(1.5,7), (0.25,7)]:
+        for grad_width in [(4,15), (2.5,11), (1.5, 7), (0.25,7)]:
             config["grad_width"]=grad_width
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
