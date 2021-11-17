@@ -217,7 +217,7 @@ def Projection_Preprocessing(proj, alpha=0, beta=255):
 def normalize_points(points, img):
     xdim, ydim = img.shape
     if len(points.shape) == 1:
-        return np.array([[1000.0*p.pt[0]/xdim, 1000.0*p.pt[1]/ydim] for p in points])
+        return np.array([[100.0*p.pt[0]/xdim, 100.0*p.pt[1]/ydim] for p in points])
     else:
         ret = np.array(points)
         ret[...,0] *= 1000.0/xdim
@@ -650,7 +650,7 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         filt = np.bitwise_and(d<=mean+2*std, d>=mean-2*std)
         filt = np.bitwise_or(filt[:,0], filt[:,1])
 
-        d = np.linalg.norm(good_new-good_old, ord=2, axis=1)
+        d = np.linalg.norm(d, ord=2, axis=1)
         f = np.median( d[filt] )
     elif comp==-6:
         d = np.linalg.norm(good_new-good_old, ord=2, axis=1)
@@ -666,7 +666,15 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
 
         f = np.median( fd )
-    
+    elif comp==-8:
+        d = good_new-good_old
+        std = np.std(d, axis=0)
+        mean = np.mean(d, axis=0)
+        filt = np.bitwise_and(d<=mean+2*std, d>=mean-2*std)
+        filt = np.bitwise_or(filt[:,0], filt[:,1])
+
+        d = np.linalg.norm(d, ord=2, axis=1)
+        f = np.std( d[filt] )
     else:
         f = -2
         
@@ -691,7 +699,7 @@ def correctXY(in_cur, config):
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
 
-    its = 20
+    its = 3
     if "it" in config:
         its = config["it"]
     for i in range(its):
@@ -710,7 +718,10 @@ def correctXY(in_cur, config):
             m = np.mean(diff, axis=0)
             std = np.std(diff, axis=0)
             diff = diff[np.bitwise_and(np.bitwise_and(diff[:,0]>m[0]-3*std[0], diff[:,0]<m[0]+3*std[0]), np.bitwise_and(diff[:,1]>m[1]-3*std[1], diff[:,1]<m[1]+3*std[1]))]
-            med = np.median(diff, axis=0)*0.1
+            if "mean" in config and config["mean"]:
+                med = np.mean(diff, axis=0)#*0.1
+            else:
+                med = np.median(diff, axis=0)#*0.1
             #print(m, std, med, med[0]*xdir, med[1]*ydir)
             cur[0] += med[0] * xdir# / np.linalg.norm(xdir)
             cur[0] += med[1] * ydir# / np.linalg.norm(ydir)
@@ -734,7 +745,7 @@ def correctZ(in_cur, config):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
-    its = 20
+    its = 3
     if "it" in config:
         its = config["it"]
     for i in range(its):
@@ -748,7 +759,10 @@ def correctZ(in_cur, config):
         dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points[valid] for r in points[valid]])
         dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real[valid] for r in points_real[valid]])
         if np.count_nonzero(dist_new) > 5:
-            scale = Ax.distance_source_origin*(np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
+            if "mean" in config and config["mean"]:
+                scale = Ax.distance_source_origin*(np.mean(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
+            else:
+                scale = Ax.distance_source_origin*(np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
             zdir = np.cross(cur[2], cur[1])
             zdir = zdir / np.linalg.norm(zdir)
             cur[0] += scale * zdir
@@ -1454,39 +1468,52 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c == 5:
-        config["it"] = 10
+        config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
+    elif c == 6:
+        config["it"] = 3
+        config["mean"] = False
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c == 7:
         config["it"] = 1
-        cur = correctXY(cur, config)
+        config["mean"] = False
         cur = correctZ(cur, config)
-        #cur = correctXY(cur, config)
+        cur = correctXY(cur, config)
     elif c==8:
         config["it"] = 3
-        cur = correctXY(cur, config)
+        config["mean"] = True
         cur = correctZ(cur, config)
-        #cur = correctXY(cur, config)
+        cur = correctXY(cur, config)
     elif c==9:
-        config["it"] = 10
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        #cur = correctXY(cur, config)
-    elif c==10:
         config["it"] = 1
+        config["mean"] = True
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c==10:
+        config["it"] = 2
+        config["mean"] = True
+        cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c==11:
-        config["it"] = 3
+        config["it"] = 2
+        config["mean"] = False
+        cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c==12:
-        config["it"] = 5
-        cur = correctXY(cur, config)
+        config["it"] = 1
+        config["mean"] = False
+        for _ in range(3):
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
     elif c==13:
-        config["it"] = 10
-        cur = correctXY(cur, config)
+        config["it"] = 1
+        config["mean"] = True
+        for _ in range(3):
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
     elif c==15:
         config["my"] = False
         config["it"] = 3
@@ -1654,6 +1681,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c==24:
+        cur = correctFlip(cur, config)
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
@@ -1684,6 +1712,9 @@ def roughRegistration(in_cur, reg_config, c):
                     bcolors.print_val(np.max(config["angle_noise"][axis]))
                     print()
     elif c==25: # bad
+
+        cur = correctFlip(cur, config)
+
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
@@ -1737,6 +1768,7 @@ def roughRegistration(in_cur, reg_config, c):
                     bcolors.print_val(np.max(config["angle_noise"][axis]))
                     print()
     elif c==26:
+        cur = correctFlip(cur, config)
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
@@ -1806,14 +1838,52 @@ def roughRegistration(in_cur, reg_config, c):
                     bcolors.print_val(np.max(config["angle_noise"][axis]))
                     print()
     elif c==28: # bad
+
+        cur = correctFlip(cur, config)
+
         config["it"] = 3
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
         config["it"] = 3
+        config["both"] = True
+        config["objectives"] = {0: -8, 1: -8, 2: -8}
+        for grad_width in [(1.5,5), (1,5), (0.5,5), (0.25,5)]:
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+    elif c==29:
+
+        cur = correctFlip(cur, config)
+
+        config["it"] = 3
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        config["both"] = True
+        config["objectives"] = {0: -8, 1: -8, 2: -8}
+        for grad_width in [(4,15), (2.5,11), (1.5, 7), (0.25,7)]:
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+
+    elif c==30: # bad
+
+        cur = correctFlip(cur, config)
+
+        config["it"] = 3
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
         config["both"] = True
         for grad_width in [(1.5,5), (1,5), (0.5,5), (0.25,5)]:
             config["grad_width"]=grad_width
@@ -1821,41 +1891,11 @@ def roughRegistration(in_cur, reg_config, c):
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
             cur = applyRot(cur, d0, d1, d2)
-            cur = correctXY(cur, config)
-            cur = correctZ(cur, config)
-            cur = correctXY(cur, config)
-            if False:
-                for axis in [0,1,2]:
-                    print("{}{}{}".format(bcolors.BLUE, axis, bcolors.END), end=": ")
-                    bcolors.print_val(np.mean(config["angle_noise"][axis]))
-                    bcolors.print_val(np.std(config["angle_noise"][axis]))
-                    bcolors.print_val(np.min(config["angle_noise"][axis]))
-                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.25))
-                    bcolors.print_val(np.median(config["angle_noise"][axis]))
-                    bcolors.print_val(np.quantile(config["angle_noise"][axis], 0.75))
-                    bcolors.print_val(np.max(config["angle_noise"][axis]))
-                    print()
-    elif c==29:
-        config["it"] = 3
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
+        
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
-        config["it"] = 3
-        config["both"] = True
-        for grad_width in [(4,15), (2.5,11), (1.5, 7), (0.25,7)]:
-            config["grad_width"]=grad_width
-            _cur, d2 = linsearch(cur, 2, config)
-            _cur, d0 = linsearch(cur, 0, config)
-            _cur, d1 = linsearch(cur, 1, config)
-            cur = applyRot(cur, d0, d1, d2)
-            cur = correctXY(cur, config)
-            cur = correctZ(cur, config)
-            cur = correctXY(cur, config)
-
-    elif c==30:
+    elif c==31:
         config["my"] = False
         config["it"] = 3
         cur = correctXY(cur, config)
@@ -1879,7 +1919,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
-    elif c==31:
+    elif c==32:
         config["my"] = False
         config["it"] = 3
         cur = correctXY(cur, config)

@@ -1526,7 +1526,7 @@ def reg_real_data():
             #skip = 4
             ims = ims[skip]
             ims_un = ims_un[skip]
-            coord_systems = coord_systems[skip]
+            #coord_systems = coord_systems[skip]
             angles = angles[skip]
             sids = np.mean(sids[skip])
             sods = np.mean(sods[skip])
