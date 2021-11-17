@@ -421,7 +421,7 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         filt = np.bitwise_and(d<=mean+2*std, d>=mean-2*std)
         filt = np.bitwise_or(filt[:,0], filt[:,1])
 
-        d = np.linalg.norm(good_new-good_old, ord=2, axis=1)
+        d = np.linalg.norm(d, ord=2, axis=1)
         f = np.median( d[filt] )
     elif comp==-6:
         d = np.linalg.norm(good_new-good_old, ord=2, axis=1)
@@ -437,7 +437,15 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
 
         f = np.median( fd )
-    
+    elif comp==-8:
+        d = good_new-good_old
+        std = np.std(d, axis=0)
+        mean = np.mean(d, axis=0)
+        filt = np.bitwise_and(d<=mean+2*std, d>=mean-2*std)
+        filt = np.bitwise_or(filt[:,0], filt[:,1])
+
+        d = np.linalg.norm(d, ord=2, axis=1)
+        f = np.std( d[filt] )
     else:
         f = -2
         

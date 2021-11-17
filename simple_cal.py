@@ -17,7 +17,7 @@ def correctXY(in_cur, config):
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
 
-    its = 20
+    its = 3
     if "it" in config:
         its = config["it"]
     for i in range(its):
@@ -36,7 +36,10 @@ def correctXY(in_cur, config):
             m = np.mean(diff, axis=0)
             std = np.std(diff, axis=0)
             diff = diff[np.bitwise_and(np.bitwise_and(diff[:,0]>m[0]-3*std[0], diff[:,0]<m[0]+3*std[0]), np.bitwise_and(diff[:,1]>m[1]-3*std[1], diff[:,1]<m[1]+3*std[1]))]
-            med = np.median(diff, axis=0)*0.1
+            if "mean" in config and config["mean"]:
+                med = np.mean(diff, axis=0)
+            else:
+                med = np.median(diff, axis=0)
             #print(m, std, med, med[0]*xdir, med[1]*ydir)
             cur[0] += med[0] * xdir# / np.linalg.norm(xdir)
             cur[0] += med[1] * ydir# / np.linalg.norm(ydir)
@@ -61,7 +64,7 @@ def correctZ(in_cur, config):
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
-    its = 20
+    its = 3
     if "it" in config:
         its = config["it"]
     for i in range(its):
@@ -75,7 +78,10 @@ def correctZ(in_cur, config):
         dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points[valid] for r in points[valid]])
         dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real[valid] for r in points_real[valid]])
         if np.count_nonzero(dist_new) > 5:
-            scale = Ax.distance_source_origin*(np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
+            if "mean" in config and config["mean"]:
+                scale = Ax.distance_source_origin*(np.mean(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
+            else:
+                scale = Ax.distance_source_origin*(np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
             zdir = np.cross(cur[2], cur[1])
             zdir = zdir / np.linalg.norm(zdir)
             cur[0] += scale * zdir
@@ -112,11 +118,8 @@ def correctFlip(in_cur, config):
 
 def correctTrans(cur, config):
     config["it"] = 3
-    cur = correctXY(cur, config)
     cur = correctZ(cur, config)
     cur = correctXY(cur, config)
-    #cur = correctZ(cur, config)
-    #cur = correctXY(cur, config)
     return cur
 
 def correctAll(curs, config):

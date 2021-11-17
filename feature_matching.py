@@ -160,18 +160,18 @@ def findInitialFeatures(img, config):
 def normalize_points(points, img):
     xdim, ydim = img.shape
     if len(points.shape) == 1:
-        return np.array([[1000.0*p.pt[0]/xdim, 1000.0*p.pt[1]/ydim] for p in points])
+        return np.array([[100.0*p.pt[0]/xdim, 100.0*p.pt[1]/ydim] for p in points])
     else:
         ret = np.array(points)
-        ret[...,0] *= 1000.0/xdim
-        ret[...,1] *= 1000.0/ydim
+        ret[...,0] *= 100.0/xdim
+        ret[...,1] *= 100.0/ydim
         return ret
 
 def unnormalize_points(points, img):
     xdim, ydim = img.shape
     ret = np.array(points)
-    ret[:,0] *= xdim/1000.0
-    ret[:,1] *= ydim/1000.0
+    ret[:,0] *= xdim/100.0
+    ret[:,1] *= ydim/100.0
     return ret
 
 def Projection_Preprocessing(proj, alpha=0, beta=255):
