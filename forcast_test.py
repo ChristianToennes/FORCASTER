@@ -105,8 +105,12 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     #    norm_img = images[i][sel[i]].reshape(norm_images_gained[0].shape)
     #    norm_images_ungained[i] = norm_img
 
-    norm_images_gained = images[:,edges:-edges:2, edges:-edges:2]
-    norm_images_ungained = np.array([image*(1+gain/100) for image,gain in zip(images[:,edges:-edges:skip,edges:-edges:skip], percent_gain)])
+    if edges <= 0:
+        norm_images_gained = np.array([image*(1+gain/100) for image,gain in zip(images[:,::2,::2], percent_gain)])
+        norm_images_ungained = np.array([image*(1+gain/100) for image,gain in zip(images[:,::skip,::skip], percent_gain)])
+    else:
+        norm_images_gained = np.array([image*(1+gain/100) for image,gain in zip(images[:,edges:-edges:2,edges:-edges:2], percent_gain)])
+        norm_images_ungained = np.array([image*(1+gain/100) for image,gain in zip(images[:,edges:-edges:skip,edges:-edges:skip], percent_gain)])
     #norm_images_ungained = images[:,edges:-edges:skip, edges:-edges:skip]
     
     gain = 2.30
@@ -117,12 +121,13 @@ def normalize(images, mAs_array, kV_array, percent_gain):
         gain += 1
     #gain = np.ones_like(fs)
     #offset = 0
-    for i in range(len(fs)):
-        norm_img = norm_images_gained[i] / (offset + (gain*fs)[i])
-        #norm_img = norm_images_gained[i] / (1.1*np.max(norm_images_gained[i]))
-        if (norm_img==0).any():
-            norm_img[norm_img==0] = np.min(norm_img[norm_img!=0])
-        norm_images_gained[i] = -np.log(norm_img)
+    if False:
+        for i in range(len(fs)):
+            norm_img = norm_images_gained[i] / (offset + (gain*fs)[i])
+            #norm_img = norm_images_gained[i] / (1.1*np.max(norm_images_gained[i]))
+            if (norm_img==0).any():
+                norm_img[norm_img==0] = np.min(norm_img[norm_img!=0])
+            norm_images_gained[i] = -np.log(norm_img)
 
     return norm_images_gained, norm_images_ungained, offset+gain*fs, fs
 
@@ -327,18 +332,19 @@ def read_dicoms(indir, max_ims=np.inf):
 
     cs = coord_systems
     
-    rv = cs[:,:,2]
-    rv /= np.vstack((np.sum(rv, axis=-1),np.sum(rv, axis=-1),np.sum(rv, axis=-1))).T
-    prim = np.arctan2(np.sqrt(rv[:,0]**2+rv[:,1]**2), rv[:,2])
-    prim = np.arccos(rv[:,2] / np.sqrt(rv[:,0]**2+rv[:,1]**2+rv[:,2]**2) )
-    sec = 0.5*np.pi-np.arctan2(rv[:,1], rv[:,0])
-    prim = prim*180 / np.pi
-    sec = sec * 180 / np.pi
+    if False:
+        rv = cs[:,:,2]
+        rv /= np.vstack((np.sum(rv, axis=-1),np.sum(rv, axis=-1),np.sum(rv, axis=-1))).T
+        prim = np.arctan2(np.sqrt(rv[:,0]**2+rv[:,1]**2), rv[:,2])
+        prim = np.arccos(rv[:,2] / np.sqrt(rv[:,0]**2+rv[:,1]**2+rv[:,2]**2) )
+        sec = 0.5*np.pi-np.arctan2(rv[:,1], rv[:,0])
+        prim = prim*180 / np.pi
+        sec = sec * 180 / np.pi
 
-    prim[cs[:,1,2]<0] *= -1
-    sec[cs[:,1,2]<0] -= 180
-    prim[np.bitwise_and(cs[:,2,2]<0, cs[:,1,1]>0) ] -= 180
-    prim[cs[:,1,0]>0] -= 180
+        prim[cs[:,1,2]<0] *= -1
+        sec[cs[:,1,2]<0] -= 180
+        prim[np.bitwise_and(cs[:,2,2]<0, cs[:,1,1]>0) ] -= 180
+        prim[cs[:,1,0]>0] -= 180
 
     #thetas = prim
     #phis = sec
@@ -349,7 +355,7 @@ def read_dicoms(indir, max_ims=np.inf):
     if len(cs_interpol) > 0:
         coord_systems = np.array(cs_interpol)
 
-    return ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods
+    return ims_gained, ims_ungained, mas, kvs, angles, coord_systems, sids, sods
 
 def reg_all(ims, params, config, c=0):
     noise = config["noise"]
@@ -626,6 +632,8 @@ def evalNeedleArea(img, img2, projname, name):
         else:
             pos = [232, 257-margin, 262-margin]
             mult = 1
+    else:
+        return 0
     mask = np.zeros_like(img, dtype=bool)
     mask[pos[0],pos[1]-2:pos[1]+2,pos[2]-2:pos[2]+2] = True
     #rec = sitk.GetImageFromArray(1.0*mask)
@@ -704,6 +712,8 @@ def evalFWHM(img, name, pos = [232, 262, 257]):
         else:
             pos = [232, 257, 262]
             mult = 1
+    else:
+        return 0
 
     mask = np.zeros_like(img, dtype=bool)
     mask[pos[0],pos[1]-2:pos[1]+2,pos[2]-2:pos[2]+2] = True
@@ -860,10 +870,11 @@ def evalSinoResults(out_path, in_path, projname):
         
         i0s = [i0_est(ims_un[i::skip], proj[:,i]) for i in range(proj.shape[1])]
         ims = np.array(-np.log(ims_un[::skip]/np.mean(i0s)), dtype=np.float32)
-        if ims.shape != proj.shape:
-            continue
-
-        evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
+        
+        try:
+            evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
+        except Exception as e:
+            print(e)
     
 def evalRecoResults(out_path, in_path, projname):
     global out_rec_meta
@@ -874,14 +885,15 @@ def evalRecoResults(out_path, in_path, projname):
     metas = {}
     for filename in os.listdir(out_path):
         #if re.fullmatch("forcast_[^_]+_reco-input.nrrd", filename) != None:
-        if re.fullmatch("forcast_2010201_imbu_cbct_4_reco-output.nrrd", filename) != None:
+        #if re.fullmatch("forcast_2010201_imbu_cbct_4_reco-output.nrrd", filename) != None:
+        if re.fullmatch("forcast_.+?_cbct_4_reco-output.nrrd", filename) != None:
             img = sitk.ReadImage(os.path.join(out_path, filename))
             real_img = np.array(sitk.GetArrayFromImage(img), dtype=np.float32)
             #print(real_img.shape, end=" -> ")
             #real_img = scipy.ndimage.zoom(real_img, 0.5, order=1)
             #print(real_img.shape)
             real_name = filename.split('_')[1]
-            real_name = "genB"
+            #real_name = "genB"
             metas[real_name] = (img.GetOrigin(), img.GetSize(), img.GetSpacing(), real_img.shape)
             input_recos[real_name] = real_img
             input_gi_confs[real_name] = {"GIoldold":[None], "absp1":[None], "p1":[None]}
@@ -890,7 +902,10 @@ def evalRecoResults(out_path, in_path, projname):
             input_fwhm[real_name] = evalFWHM(real_img, real_name)
             input_area[real_name] = evalNeedleArea(real_img, real_img, real_name, real_name)
 
-            evalPerformance(real_img[:,margin:-margin,margin:-margin], real_img[:,margin:-margin,margin:-margin], 0, real_name, 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
+            try:
+                evalPerformance(real_img[:,margin:-margin,margin:-margin], real_img[:,margin:-margin,margin:-margin], 0, real_name, 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
+            except Exception as e:
+                print(e)
 
     def reco_data():
         input_sino = False
@@ -909,7 +924,21 @@ def evalRecoResults(out_path, in_path, projname):
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[2:]))
                 yield "_".join(filename.split('_')[2:]), proj, filename
+            elif re.fullmatch("forcast_matlab_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename:
+                img = sitk.ReadImage(os.path.join(out_path, filename))
+                proj = sitk.GetArrayFromImage(img)
+                #projs.append(proj)
+                #print(filename, proj.shape)
+                #names.append("_".join(filename.split('_')[2:]))
+                yield "_".join(filename.split('_')[2:]), proj, filename
             elif re.fullmatch("forcast_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename:
+                img = sitk.ReadImage(os.path.join(out_path, filename))
+                proj = sitk.GetArrayFromImage(img)
+                #projs.append(proj)
+                #print(filename, proj.shape)
+                #names.append("_".join(filename.split('_')[1:]))
+                yield "_".join(filename.split('_')[1:]), proj, filename
+            elif re.fullmatch("forcast_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
@@ -973,12 +1002,14 @@ def evalAllResults(evalSino=True, evalReco=True, outpath="recos"):
         with open("stats_proj.csv", "w") as f:
             f.truncate()
         for name, proj_path, _, _ in projs:
+            print(proj_path)
             evalSinoResults(outpath, proj_path, name)
     if evalReco:        
         with open("stats_rec.csv", "w") as f:
             f.truncate()
             f.write(";".join(["Name", "Runtime", "NGI", "SSIM", "NRMSE", "Area"]) + "\n")
         for name, proj_path, _, _ in projs:
+            print(proj_path)
             evalRecoResults(outpath, proj_path, name)
 
 def write_rec(geo, ims, filepath, mult=1):
@@ -1247,12 +1278,55 @@ def parameter_search(proj_path, cbct_path):
     sitk.WriteImage(sitk.GetImageFromArray(rec), os.path.join(outpath, "forcast_reco.nrrd"))
 
 def i0_est(real_img, proj_img):
-    real = float(np.median(real_img))
-    proj = np.median(proj_img)
-    i0 = real * np.exp(proj)
+    filt = np.zeros_like(real_img, dtype=bool)
+    filt[filt.shape[0]//3:-filt.shape[0]//3,filt.shape[1]//3:-filt.shape[1]//3] = True
+    real = float(np.mean(real_img[filt]))
+    proj = np.mean(proj_img[filt])
+    i0 = real / np.exp(proj)
+    
     #i0 = i0*1.4
-    i0 += 400
+    #i0 += 400
     return i0
+
+def i0_data(skip, edges):
+    if os.path.exists("F:\\output"):
+        prefix = r"F:\output"
+    else:
+        prefix = r"D:\lumbal_spine_13.10.2020\output"
+
+    path = os.path.join(prefix, '70kVp')
+
+    kvs = []
+    mas = []
+    ims = []
+
+    for root, _dirs, files in os.walk(path):
+        for entry in files:
+            path = os.path.abspath(os.path.join(root, entry))
+            ds = pydicom.dcmread(path)
+            if edges <= 0:
+                ims.append(np.mean(ds.pixel_array[:,::skip, ::skip], axis=0))
+            else:
+                ims.append(np.mean(ds.pixel_array[:,edges:-edges:skip, edges:-edges:skip], axis=0))
+            kvs.append(float(ds.KVP))
+            mas.append(float(ds.XRayTubeCurrent)*float(ds.ExposureTime)*0.001)
+
+    kvs = np.array(kvs)
+    mas = np.array(mas)
+    ims = np.array(ims)
+
+    print(ims.shape)
+    return ims, mas, kvs
+
+def i0_interpol(ims, mas, target):
+    res = np.zeros_like(ims[0])
+
+    for i in range(ims.shape[1]):
+        for j in range(ims.shape[2]):
+            p = np.polyfit(np.array(mas), ims[:,i,j], 1)
+            res[i,j] = np.polyval(p, target)
+
+    return res
 
 def get_proj_paths():
     projs = []
@@ -1506,8 +1580,12 @@ def reg_real_data():
     for name, proj_path, cbct_path, methods in projs:
         
         try:
-            ims, ims_un, _, _, angles, coord_systems, sids, sods = read_dicoms(proj_path)
-
+            ims, ims_un, mas, kvs, angles, coord_systems, sids, sods = read_dicoms(proj_path)
+            
+            if os.path.exists("Z:\\\\recos"):
+                outpath = "Z:\\\\recos"
+            else:
+                outpath = r"D:\lumbal_spine_13.10.2020\recos"
 
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
@@ -1545,7 +1623,8 @@ def reg_real_data():
             origin, size, spacing, image = utils.read_cbct_info(cbct_path)
 
             detector_shape = np.array((1920,2480))
-            detector_mult = np.floor(detector_shape / np.array(ims_un.shape[1:]))
+            detector_mult = int(np.floor(detector_shape[0] / ims_un.shape[1]))
+            
             detector_shape = np.array(ims_un.shape[1:])
             detector_spacing = np.array((0.125, 0.125)) * detector_mult
 
@@ -1592,14 +1671,28 @@ def reg_real_data():
             #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
             #sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ims,0,1)), "recos/ims.nrrd")
 
-            i0s = [i0_est(ims_un[i], projs[:,i]) for i in range(ims_un.shape[0])]
-            ims_un = -np.log(ims_un/np.mean(i0s))
-            
-            if os.path.exists("Z:\\\\recos"):
-                outpath = "Z:\\\\recos"
-            else:
-                outpath = r"D:\lumbal_spine_13.10.2020\recos"
+            i0_ims, i0_mas, i0_kvs = i0_data(detector_mult, 60)
 
+            res = np.mean( np.mean(i0_ims, axis=(1,2))[:,np.newaxis,np.newaxis] / i0_ims, axis=0)
+
+            i0s = np.array([i0_est(ims_un[i], projs[:,i])*res for i in range(ims_un.shape[0])])
+            i0s[i0s==0] = 1e-8
+            ims_un = -np.log(ims_un/i0s)
+
+            sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
+            sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs_est-input.nrrd"), True)
+            del sino
+
+            i0s = i0_interpol(i0_ims, i0_mas, np.mean(mas))
+
+            sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
+            sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs_int-input.nrrd"), True)
+            del sino
+
+            i0s = np.array([i0_est(ims[i], projs[:,i])*res for i in range(ims.shape[0])])
+            i0s[i0s==0] = 1e-8
+            ims = -np.log(ims/i0s)
+            
             #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape, outpath, geo); exit(0)
 
