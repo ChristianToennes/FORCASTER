@@ -44,15 +44,6 @@ def trackFeatures(next_img, data, config):
 
     dists = np.array(dists)
     
-
-    for i in range(len(base_points)):
-        if np.count_nonzero(points==i)>1:
-            valid[points==i] = False
-            points[points==i] = -1
-            for i2,(m,n) in enumerate(matches):
-                if m.trainIdx == i:
-                    matchesMask[i2,0] = 0
-
     matchesMask2 = np.array(matchesMask)
 
     if len(dists[valid])>0:
@@ -68,25 +59,64 @@ def trackFeatures(next_img, data, config):
         #print(np.count_nonzero(out[valid]))
         valid[out] = False
 
+    matchesMask3 = np.array(matchesMask2)
+
+    for i in range(len(base_points)):
+        if np.count_nonzero(points[valid]==i)>1:
+            valid[points==i] = False
+            points[points==i] = -1
+            for i2,(m,n) in enumerate(matches):
+                if m.trainIdx == i:
+                    matchesMask3[i2,0] = 0
+
+
+
     
     if False:
         real_img = config["real_img"]
-        #img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
-        #    np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=np.zeros_like(matchesMask), matchColor=(0,255,0), singlePointColor=(0,0,255))
-        #cv2.imwrite("featurepoints.png", img)
+        l=60
+        r=-40
+        t=25
+        b=-25
+        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=np.zeros_like(matchesMask), matchColor=(0,255,0), singlePointColor=(0,0,255))
+        cv2.imwrite("featurepoints.png", img[t:b,l:r])
+        m = np.zeros_like(matchesMask)
+        m[::4,0] = 1
+        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=m, matchColor=(0,255,0), singlePointColor=(0,0,255))
+        cv2.imwrite("knnmatch.png", img[t:b,l:r])
         img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
             np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=matchesMask, matchColor=(0,255,0), singlePointColor=(0,0,255))
-        #cv2.imwrite("knnmath.png", img)
-        f, (ax1, ax2) = plt.subplots(1,2, squeeze=True)
-        ax1.imshow(img)
-        #f.savefig("knnmath.png")
+        cv2.imwrite("knnmatch_lowe.png", img[t:b,l:r])
+        m[::4,0] = (np.ones_like(matchesMask)-matchesMask)[::4,0]
         img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
-            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,
-            matchesMask=matchesMask2, matchColor=(0,255,0), singlePointColor=(0,0,255))
-        ax2.imshow(img)
-        plt.show()
-        plt.close()
-        #exit()
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=m, matchColor=(0,0,255), singlePointColor=(0,0,255))
+        cv2.imwrite("knnmatch_lowe_diff.png", img[t:b,l:r])
+        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=matchesMask2, matchColor=(0,255,0), singlePointColor=(0,0,255))
+        cv2.imwrite("knnmatch_lowe_out.png", img[t:b,l:r])
+        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=matchesMask-matchesMask2, matchColor=(0,0,255), singlePointColor=(0,0,255))
+        cv2.imwrite("knnmatch_lowe_out_diff.png", img[t:b,l:r])
+        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=matchesMask3, matchColor=(0,255,0), singlePointColor=(0,0,255))
+        cv2.imwrite("knnmatch_lowe_out_double.png", img[t:b,l:r])
+        img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=matchesMask2-matchesMask3, matchColor=(0,0,255), singlePointColor=(0,0,255))
+        cv2.imwrite("knnmatch_lowe_out_double_diff.png", img[t:b,l:r])
+        
+        #import matplotlib.pyplot as plt
+        #f, (ax1, ax2) = plt.subplots(1,2, squeeze=True)
+        #ax1.imshow(img)
+        #f.savefig("knnmath.png")
+        #img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+        #    np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,
+        #    matchesMask=matchesMask2, matchColor=(0,255,0), singlePointColor=(0,0,255))
+        #ax2.imshow(img)
+        #plt.show()
+        #plt.close()
+        exit()
 
     if np.count_nonzero(valid) > 100:
         pass
