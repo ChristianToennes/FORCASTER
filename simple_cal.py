@@ -33,9 +33,9 @@ def correctXY(in_cur, config):
             
             xdir = cur[1]#/np.linalg.norm(cur[1])
             ydir = cur[2]#/np.linalg.norm(cur[2])
-            m = np.mean(diff, axis=0)
-            std = np.std(diff, axis=0)
-            diff = diff[np.bitwise_and(np.bitwise_and(diff[:,0]>m[0]-3*std[0], diff[:,0]<m[0]+3*std[0]), np.bitwise_and(diff[:,1]>m[1]-3*std[1], diff[:,1]<m[1]+3*std[1]))]
+            #m = np.mean(diff, axis=0)
+            #std = np.std(diff, axis=0)
+            #diff = diff[np.bitwise_and(np.bitwise_and(diff[:,0]>m[0]-3*std[0], diff[:,0]<m[0]+3*std[0]), np.bitwise_and(diff[:,1]>m[1]-3*std[1], diff[:,1]<m[1]+3*std[1]))]
             if "mean" in config and config["mean"]:
                 med = np.mean(diff, axis=0)
             else:
@@ -45,7 +45,7 @@ def correctXY(in_cur, config):
             cur[0] += med[1] * ydir# / np.linalg.norm(ydir)
             if (np.abs(med[0]*xdir) > 200).any() or (np.abs(med[1]*ydir) > 200).any():
                 #print(in_cur, cur)
-                print(m, std)
+                #print(m, std)
                 print(med[0], xdir)
                 print(med[1], ydir)
                 raise Exception("xy change to large")
