@@ -3,6 +3,9 @@ import astra
 import os
 import SimpleITK as sitk
 
+default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 4},
+"my": True, "grad_width": (1,25), "noise": None, "both": False, "max_change": 1}
+
 def FP(img, dist_detector_source, ratio):
     proj_geom = astra.create_proj_geom('cone', 0.25, 0.25, 2480, 1920, [0, np.pi*0.5, np.pi, np.pi*1.5], dist_detector_source*ratio, dist_detector_source*(1.0-ratio)) 
     proj_id = astra.data3d.create('-proj3d', proj_geom)
@@ -1144,3 +1147,47 @@ class bcolors:
             print("{}{: .3f}{}".format(bcolors.GREEN, val, bcolors.END), end=", ")
         else:
             print("{}{: .3f}{}".format(bcolors.YELLOW, val, bcolors.END), end=", ")
+
+
+def applyRot(in_params, α, β, γ):
+    params = np.array(in_params)
+    #print(params, α, β, γ)
+    if α!=0:
+        params[1] = rotMat(α, params[2]).dot(params[1])
+    if β!=0:
+        params[2] = rotMat(β, params[1]).dot(params[2])
+    if γ!=0:
+        u = np.cross(params[1], params[2])
+        R = rotMat(γ, u)
+        params[1] = R.dot(params[1])
+        params[2] = R.dot(params[2])
+    return params
+
+def applyTrans(in_params, x, y, z):
+    cur = np.array(in_params)
+    if x != 0:
+        xdir = cur[1]
+        cur[0] += x * xdir
+    if y != 0:
+        ydir = cur[2]
+        cur[0] += y * ydir
+    if z != 0:
+        zdir = np.cross(cur[2], cur[1])
+        #zdir = zdir / np.linalg.norm(zdir)
+        cur[0] += z * zdir
+    return cur
+
+
+def filt_conf(config):
+    d = {"real_img": config["real_img"], "my": config["my"], "use_cpu": config["use_cpu"], "AKAZE_params": config["AKAZE_params"]}#, "p1": None, "absp1": None, "GIoldold": None, "data_real": None, "points_real": None}
+    if "p1" in config:
+        d["p1"] = config["p1"]
+    if "absp1" in config:
+        d["absp1"] = config["absp1"]
+    if "GIoldold" in config:
+        d["GIoldold"] = config["GIoldold"]
+    if "data_real" in config:
+        d["data_real"] = [None]*len(config["data_real"])
+    if "points_real" in config:
+        d["points_real"] = [None]*len(config["points_real"])
+    return d
