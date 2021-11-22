@@ -446,6 +446,14 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
 
         d = np.linalg.norm(d, ord=2, axis=1)
         f = np.std( d[filt] )
+    elif comp==-9:
+        d = good_new-good_old
+        std = np.std(d, axis=0)
+        mean = np.mean(d, axis=0)
+        filt = np.bitwise_and(d<=mean+2*std, d>=mean-2*std)
+        filt = np.bitwise_or(filt[:,0], filt[:,1])
+        
+        f = np.count_nonzero(filt)
     else:
         f = -2
         
