@@ -370,7 +370,10 @@ def reg_all(ims, params, config, c=0):
     config["noise"] = (noise[0], noise[1])
     try:
         #cur, noise = cal.bfgs_trans_all(params, config, c)
-        cur, noise = cal_bfgs_rot.bfgs(params, config, c)
+        if c <= -40:
+            cur, noise = cal_bfgs_full.bfgs(params, config, c)
+        else:
+            cur, noise = cal_bfgs_rot.bfgs(params, config, c)
     except Exception as ex:
         print(ex)
         raise
@@ -472,6 +475,8 @@ def reg_rough_parallel(ims, params, config, c=0):
     pool_size = mp.cpu_count()
     if c==28:
         pool_size = 2
+    elif c >= 40:
+        pool_size = mp.cpu_count()-4
     pool = []
     proc_count = 0
     #corrsq = mp.Queue()
@@ -1029,6 +1034,7 @@ def write_rec(geo, ims, filepath, mult=1):
     rec = rec*mask
     del mask
     write_images(rec, filepath, mult)
+    return
 
     rec = utils.SIRT_astra(out_shape, geo, np.swapaxes(ims, 0,1), 200)
     #mask = np.zeros(rec.shape, dtype=bool)
@@ -1070,7 +1076,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
         out_spacing = (out_rec_meta[2][0],out_rec_meta[2][1],out_rec_meta[2][2])
         rec.SetSpacing(out_spacing)
         sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
-    if not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd")):
         sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims,0,1)))
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd"), True)
         del sino
@@ -1244,10 +1250,10 @@ def i0_est(real_img, proj_img):
     filt[filt.shape[0]//3:-filt.shape[0]//3,filt.shape[1]//3:-filt.shape[1]//3] = True
     real = float(np.mean(real_img[filt]))
     proj = np.mean(proj_img[filt])
-    i0 = real / np.exp(proj)
+    i0 = real * np.exp(proj)
     
     #i0 = i0*1.4
-    #i0 += 400
+    i0 += 400
     return i0
 
 def i0_data(skip, edges):
@@ -1316,7 +1322,7 @@ def get_proj_paths():
     #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
     #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
-    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [27]),
+    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-33,-34,-35,-36,-24,-27,-44,-54]),
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
@@ -1329,7 +1335,7 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [27]),
+    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-34,-36,-24,-27,-44,-54]),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
@@ -1573,7 +1579,7 @@ def reg_real_data():
             angles_noise = angles_noise[skip]
             trans_noise = trans_noise[skip]
             zoom_noise = zoom_noise[skip]
-            angles_noise = np.ones_like(angles_noise)*0
+            #angles_noise = np.ones_like(angles_noise)*0
             #trans_noise = np.ones_like(trans_noise)*0
             #zoom_noise = np.ones_like(zoom_noise)
             #angles_noise[0][0] = -0.05
@@ -1638,6 +1644,7 @@ def reg_real_data():
             res = np.mean( np.mean(i0_ims, axis=(1,2))[:,np.newaxis,np.newaxis] / i0_ims, axis=0)
 
             i0s = np.array([i0_est(ims_un[i], projs[:,i])*res for i in range(ims_un.shape[0])])
+            i0s = np.mean(i0s, axis=0)
             i0s[i0s==0] = 1e-8
             ims_un = -np.log(ims_un/i0s)
 
@@ -1652,6 +1659,7 @@ def reg_real_data():
             del sino
 
             i0s = np.array([i0_est(ims[i], projs[:,i])*res for i in range(ims.shape[0])])
+            i0s = np.mean(i0s, axis=0)
             i0s[i0s==0] = 1e-8
             ims = -np.log(ims/i0s)
             

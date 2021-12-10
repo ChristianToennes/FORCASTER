@@ -5,3 +5,5 @@ recos/
 __pycache__/
 build/
 literature/
+*.csv
+*.png

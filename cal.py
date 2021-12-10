@@ -47,10 +47,11 @@ def linsearch(in_cur, axis, config):
         use_combined = config["use_combined"]
         
 
-    points_real, features_real = data_real
-    points_real = normalize_points(points_real, real_img)
-    real_img = Projection_Preprocessing(real_img)
-    if not my:
+    if my:
+        points_real, features_real = data_real
+        points_real = normalize_points(points_real, real_img)
+        real_img = Projection_Preprocessing(real_img)
+    else:
         config["GIoldold"] = [None]# = GI(real_img, real_img)
         config["p1"] = [None]
         config["absp1"] = [None]
@@ -92,151 +93,93 @@ def linsearch(in_cur, axis, config):
             combined_valid = np.zeros_like(combined_valid)
             points = [p[v] for p, v in zip(points, valid)]
             values = np.array([calcPointsObjective(objectives[axis], points, points_real[v], projs[:,0].shape) for points,v in zip(points,valid)])
-        avalues = []
-        
-        mid = np.argmin(values)
-        skip = np.count_nonzero(values<0)
-        midpoints = np.argsort(values)[skip:skip+5]
-        if len(midpoints) == 0:
-            #print(values)
-            return cur
-        mean_mid = np.median(εs[midpoints])
-        if False and mid > 10 and mid < grad_width[1]*2-10:
-            std_mid = np.std(εs[midpoints])
-            mid = np.argmin(values[midpoints[np.bitwise_and(εs[midpoints]>mean_mid-3*std_mid, εs[midpoints]<mean_mid+3*std_mid)]])
-            mid = midpoints[np.bitwise_and(εs[midpoints]>mean_mid-2*std_mid, εs[midpoints]<mean_mid+2*std_mid)][mid]
-            #with warnings.catch_warnings():
-            #    warnings.simplefilter("error")
-            #    try:
-            #        p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
-            #    except np.RankWarning:
-            #        if both:
-            #            return cur, 0
-            #        return cur
-            #with warnings.catch_warnings():
-            #    warnings.simplefilter("error")
-            #    try:
-            #        p2 = np.polyfit(εs[mid:], values[mid:], 1)
-            #    except np.RankWarning:
-            #        if both:
-            #            return cur, 0
-            #        return cur
-            #else:
-            p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
-            p2 = np.polyfit(εs[mid:], values[mid:], 1)
-            min_ε = np.roots(p1-p2)[0]
-        else:
-            if np.max(values) == np.min(values):
-                min_ε = εs[len(εs)//2]
-                print(" opt failed objectives null ", axis, end=";")
-                if False:
-                    avalues = []
-                    for comp in [-4, 2, 11, 20, 21, 40, 41]:#[0,1,2,10,11,12,22,32,-1,-2,-3,-4,20,21, 40,41,42]:
-                        avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[combined_valid], img_shape = projs[:,0].shape) for points,v in zip(points,valid)])) )
-                    fig, axs = plt.subplots(int(np.sqrt(projs.shape[1])), int(np.ceil(projs.shape[1]/int(np.sqrt(projs.shape[1])))), squeeze = True)
-                    plt.gray()
-                    for i, ax in enumerate(axs.flatten()):
-                        ax.imshow(projs[:,i])
-                    plt.figure()
-                    plt.gray()
-                    plt.imshow(real_img)
-                    plt.figure()
-                    plt.title(str(axis) + " " + str(my))
-                    #plt.vlines(min_ε, 0, 1)
-                    #pv = np.polyval(p, np.linspace(εs[0],εs[-1]))
-                    #plt.plot(np.linspace(εs[0],εs[-1]), pv, label="p")
-                    #if p1 is not None:
-                    #    pv1 = np.polyval(p1, np.linspace(εs[0],εs[-1]))
-                    #    f = pv1<=np.max(pv)
-                        #plt.plot(np.linspace(εs[0],εs[-1]), pv1, label="p1")
-                    for c, v in avalues:
-                        if (np.max(v)-np.min(v)) != 0:
-                            v_norm = (v-np.min(v))/(np.max(v)-np.min(v))
-                        else:
-                            v_norm = v
-                        if axis==0 and (c in [0, 1, 2, -1, -2, -3, 11, 32, 22, 21, 42, 12, 10, -4] or c in []): # 41 20 40
-                            continue
-                        if axis==1 and (c in [1, 40, 42, 32, -1, -2, -3, 0, 2, 10, 12, 22, 20, -4] or c in []): # 11 21 41
-                            continue
-                        if axis==2 and (c in [0, 1, -1, -2, -3, 32, 42, 11, 12, 22] or c in [21, 10]): # 2 40 41 -4
-                            continue
-                        if (np.max(v)-np.min(v)) == 0:
-                            plt.scatter(εs, v, label=str(c))
-                        else:
-                            plt.scatter(εs, v_norm, label=str(c))
-                        p0 = np.polyfit(εs, v_norm, 4)
-
-                        pv = np.polyval(p0, εs)
-                        f = np.zeros_like(εs, dtype=bool)
-                        dv = pv-v_norm
-                        f[np.abs(dv)<3*np.std(dv)] = True
-                        #p1 = np.polyfit(εs[f], v_norm[f], 4)
-                        dv = np.argsort(np.abs(pv-v_norm))
-                        f = np.zeros_like(εs, dtype=bool)
-                        f[dv[:-5]] = True
-                        #p2 = np.polyfit(εs[f], v_norm[f], 4)
-
-                        def plot_p(p, c):
-                            rs = np.real(np.roots(np.polyder(p)))
-                            pv = np.polyval(p, np.linspace(εs[0],εs[-1]))
-                            l = plt.plot(np.linspace(εs[0],εs[-1]), pv, label=str(c))
-                            for r in rs:
-                                if r>εs[0] and r<εs[-1]:
-                                    plt.vlines(r, 0, 1, label=str(c), colors=l[0].get_color())
-                        
-                        plot_p(p0, str(c))
-                        #plot_p(p1, str(c)+"std")
-                        #plot_p(p2, str(c)+"quant")
-                    plt.legend()
-                    plt.ylim(0, 1)
-                    plt.show()
-                    plt.close()
-                raise OptimizationFailedException("opt failed, all objectives " + str(values[0]) + ", " + str(axis))
-            else:
-                p = np.polyfit(εs, (values-np.min(values))/(np.max(values)-np.min(values)), 4)
-                p1 = None
-                r = np.real(np.roots(np.polyder(p)))
-                r = [v for v in r if v>εs[0] and v<εs[-1]]
-                if len(r) == 0:
-                    min_ε = mean_mid
-                else:
-                    min_r = np.argmin(np.polyval(p, r))
-                    min_ε = np.real(r[min_r])
-
-                    #mid = np.argmin(np.abs(εs-min_ε))
-                    #s = max(0, mid-len(εs)//3)
-                    #e = min(len(εs)-1, mid+len(εs)//3)
-                    #p1 = np.polyfit(εs[s:e], (values[s:e]-np.min(values))/(np.max(values)-np.min(values)), 2)
-                    #r = np.real(np.roots(np.polyder(p1)))
-                    #r = [v for v in r if v>εs[0] and v<εs[-1]]
-                    #if len(r) == 0:
-                    #    min_ε = mean_mid
-                    #else:
-                    #    min_r = np.argmin(np.polyval(p, r))
-                    #    min_ε = np.real(r[min_r])
-                if axis == 3:
-                    mid = np.argmin(values)
-                    if mid > 1 and mid < len(values)-2:
-                        p = np.polyfit(εs[:mid], (values[:mid]-np.min(values))/(np.max(values)-np.min(values)), 1)
-                        p1 = np.polyfit(εs[mid+1:], (values[mid+1:]-np.min(values))/(np.max(values)-np.min(values)), 1)
-                        min_ε = np.roots(p-p1)[0]
-                    else:
-                        min_ε = mean_mid
     else:
         values = np.array([calcGIObjective(real_img, projs[:,i], 0, None, config) for i in range(projs.shape[1])])
-        #p = np.polyfit(εs, values, 2)
-        #mid = np.argmax(values)
-        #p1 = np.polyfit(εs[:mid+1], values[:mid+1], 1)
-        #p2 = np.polyfit(εs[mid:], values[mid:], 1)
-    
-        #min_ε = np.roots(p1-p2)[0]
-        #mid = np.argmax(values)
-        skip = np.count_nonzero(values<0)
-        midpoints = np.argsort(values)[-5:]
-        #if len(midpoints) == 0:
-        #    print(values)
-        mean_mid = np.mean(εs[midpoints])
-        min_ε = mean_mid
+
+    skip = np.count_nonzero(values<0)
+    midpoints = np.argsort(values)[skip:skip+5]
+    if len(midpoints) == 0:
+        #print(values)
+        return cur
+    mean_mid = np.median(εs[midpoints])
+
+    if np.max(values) == np.min(values):
+        min_ε = εs[len(εs)//2]
+        print(" opt failed objectives null ", axis, end=";")
+        if False:
+            avalues = []
+            for comp in [-4, 2, 11, 20, 21, 40, 41]:#[0,1,2,10,11,12,22,32,-1,-2,-3,-4,20,21, 40,41,42]:
+                avalues.append( (comp,np.array([calcPointsObjective(comp, points, points_real[combined_valid], img_shape = projs[:,0].shape) for points,v in zip(points,valid)])) )
+            fig, axs = plt.subplots(int(np.sqrt(projs.shape[1])), int(np.ceil(projs.shape[1]/int(np.sqrt(projs.shape[1])))), squeeze = True)
+            plt.gray()
+            for i, ax in enumerate(axs.flatten()):
+                ax.imshow(projs[:,i])
+            plt.figure()
+            plt.gray()
+            plt.imshow(real_img)
+            plt.figure()
+            plt.title(str(axis) + " " + str(my))
+            #plt.vlines(min_ε, 0, 1)
+            #pv = np.polyval(p, np.linspace(εs[0],εs[-1]))
+            #plt.plot(np.linspace(εs[0],εs[-1]), pv, label="p")
+            #if p1 is not None:
+            #    pv1 = np.polyval(p1, np.linspace(εs[0],εs[-1]))
+            #    f = pv1<=np.max(pv)
+                #plt.plot(np.linspace(εs[0],εs[-1]), pv1, label="p1")
+            for c, v in avalues:
+                if (np.max(v)-np.min(v)) != 0:
+                    v_norm = (v-np.min(v))/(np.max(v)-np.min(v))
+                else:
+                    v_norm = v
+                if axis==0 and (c in [0, 1, 2, -1, -2, -3, 11, 32, 22, 21, 42, 12, 10, -4] or c in []): # 41 20 40
+                    continue
+                if axis==1 and (c in [1, 40, 42, 32, -1, -2, -3, 0, 2, 10, 12, 22, 20, -4] or c in []): # 11 21 41
+                    continue
+                if axis==2 and (c in [0, 1, -1, -2, -3, 32, 42, 11, 12, 22] or c in [21, 10]): # 2 40 41 -4
+                    continue
+                if (np.max(v)-np.min(v)) == 0:
+                    plt.scatter(εs, v, label=str(c))
+                else:
+                    plt.scatter(εs, v_norm, label=str(c))
+                p0 = np.polyfit(εs, v_norm, 4)
+
+                pv = np.polyval(p0, εs)
+                f = np.zeros_like(εs, dtype=bool)
+                dv = pv-v_norm
+                f[np.abs(dv)<3*np.std(dv)] = True
+                #p1 = np.polyfit(εs[f], v_norm[f], 4)
+                dv = np.argsort(np.abs(pv-v_norm))
+                f = np.zeros_like(εs, dtype=bool)
+                f[dv[:-5]] = True
+                #p2 = np.polyfit(εs[f], v_norm[f], 4)
+
+                def plot_p(p, c):
+                    rs = np.real(np.roots(np.polyder(p)))
+                    pv = np.polyval(p, np.linspace(εs[0],εs[-1]))
+                    l = plt.plot(np.linspace(εs[0],εs[-1]), pv, label=str(c))
+                    for r in rs:
+                        if r>εs[0] and r<εs[-1]:
+                            plt.vlines(r, 0, 1, label=str(c), colors=l[0].get_color())
+                
+                plot_p(p0, str(c))
+                #plot_p(p1, str(c)+"std")
+                #plot_p(p2, str(c)+"quant")
+            plt.legend()
+            plt.ylim(0, 1)
+            plt.show()
+            plt.close()
+        raise OptimizationFailedException("opt failed, all objectives " + str(values[0]) + ", " + str(axis))
+    else:
+        p = np.polyfit(εs, (values-np.min(values))/(np.max(values)-np.min(values)), 4)
+        p1 = None
+        r = np.real(np.roots(np.polyder(p)))
+        r = [v for v in r if v>εs[0] and v<εs[-1]]
+        if len(r) == 0:
+            min_ε = mean_mid
+        else:
+            min_r = np.argmin(np.polyval(p, r))
+            min_ε = np.real(r[min_r])
+
 
     if False and axis==0:
         avalues = []
@@ -679,6 +622,7 @@ def roughRegistration(in_cur, reg_config, c):
     elif c == 6:
         config["it"] = 3
         config["mean"] = False
+        cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c == 7:
@@ -979,8 +923,9 @@ def roughRegistration(in_cur, reg_config, c):
 
         config["it"] = 3
         config["both"] = True
-        config["objectives"] = {0: -5, 1: -5, 2: -5}
-        for grad_width in [(1.5,5), (1,5), (0.5,5), (0.25,5), (0.1,5)]:
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.5,9), (0.25,9), (0.25,9), (0.1,9)]:
             config["grad_width"]=grad_width
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
@@ -991,16 +936,17 @@ def roughRegistration(in_cur, reg_config, c):
     elif c==27:
         cur = correctFlip(cur, config)
         config["it"] = 3
+        cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
         config["it"] = 3
         config["both"] = True
         config["objectives"] = {0: -5, 1: -5, 2: -5}
-        for grad_width in [(4,15), (2.5,11), (1.5,7), (1,7), (0.5,7), (0.25,7), (0.1, 7)]:
+        for grad_width in [(4,20), (2.5,15), (1.5,10), (1,7), (0.5,7), (0.25,7), (0.1, 7)]:
             config["grad_width"]=grad_width
             if grad_width[0] > 1.5:
-                config["objectives"] = {0: -5, 1: -5, 2: -5}
+                config["objectives"] = {0: -9, 1: -9, 2: -9}
                 config["use_combined"] = False
             else:
                 config["objectives"] = {0: -5, 1: -5, 2: -5}
@@ -1009,6 +955,7 @@ def roughRegistration(in_cur, reg_config, c):
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
             cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
     elif c==28: # bad
@@ -1031,83 +978,185 @@ def roughRegistration(in_cur, reg_config, c):
     elif c==29:
         cur = correctFlip(cur, config)
         config["it"] = 3
+        cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
         config["it"] = 3
         config["both"] = True
-        config["objectives"] = {0: -8, 1: -8, 2: -8}
-        for grad_width in [(4,15), (2.5,11), (1.5, 7), (1,7), (0.5,7), (0.25,7), (0.01,7)]:
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
             config["grad_width"]=grad_width
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
             cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
 
     elif c==30: # bad
-
         cur = correctFlip(cur, config)
-
         config["it"] = 3
+        cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
+        config["it"] = 3
         config["both"] = True
-        for grad_width in [(1.5,5), (1,5), (0.5,5), (0.25,5)]:
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.5,9), (0.25,9), (0.25,9), (0.1,9)]:
             config["grad_width"]=grad_width
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
             cur = applyRot(cur, d0, d1, d2)
-        
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+
+    elif c==31: # bad
+
+        cur = correctFlip(cur, config)
+        config["it"] = 3
+        cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
-    elif c==31:
-        config["my"] = False
-        config["it"] = 3
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
-        cur = correctXY(cur, config)
-
-        config["it"] = 3
-        for grad_width in [(2.5,15), (0.5,15)]:
-            #print()
-            for _ in range(2):
-                config["grad_width"]=grad_width
-                cur = linsearch(cur, 0, config)
-                cur = linsearch(cur, 1, config)
-                cur = linsearch(cur, 2, config)
-                cur = correctXY(cur, config)
-                cur = correctZ(cur, config)
+        config["it"] = 1
+        config["both"] = True
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
         
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
+    
     elif c==32:
-        config["my"] = False
+        
+        cur = correctFlip(cur, config)
         config["it"] = 3
-        cur = correctXY(cur, config)
-        cur = correctZ(cur, config)
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
         config["it"] = 3
-        for grad_width in [(2.5,25), (0.5,25)]:
-            #print()
-            for _ in range(2):
-                config["grad_width"]=grad_width
-                cur = linsearch(cur, 0, config)
-                cur = linsearch(cur, 1, config)
-                cur = linsearch(cur, 2, config)
-                cur = correctXY(cur, config)
-                cur = correctZ(cur, config)
+        config["both"] = True
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    
+    elif c==33:
+        
+        cur = correctFlip(cur, config)
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 1
+        config["both"] = True
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+    elif c==34:
+        cur = correctFlip(cur, config)
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 1
+        config["both"] = True
+        config["objectives"] = {0: -8, 1: -8, 2: -8}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+    elif c==41:
+        config["my"] = False
+        cur = correctFlip(cur, config)
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        config["both"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.5,9), (0.25,9), (0.25,9), (0.1,9)]:
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
+            
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+    elif c==42:
+        config["my"] = False
+        cur = correctFlip(cur, config)
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 3
+        config["both"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
         
         config["it"] = 3
         cur = correctXY(cur, config)
