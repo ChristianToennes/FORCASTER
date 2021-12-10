@@ -424,19 +424,18 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         d = np.linalg.norm(d, ord=2, axis=1)
         f = np.median( d )
     elif comp==-6:
-        d = np.linalg.norm(good_new-good_old, ord=2, axis=1)
-        std = np.std(d)
-        mean = np.mean(d)
-        fd = d[np.bitwise_and(d<=mean+1*std, d>=mean-1*std)]
+        d = good_new-good_old
+        #std = np.std(d, axis=0)
+        #mean = np.mean(d, axis=0)
+        #filt = np.bitwise_and(d<=mean+2*std, d>=mean-2*std)
+        #filt = np.bitwise_or(filt[:,0], filt[:,1])
 
-        f = np.median( fd )
+        d = np.linalg.norm(d, ord=2, axis=1)
+        f = np.mean( d )
     elif comp==-7:
-        d = np.linalg.norm(good_new-good_old, ord=1, axis=1)
-        std = np.std(d)
-        mean = np.mean(d)
-        fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
-
-        f = np.median( fd )
+        d = good_new-good_old
+        d = np.linalg.norm(d, ord=2, axis=1)
+        f = np.sum( d )
     elif comp==-8:
         d = good_new-good_old
         #std = np.std(d, axis=0)
@@ -445,7 +444,7 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         #filt = np.bitwise_or(filt[:,0], filt[:,1])
 
         d = np.linalg.norm(d, ord=2, axis=1)
-        f = np.std( d )
+        f = np.var( d )
     elif comp==-9:
         #d = good_new-good_old
         #std = np.std(d, axis=0)
@@ -454,7 +453,7 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         #filt = np.bitwise_or(filt[:,0], filt[:,1])
         
         #f = np.count_nonzero(filt)
-        f = good_new.shape[0]
+        f = 1.0 / max(1, good_new.shape[0])
     else:
         f = -2
         
