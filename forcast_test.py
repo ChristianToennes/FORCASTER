@@ -18,6 +18,7 @@ import scipy.ndimage
 import re
 from skimage.metrics import structural_similarity,normalized_root_mse
 import skimage.measure
+import skimage.morphology
 from datetime import timedelta as td
 from scipy.spatial import distance
 import matplotlib.pyplot as plt
@@ -625,19 +626,20 @@ def mutual_information_2d(x, y, sigma=1, normalized=False):
 margin=50
 
 def evalNeedleArea(img, img2, projname, name):
-    if projname in ("genA", "201020"):
+    if False and projname in ("genA", "201020"):
         if img.shape[0] > 500:
             pos = [408, 472-margin, 498-margin]
             mult = 2
         else:
             pos = [204, 236-margin, 249-margin]
             mult = 1
-    elif projname in ("genB", "2010201"):
+    elif True or projname in ("genB", "2010201"):
         if img.shape[0] > 500:
             pos = [465, 514-margin, 525-margin]
             mult = 2
         else:
             pos = [232, 257-margin, 262-margin]
+            pos = [199, 258-margin, 257-margin]
             mult = 1
     else:
         return 0
@@ -655,8 +657,8 @@ def evalNeedleArea(img, img2, projname, name):
     maxval = lines[maxpos]
     
     mask = np.zeros_like(img, dtype=bool)
-    mask[pos[0]-5:pos[0]+5] = True
-    mask = mask*(img>(maxval*0.5))
+    mask[pos[0]-10:pos[0]+10] = True
+    mask = skimage.morphology.binary_opening(mask*(img>(maxval*0.5)), skimage.morphology.cube(3))
     #rec = sitk.GetImageFromArray(mask*1.0)
     #rec.SetOrigin(out_rec_meta[0])
     #out_spacing = (out_rec_meta[2][0]/mult,out_rec_meta[2][1]/mult,out_rec_meta[2][2]/mult)
@@ -673,8 +675,8 @@ def evalNeedleArea(img, img2, projname, name):
     maxpos = np.unravel_index(maxpos, lines.shape)
     maxval = lines[maxpos]
     mask = np.zeros_like(img2, dtype=bool)
-    mask[pos[0]-5:pos[0]+5] = True
-    mask = mask*(img2>(maxval*0.5))
+    mask[pos[0]-10:pos[0]+10] = True
+    mask = skimage.morphology.binary_opening(mask*(img2>(maxval*0.5)), skimage.morphology.cube(3))
     labels = skimage.measure.label(mask)
     mask2 = labels==labels[maxpos]
 
@@ -771,8 +773,12 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
         return
     vals = []
     #for i in range(len(real)):
-    vals.append(1.0/cal.calcGIObjective(real, output, 0, None, gi_config))
-    print("NGI: ", np.mean(vals))
+    if "rec" in stats_file:
+        vals.append(1.0/cal.calcGIObjective(real, output, 0, None, gi_config))
+    else:
+        for i in range(real.shape[0]):
+            vals.append(1.0/cal.calcGIObjective(real[i], output[i], 0, None, {"GIoldold":[None], "absp1":[None], "p1":[None]}))
+    print("NGI: ", np.mean(vals), np.median(vals))
 
     vals1 = []
     #for i in range(len(real)):
@@ -799,13 +805,23 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
 
     vals6 = []
     #for i in range(len(real)):
-    vals6.append(structural_similarity(real, output))
-    print("SSIM: ", vals6[-1])
+    #print(real.dtype, output.dtype)
+    if "rec" in stats_file:
+        vals6.append(structural_similarity(real, output))
+    else:
+        for i in range(real.shape[0]):
+            vals6.append(structural_similarity(real[i], output[i]))
+
+    print("SSIM: ", np.mean(vals6), np.median(vals6))
 
     vals7 = []
     #for i in range(len(real)):
-    vals7.append(normalized_root_mse(real, output))
-    print("NRMSE: ", vals7[-1])
+    if "rec" in stats_file:
+        vals7.append(normalized_root_mse(real, output))
+    else:
+        for i in range(real.shape[0]):
+            vals7.append(normalized_root_mse(real[i], output[i]))
+    print("NRMSE: ", np.mean(vals7), np.median(vals7))
 
     vals8 = []
     #if "rec" in stats_file:
@@ -835,12 +851,18 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
         #    f.write("{0};FWHM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals8]) + "\n")
         if "rec" in stats_file:
         #    f.write("{0};Area;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals9]) + "\n")
-            f.write(";".join([str(d) for d in [name, runtime/(24*60*60), vals[-1], vals6[-1], vals7[-1], vals9[-1]]]) + "\n")
+            f.write(";".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7), np.mean(vals9)]]) + "\n")
         else:
-            f.write(";".join([str(d) for d in [name, runtime/(24*60*60), vals[-1], vals6[-1], vals7[-1]]]) + "\n")
+            f.write(";".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7)]]) + "\n")
 
 def evalSinoResults(out_path, in_path, projname):
-    ims_un = read_dicoms(in_path)[1]
+    ims, ims_un, mas, kvs, angles, coord_systems, sids, sods = read_dicoms(in_path)
+    detector_shape = np.array((1920,2480))
+    detector_mult = int(np.floor(detector_shape[0] / ims_un.shape[1]))
+    detector_edges = int(detector_shape[0] / detector_mult - ims_un.shape[1]), int(detector_shape[1] / detector_mult - ims_un.shape[2])
+    i0_ims, i0_mas, i0_kvs = i0_data(detector_mult, (detector_mult//2)*detector_edges[0])
+    i0s = i0_interpol(i0_ims, i0_mas, np.mean(mas))
+    ims_norm = np.array(-np.log(ims_un/i0s), dtype=np.float32)
 
     def sino_data():
         input_sino = False
@@ -874,10 +896,13 @@ def evalSinoResults(out_path, in_path, projname):
     for name, proj in sino_data():
         print(name)
         skip = int(np.ceil(ims_un.shape[0]/proj.shape[1]))
-        
-        i0s = [i0_est(ims_un[i::skip], proj[:,i]) for i in range(proj.shape[1])]
-        ims = np.array(-np.log(ims_un[::skip]/np.mean(i0s)), dtype=np.float32)
-        
+
+        #i0s = [i0_est(ims_un[::skip][i], proj[:,i]) for i in range(proj.shape[1])]
+        #ims = np.array(-np.log(ims_un[::skip]/np.mean(i0s)), dtype=np.float32)
+
+        #i0s = i0_interpol(i0_ims, i0_mas, np.mean(mas))
+        #ims = -np.log(ims/i0s)[::skip]
+        ims = ims_norm[::skip]
         try:
             evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
         except Exception as e:
@@ -893,22 +918,33 @@ def evalRecoResults(out_path, in_path, projname):
     for filename in os.listdir(out_path):
         #if re.fullmatch("forcast_[^_]+_reco-input.nrrd", filename) != None:
         if re.fullmatch("forcast_.+?_cbct_4_reco-output.nrrd", filename) != None:
-            img = sitk.ReadImage(os.path.join(out_path, filename))
-            real_img = np.array(sitk.GetArrayFromImage(img), dtype=np.float32)
-            #print(real_img.shape, end=" -> ")
-            #real_img = scipy.ndimage.zoom(real_img, 0.5, order=1)
-            #print(real_img.shape)
-            real_name = filename.split('_')[1]
-            #real_name = "genB"
-            metas[real_name] = (img.GetOrigin(), img.GetSize(), img.GetSpacing(), real_img.shape)
-            input_recos[real_name] = real_img
-            input_gi_confs[real_name] = {"GIoldold":[None], "absp1":[None], "p1":[None]}
-            out_rec_meta = metas[real_name]
-            print(real_name, filename, real_img.shape)
-            input_fwhm[real_name] = evalFWHM(real_img, real_name)
-            input_area[real_name] = evalNeedleArea(real_img, real_img, real_name, real_name)
-
             try:
+                img = sitk.ReadImage(os.path.join(out_path, filename))
+                real_img = np.array(sitk.GetArrayFromImage(img), dtype=np.float32)
+                #print(real_img.shape, end=" -> ")
+                #real_img = scipy.ndimage.zoom(real_img, 0.5, order=1)
+                #print(real_img.shape)
+                real_name = filename.split('_')[1]
+                if real_name == '201020':
+                    continue
+                #real_name = "genB"
+                #real_name = real_name.replace('2010201', '201020')
+                metas[real_name] = (img.GetOrigin(), img.GetSize(), img.GetSpacing(), real_img.shape)
+                input_recos[real_name] = real_img
+                input_gi_confs[real_name] = {"GIoldold":[None], "absp1":[None], "p1":[None]}
+                out_rec_meta = metas[real_name]
+                print(real_name, filename, real_img.shape)
+                input_fwhm[real_name] = evalFWHM(real_img, real_name)
+                input_area[real_name] = evalNeedleArea(real_img, real_img, real_name, real_name)
+                if '2010201' in real_name:
+                    oname = real_name.replace('2010201', '201020')
+                    metas[oname] = metas[real_name]
+                    input_recos[oname] = real_img
+                    input_gi_confs[oname] = input_gi_confs[real_name]
+                    out_rec_meta = metas[real_name]
+                    input_fwhm[oname] = input_fwhm[real_name]
+                    input_area[oname] = input_area[real_name]
+
                 evalPerformance(real_img[:,margin:-margin,margin:-margin], real_img[:,margin:-margin,margin:-margin], 0, real_name, 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
             except Exception as e:
                 print(e)
@@ -1007,6 +1043,7 @@ def evalAllResults(evalSino=True, evalReco=True, outpath="recos"):
     if evalSino:
         with open("stats_proj.csv", "w") as f:
             f.truncate()
+            f.write(";".join(["Name", "Runtime", "NGI", "SSIM", "NRMSE"]) + "\n")
         for name, proj_path, _, _ in projs:
             print(proj_path)
             evalSinoResults(outpath, proj_path, name)
