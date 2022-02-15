@@ -2,6 +2,7 @@ import numpy as np
 import astra
 import os
 import SimpleITK as sitk
+import time
 
 default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 4},
 "my": True, "grad_width": (1,25), "noise": None, "both": False, "max_change": 1}
@@ -1179,7 +1180,7 @@ def applyTrans(in_params, x, y, z):
 
 
 def filt_conf(config):
-    d = {"real_img": config["real_img"], "my": config["my"], "use_cpu": config["use_cpu"], "AKAZE_params": config["AKAZE_params"]}#, "p1": None, "absp1": None, "GIoldold": None, "data_real": None, "points_real": None}
+    d = {"real_img": config["real_img"], "my": config["my"], "use_cpu": config["use_cpu"], "AKAZE_params": config["AKAZE_params"], "comps": config["comps"]}#, "p1": None, "absp1": None, "GIoldold": None, "data_real": None, "points_real": None}
     if "p1" in config:
         d["p1"] = config["p1"]
     if "absp1" in config:
@@ -1191,3 +1192,32 @@ def filt_conf(config):
     if "points_real" in config:
         d["points_real"] = [None]*len(config["points_real"])
     return d
+
+def minimize_callback(name, obj, args):
+    with open(name+".csv", "a") as f:
+        f.write("\n")
+    def callback(x):
+        with open(name+".csv", "a") as f:
+            f.write("{};".format(obj(x, *args)))
+    return callback
+
+
+def minimize_log(name, starttime, res):
+    with open("opti.csv", "a") as f:
+        f.write("{};{};{};{};{};{}\n".format(name, time.perf_counter()-starttime, res["success"], res["nit"], res["nfev"], res["njev"]))
+    return res
+
+def load_minimize_log():
+    files = sorted([f for f in os.listdir() if "bfgs" in f and "csv" in f])
+    data = {}
+    for filename in files:
+        with open(filename) as f:
+            key = filename.split()[0]
+            if key not in data:
+                data[key] = []
+            lines = f.readlines()[1:]
+            for i, content in enumerate(lines):
+                while len(data[key]) <= i:
+                    data[key].append([])
+                data[key][i] += [float(d) for d in content.strip()[:-1].split(";")]
+    return data
