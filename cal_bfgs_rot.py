@@ -23,10 +23,7 @@ def calc_obj(cur_proj, i, k, config):
     valid = v==1
     p = p[valid]
     points = normalize_points(p, cur_proj)
-    if "comps" in config:
-        axis, mult = config["comps"][k]
-    else:
-        axis, mult = [(-5,1),(-5,1),(-5,1)][k]
+    axis, mult = config["comps"][k]
     obj = calcPointsObjective(axis, points, config["points_real"][i][valid])*mult
     if obj<0:
         obj = 50
@@ -35,23 +32,23 @@ def calc_obj(cur_proj, i, k, config):
 def t_obj(q,indices, config, proj):
     np.seterr("raise")
     if config["my"]:
-        for i in indices:
-            q.put(calc_obj(proj[:,i], i, i%3, config))
+        for k,i in enumerate(indices):
+            q.put(calc_obj(proj[:,k], i, i%3, config))
     else:
-        for i in indices:
-            q.put(calcGIObjective(config["real_img"][i], proj[:,i], i, None, config))
+        for k,i in enumerate(indices):
+            q.put(calcGIObjective(config["real_img"][i], proj[:,k], i, None, config))
 
 def t_grad(q,indices, config, projs):
     np.seterr("raise")
     if config["my"]:
-        for j in indices:
-            pos = j*4
+        for k,j in enumerate(indices):
+            pos = k*4
             for i in range(3):
                 h0 = calc_obj(projs[:,pos], j, i, config)
                 q.put((j*3+i, (calc_obj(projs[:,pos+i+1], j, i, config)-h0)*0.5))
     else:
-        for j in indices:
-            pos = j*4
+        for k,j in enumerate(indices):
+            pos = k*4
             h0 = calcGIObjective(config["real_img"][j], projs[:,pos], j, None, config)
             for i in range(3):
                 q.put((j*3+i, (calcGIObjective(config["real_img"][j], projs[:,pos+i+1], j, None, config)-h0) * 0.5))
@@ -68,8 +65,8 @@ def t_grad3(q,indices, config, projs):
                 h_2 = calc_obj(projs[:,pos+i*4+3], j, i, config)
                 q.put((j*3+i, (-h2+8*h1-8*h_1+h_2)/12))
     else:
-        for j in indices:
-            pos = j*12
+        for k,j in enumerate(indices):
+            pos = k*12
             for i in range(3):
                 h1 = (calcGIObjective(config["real_img"][j], projs[:,pos+i*4], j, None, config))
                 h_1 = (calcGIObjective(config["real_img"][j], projs[:,pos+i*4+1], j, None, config))
@@ -102,7 +99,13 @@ def bfgs(curs, reg_config, c):
     config["angle_noise"] = np.array(angles_noise)
     config["trans_noise"] = np.array(trans_noise)
 
-    def f(x, curs, eps):
+    config["GIoldold"] = [None]*len(curs)
+    config["absp1"] = [None]*len(curs)
+    config["p1"] = [None]*len(curs)
+    gis = [{} for _ in range(len(curs))]
+    config["comps"] = None
+
+    def f(x, curs, eps, config):
         perftime = time.perf_counter() # 100 s / 50 s
         ret = 0
         cur_x = []
@@ -117,7 +120,7 @@ def bfgs(curs, reg_config, c):
         
         ts = []
         for u in np.array_split(list(range(len(curs))), 8):
-            t = mp.Process(target=t_obj, args = (q,u,filt_conf(config),proj))
+            t = mp.Process(target=t_obj, args = (q,u,filt_conf(config),proj[:,u[0]:(u[-1]+1)]))
             t.start()
             ts.append(t)
         for _ in range(proj.shape[1]):
@@ -128,9 +131,9 @@ def bfgs(curs, reg_config, c):
             t.join()
 
         #print("obj", time.perf_counter()-perftime, ret/len(curs))
-        return ret/len(curs)
+        return ret#/len(curs)
 
-    def gradf(x, curs, eps):
+    def gradf(x, curs, eps, config):
         perftime = time.perf_counter() # 150 s
         dvec = []
         for i, cur in enumerate(curs):
@@ -150,13 +153,13 @@ def bfgs(curs, reg_config, c):
         
         ts = []
         for u in np.array_split(list(range(real_img.shape[0])), 8):
-            t = mp.Process(target=t_grad, args = (q, u, filt_conf(config), projs))
+            t = mp.Process(target=t_grad, args = (q, u, filt_conf(config), projs[:,u[0]*4:(u[-1]+1)*4]))
             t.start()
             ts.append(t)
 
         for _ in range(len(ret)):
             i, res = q.get()
-            ret[i] = res/len(curs)
+            ret[i] = res#/len(curs)
             ret_set[i] = True
         
         if not ret_set.all():
@@ -168,7 +171,7 @@ def bfgs(curs, reg_config, c):
         #print("grad", time.perf_counter()-perftime)
         return ret
     
-    def gradf3(x, curs, eps):
+    def gradf3(x, curs, eps, config):
         perftime = time.perf_counter() # 150 s
         dvec = []
         for i, cur in enumerate(curs):
@@ -193,18 +196,15 @@ def bfgs(curs, reg_config, c):
         ret_set = np.zeros(len(ret), dtype=bool)
         
         q = mp.Queue()
-        
         ts = []
-        #print(projs.shape, projs.dtype)
         for u in np.array_split(list(range(real_img.shape[0])), 8):
-
-            t = mp.Process(target=t_grad3, args = (q, u, filt_conf(config), projs[:,u[0]:u[-1]*12]))
+            t = mp.Process(target=t_grad3, args = (q, u, filt_conf(config), projs[:,u[0]*12:(u[-1]+1)*12]))
             t.start()
             ts.append(t)
 
         for _ in range(len(ret)):
             i, res = q.get()
-            ret[i] = res/len(curs)
+            ret[i] = res#/len(curs)
             ret_set[i] = True
         
         if not ret_set.all():
