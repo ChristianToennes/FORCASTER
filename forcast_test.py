@@ -24,6 +24,7 @@ from scipy.spatial import distance
 import matplotlib.pyplot as plt
 import cal_bfgs_full
 import cal_bfgs_rot
+import cal_bfgs_trans
 
 def write_vectors(name, vecs):
     with open(name+".csv", "w") as f:
@@ -371,8 +372,17 @@ def reg_all(ims, params, config, c=0):
     config["noise"] = (noise[0], noise[1])
     try:
         #cur, noise = cal.bfgs_trans_all(params, config, c)
-        if c <= -40:
-            cur, noise = cal_bfgs_full.bfgs(params, config, c)
+        if c <= -60:
+            cur, noise = cal_bfgs_trans.bfgs(params, config, c)
+        elif c <= -40:
+            config["real_img"] = real_img[:len(params)//2]
+            config["noise"] = (noise[0][:len(params)//2], noise[1][:len(params)//2])
+            cur1, noise1 = cal_bfgs_full.bfgs(params[:len(params)//2], config, c)
+            config["real_img"] = real_img[len(params)//2:]
+            config["noise"] = (noise[0][len(params)//2:], noise[1][len(params)//2:])
+            cur2, noise2 = cal_bfgs_full.bfgs(params[len(params)//2:], config, c)
+            cur = np.concatenate((cur1,cur2))
+            nouse = np.concatenate((noise1,noise2))
         else:
             cur, noise = cal_bfgs_rot.bfgs(params, config, c)
     except Exception as ex:
@@ -1393,7 +1403,11 @@ def get_proj_paths():
     #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
     #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
-    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-33,-34,-35,-36,-24,-27,-44,-54]),
+    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-44,-34]), # normal noise
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-44,-58,-34,-24,33,42]), # normal noise
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-43,-57,34,41]), # reduced noise
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-73,-67]), # normal noise trans
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-72,-66]), # reduced noise trans
     #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
@@ -1406,7 +1420,7 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-34,-36,-24,-27,-44,-54]),
+    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, []),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
@@ -1614,7 +1628,7 @@ def interpol_positions(cs_interpol, Ax, projs, detector_spacing, detector_shape,
 def reg_real_data():
     projs = get_proj_paths()
 
-    np.seterr(all='raise')
+    #np.seterr(all='raise')
 
     for name, proj_path, cbct_path, methods in projs:
         
@@ -1637,8 +1651,10 @@ def reg_real_data():
             #angles_noise = np.zeros_like(angles_noise)
             #trans_noise = random.normal(loc=0, scale=20, size=(len(ims), 3))
             min_trans, max_trans = -10, 10
+            #min_trans, max_trans = -5, 5
             trans_noise = random.uniform(low=min_trans, high=max_trans, size=(len(ims_un),2))
             zoom_noise = random.uniform(low=0.95, high=1, size=len(ims_un))
+            #zoom_noise = random.uniform(low=0.98, high=1, size=len(ims_un))
 
             #skip = 4
             ims = ims[skip]
@@ -1687,7 +1703,9 @@ def reg_real_data():
             r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
 
             if 'arc' in name:
-                pass
+                coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+                params = params[skip]
+                coord_systems = coord_systems[skip]
             elif 'angle' in name or 'both' in name:
                 params = np.zeros((len(geo_from_angles['Vectors']), 3, 3), dtype=float)
                 params[:,1] = np.array([r.dot(v) for v in geo_from_angles['Vectors'][:, 6:9]])
@@ -1719,15 +1737,15 @@ def reg_real_data():
             i0s[i0s==0] = 1e-8
             ims_un = -np.log(ims_un/i0s)
 
-            sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
-            sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs_est-input.nrrd"), True)
-            del sino
+            #sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
+            #sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs_est-input.nrrd"), True)
+            #del sino
 
-            i0s = i0_interpol(i0_ims, i0_mas, np.mean(mas))
+            #i0s = i0_interpol(i0_ims, i0_mas, np.mean(mas))
 
-            sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
-            sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs_int-input.nrrd"), True)
-            del sino
+            #sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
+            #sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs_int-input.nrrd"), True)
+            #del sino
 
             i0s = np.array([i0_est(ims[i], projs[:,i])*res for i in range(ims.shape[0])])
             i0s = np.mean(i0s, axis=0)
