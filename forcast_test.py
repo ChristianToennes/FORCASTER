@@ -869,6 +869,15 @@ def evalSinoResults(out_path, in_path, projname):
     i0s = i0_interpol(i0_ims, i0_mas, np.mean(mas))
     ims_norm = np.array(-np.log(ims_un/i0s), dtype=np.float32)
 
+    for filename in os.listdir(out_path):
+        if re.fullmatch("target_sino.nrrd", filename) != None:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            proj = sitk.GetArrayFromImage(img)
+            if proj.dtype != np.float32:
+                proj = np.array(proj, dtype=np.float32)
+            ims_norm2 = np.swapaxes(proj, 0, 1)
+
+
     def sino_data():
         input_sino = False
         for filename in os.listdir(out_path):
@@ -908,8 +917,10 @@ def evalSinoResults(out_path, in_path, projname):
         #i0s = i0_interpol(i0_ims, i0_mas, np.mean(mas))
         #ims = -np.log(ims/i0s)[::skip]
         ims = ims_norm[::skip]
+        ims2 = ims_norm2[::skip]
         try:
             evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
+            evalPerformance(np.swapaxes(proj, 0, 1), ims2, 0, name+"sim", 'stats_proj.csv')
         except Exception as e:
             print(e)
     
@@ -922,7 +933,8 @@ def evalRecoResults(out_path, in_path, projname):
     metas = {}
     for filename in os.listdir(out_path):
         #if re.fullmatch("forcast_[^_]+_reco-input.nrrd", filename) != None:
-        if re.fullmatch("forcast_.+?_cbct_4_reco-output.nrrd", filename) != None:
+        if re.fullmatch("forcast_201020(1_imbu|_imbureg_noimbu)_cbct_4_reco-output.nrrd", filename) != None:
+        #if re.fullmatch("target_reco.nrrd", filename) != None:
             try:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 real_img = np.array(sitk.GetArrayFromImage(img), dtype=np.float32)
@@ -930,7 +942,8 @@ def evalRecoResults(out_path, in_path, projname):
                 #real_img = scipy.ndimage.zoom(real_img, 0.5, order=1)
                 #print(real_img.shape)
                 real_name = filename.split('_')[1]
-                if real_name == '201020':
+                #real_name = ""
+                if False and real_name == '201020':
                     continue
                 #real_name = "genB"
                 #real_name = real_name.replace('2010201', '201020')
@@ -941,7 +954,7 @@ def evalRecoResults(out_path, in_path, projname):
                 print(real_name, filename, real_img.shape)
                 input_fwhm[real_name] = evalFWHM(real_img, real_name)
                 input_area[real_name] = evalNeedleArea(real_img, real_img, real_name, real_name)
-                if '2010201' in real_name:
+                if False and '2010201' in real_name:
                     oname = real_name.replace('2010201', '201020')
                     metas[oname] = metas[real_name]
                     input_recos[oname] = real_img
@@ -953,6 +966,11 @@ def evalRecoResults(out_path, in_path, projname):
                 evalPerformance(real_img[:,margin:-margin,margin:-margin], real_img[:,margin:-margin,margin:-margin], 0, real_name, 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
             except Exception as e:
                 print(e)
+        if re.fullmatch("forcast_201020_imbu_cbct_4_reco-output.nrrd", filename) != None:
+            img = sitk.ReadImage(os.path.join(out_path, filename))
+            real_img = np.array(sitk.GetArrayFromImage(img), dtype=np.float32)
+            input_recos["2010202"] = real_img
+
 
     def reco_data():
         input_sino = False
@@ -1021,6 +1039,7 @@ def evalRecoResults(out_path, in_path, projname):
     for name, proj, filename in reco_data():
         print(filename, name)
         real_name = name.split('_')[0].replace('A', 'B')
+        real_name = "2010201"
         ims = np.array(input_recos[real_name])
         #if (np.array(proj.shape)!=np.array(ims.shape)).any():
         #    ims = np.array(scipy.ndimage.zoom(ims, np.array(proj.shape)/np.array(ims.shape), order=1), dtype=np.float32)
@@ -1039,6 +1058,21 @@ def evalRecoResults(out_path, in_path, projname):
                 print(output.shape, real.shape)
                 input_gi_confs[real_name] = {"GIoldold":[None], "absp1":[None], "p1":[None]}
                 evalPerformance(output, real, 0, name, 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
+
+                #if "_0_" in name:
+                #    diff = proj-input_recos["201020"]
+                #    write_images(-diff, os.path.join(out_path, "diff_" + name))
+                #    diff = proj-input_recos["2010201"]
+                #    write_images(-diff, os.path.join(out_path, "diff2_" + name))
+                #    diff = proj-input_recos["2010202"]
+                #    write_images(-diff, os.path.join(out_path, "diff3_" + name))
+                #else:
+                #    diff = proj-input_recos["201020"]
+                #    write_images(diff, os.path.join(out_path, "diff_" + name))
+                #    diff = proj-input_recos["2010201"]
+                #    write_images(diff, os.path.join(out_path, "diff2_" + name))
+                #    diff = proj-input_recos["2010202"]
+                #    write_images(diff, os.path.join(out_path, "diff3_" + name))
             except Exception as ex:
                 print(name, "failed", ex)
                 raise
@@ -1088,7 +1122,7 @@ def write_rec(geo, ims, filepath, mult=1):
     write_images(rec, filepath.rsplit('.', maxsplit=1)[0]+"_cgls."+filepath.rsplit('.', maxsplit=1)[1], mult)
 
 def write_images(rec, filepath, mult=1):
-    rec = sitk.GetImageFromArray(rec)*100
+    rec = sitk.GetImageFromArray(rec)#*100
     rec.SetOrigin(out_rec_meta[0])
     out_spacing = (out_rec_meta[2][0]/mult,out_rec_meta[2][1]/mult,out_rec_meta[2][2]/mult)
     rec.SetSpacing(out_spacing)
