@@ -9,6 +9,7 @@ import time
 import multiprocessing as mp
 import queue
 from utils import bcolors, applyRot, applyTrans, default_config, filt_conf
+from utils import minimize_log as ml
 from feature_matching import *
 from simple_cal import *
 from objectives import *
@@ -220,139 +221,163 @@ def bfgs(curs, reg_config, c):
             real_data.append(findInitialFeatures(img, config))
         config["data_real"] = np.array(real_data)
         data_real = config["data_real"]
-        config["points_real"] = [normalize_points(data_real[i,:,0], real_img[i]) for i in range(data_real.shape[0])]
+        config["points_real"] = [normalize_points(data_real[i,0], real_img[i]) for i in range(data_real.shape[0])]
+        config["comps"] = [(-3,1),(-4,1),(-6,1),(-3,1),(-4,1),(-6,1)]
+        config_callback = dict(config)
+        config_callback["my"] = False
+        if c==-43:
+            eps = [0.25, 0.25, 0.25, 2, 2, 2] * len(curs)
+            name = "-43.ngi bfgs full my reduced noise 1"
+            ret = ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps,config), method='BFGS', 
+                                          jac=gradf3,  callback=utils.minimize_callback(name, f, (curs,eps,config_callback)), options={'maxiter': 100, 'eps': eps, 'disp': True}))
 
-        if c==-34:
-            eps = [0.5, 0.5, 0.5, 0.5, 0.5, 5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            eps = [0.025, 0.025, 0.025, 1, 1, 1] * len(curs)
+            name = "-43.ngi bfgs full my reduced noise 2"
+            ret = ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config_callback)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True}))
+        elif c==-44:
+            eps = [0.25, 0.25, 0.25, 2, 2, 2] * len(curs)
+            name = "-44.ngi bfgs full my 1"
+            ret = ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config_callback)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True}))
+            
 
-            eps = [0.25, 0.25, 0.25, 0.25, 0.25, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
-            eps = [0.05, 0.05, 0.05, 0.05, 0.05, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
-        elif c==-35:
+            eps = [0.025, 0.025, 0.025, 1, 1, 1] * len(curs)
+            name = "-44.ngi bfgs full my 2"
+            ret = ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config_callback)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True}))
+        elif c==-45:
             #config["comps"] = [(10,1),(11,1),(2,1),(-1,1),(-2,1),(-3,1)]
             eps = [0.5, 0.5, 0.5, 0.5, 0.5, 5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
             eps = [0.25, 0.25, 0.25, 0.25, 0.25, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
             eps = [0.05, 0.05, 0.05, 0.05, 0.05, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
-        elif c==-36:
+        elif c==-46:
             #config["comps"] = [(0,1),(1,1),(12,1),(-1,1),(-2,1),(-3,1)]
             eps = [0.5, 0.5, 0.5, 0.5, 0.5, 5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
             eps = [0.25, 0.25, 0.25, 0.25, 0.25, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
             eps = [0.05, 0.05, 0.05, 0.05, 0.05, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
-        elif c==-37:
+        elif c==-47:
             eps = [0.5, 0.5, 0.5, 0.5, 0.5, 5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
             eps = [0.25, 0.25, 0.25, 0.25, 0.25, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
             eps = [0.05, 0.05, 0.05, 0.05, 0.05, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
     else:
         
-        config["GIoldold"] = [None]*len(curs)
-        config["absp1"] = [None]*len(curs)
-        config["p1"] = [None]*len(curs)
-        gis = [{} for _ in range(len(curs))]
 
-        if c==-22:
+        if c==-52:
             eps = [2, 2, 2, 2, 2, 10] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
-        elif c==-23:
+        elif c==-53:
             eps = [2, 2, 2, 2, 2, 10] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
             eps = [0.5, 0.5, 0.5, 0.5, 0.5, 1] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
-        elif c==-24:
-            eps = [1, 1, 1, 1, 1, 10] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+        elif c==-54:
+            eps = [0.25, 0.25, 0.25, 1, 1, 5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
 
-            eps = [0.25, 0.25, 0.25, 0.25, 0.25, 2] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            eps = [0.05, 0.05, 0.05, 0.25, 0.25, 0.5] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
-
-            eps = [0.01, 0.01, 0.01, 0.01, 0.01, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
-
-        elif c==-25:
+        elif c==-55:
             eps = [2, 2, 2, 2, 2, 10] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
-        elif c==-26:
+        elif c==-56:
             eps = [2, 2, 2, 2, 2, 10] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
             eps = [0.5, 0.5, 0.5, 0.5, 0.5, 1] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
-        elif c==-27:
-            eps = [1,1,1,1, 1, 10] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+        elif c==-57:
+            eps = [1,1,1,3, 3, 3] * len(curs)
+            name = "-57 bfgs full ngi reduced noise 1"
+            ret = ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True}))
 
-            eps = [0.25,0.25,0.25,0.25, 0.25, 2] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            eps = [0.25,0.25,0.25,2, 2, 2] * len(curs)
+            name = "-57 bfgs full ngi reduced noise 2"
+            ret = ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3,callback= utils.minimize_callback(name, f, (curs,eps,config)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True}))
 
-            eps = [0.01,0.01,0.01,0.01, 0.01, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            eps = [0.01,0.01,0.01, 1, 1, 1] * len(curs)
+            name = "-57 bfgs full ngi reduced noise 3"
+            ret = ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True}))
+        elif c==-58:
+            eps = [1,1,1,3, 3, 3] * len(curs)
+            name = "-58 bfgs full ngi 1"
+            ret =  ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array([0,0,0,0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True}))
+
+            eps = [0.25,0.25,0.25,2, 2, 2] * len(curs)
+            name = "-58 bfgs full ngi 2"
+            ret =  ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True}))
+
+            eps = [0.01,0.01,0.01, 1, 1, 1] * len(curs)
+            name = "-58 bfgs full ngi 3"
+            ret =  ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True}))
+
 
 
         else:
@@ -364,8 +389,8 @@ def bfgs(curs, reg_config, c):
         res.append(applyTrans(cur_rot, ret.x[i*6+3], ret.x[i*6+4], ret.x[i*6+5]))
 
     #config["trans_noise"] += ret.x[:3]
-    trans_noise += ret.x[3:].reshape(trans_noise.shape)
-    angles_noise += ret.x[:3].reshape(angles_noise.shape)
+    #trans_noise += np.array(ret.x[3:]).reshape(trans_n  oise.shape)
+    #angles_noise += np.array(ret.x[:3]).reshape(angles_noise.shape)
 
     #reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 

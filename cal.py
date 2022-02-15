@@ -11,6 +11,7 @@ import threading
 import multiprocessing as mp
 import queue
 from utils import bcolors, applyRot, applyTrans, default_config, filt_conf
+from utils import minimize_log as ml
 from feature_matching import *
 from simple_cal import *
 from objectives import *
@@ -608,20 +609,19 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
     elif c==4: # 4
         correctFlip(cur, config)
-        config["it"] = 3
+        config["it"] = 5
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c == 5:
-        config["it"] = 3
+        config["it"] = 5
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
     elif c == 6:
         config["it"] = 3
-        config["mean"] = False
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
@@ -1069,17 +1069,22 @@ def roughRegistration(in_cur, reg_config, c):
     
     elif c==33:
         
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
         cur = correctFlip(cur, config)
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
-        config["it"] = 1
+        config["it"] = 2
         config["both"] = True
         config["objectives"] = {0: -6, 1: -6, 2: -6}
         config["use_combined"] = True
         for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
             config["grad_width"]=grad_width
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
@@ -1093,17 +1098,50 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
+        ml("33 QUT-AF my", starttime, res)
 
     elif c==34:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
         cur = correctFlip(cur, config)
         config["it"] = 3
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
 
-        config["it"] = 1
+        config["it"] = 2
         config["both"] = True
-        config["objectives"] = {0: -8, 1: -8, 2: -8}
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+        ml("34 QUT-AF my reduced noise", starttime, res)
+
+    elif c==35:
+        cur = correctFlip(cur, config)
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctXY(cur, config)
+
+        config["it"] = 2
+        config["both"] = True
+        config["objectives"] = {0: -3, 1: -4, 2: -6}
         config["use_combined"] = True
         for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
             config["grad_width"]=grad_width
@@ -1121,6 +1159,8 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
 
     elif c==41:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
         config["my"] = False
         cur = correctFlip(cur, config)
         config["it"] = 3
@@ -1131,6 +1171,9 @@ def roughRegistration(in_cur, reg_config, c):
         config["it"] = 3
         config["both"] = True
         for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.5,9), (0.25,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
             config["grad_width"]=grad_width
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
@@ -1140,7 +1183,10 @@ def roughRegistration(in_cur, reg_config, c):
             
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
+        ml("41 QUT-AF ngi reduced noise", starttime, res)
     elif c==42:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
         config["my"] = False
         cur = correctFlip(cur, config)
         config["it"] = 3
@@ -1151,6 +1197,9 @@ def roughRegistration(in_cur, reg_config, c):
         config["it"] = 3
         config["both"] = True
         for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
             config["grad_width"]=grad_width
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
@@ -1162,6 +1211,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
         cur = correctZ(cur, config)
         cur = correctXY(cur, config)
+        ml("42 QUT-AF ngi", starttime, res)
 
     return cur
 

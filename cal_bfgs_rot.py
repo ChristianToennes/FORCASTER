@@ -8,6 +8,7 @@ import itertools
 import time
 import multiprocessing as mp
 import queue
+from utils import minimize_log as ml
 from utils import bcolors, applyRot, applyTrans, default_config, filt_conf
 from feature_matching import *
 from simple_cal import *
@@ -225,75 +226,140 @@ def bfgs(curs, reg_config, c):
         print(data_real.shape, real_img.shape)
         config["points_real"] = [normalize_points(data_real[i,0], real_img[i]) for i in range(data_real.shape[0])]
 
-        if c==-34:
-            curs = correctAll_MP(curs, config)
-            eps = [0.5, 0.5, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
-            curs = applyRots(curs, ret.x)
-            curs = correctAll_MP(curs, config)
+        config_callback = dict(config)
+        config_callback["my"] = False
+        #curs = correctAll_MP(curs, config)
+
+        if c == -30:
+            config["comps"] = [(-1,1),(-2,1),(-8,1)]
             eps = [0.25, 0.25, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            eps = [0.1, 0.1, 0.1] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            eps = [0.025, 0.025, 0.025] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
             curs = applyRots(curs, ret.x)
             curs = correctAll_MP(curs, config)
+        elif c == -31:
+            config["comps"] = [(-3,1),(-4,1),(-6,1)]
+            eps = [0.25, 0.25, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            #config["comps"] = [(-6,1),(-6,1),(-6,1)]
             eps = [0.05, 0.05, 0.05] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
             curs = applyRots(curs, ret.x)
             curs = correctAll_MP(curs, config)
+        elif c == -32:
+            config["comps"] = [(-1,1),(-2,1),(-8,1)]
+            eps = [0.25, 0.25, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            #config["comps"] = [(-6,1),(-6,1),(-6,1)]
+            eps = [0.05, 0.05, 0.05] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
+        elif c == -33:
+            curs = correctAll_MP(curs, config)
+            config["comps"] = [(-3,1),(-4,1),(-6,1)]
+            eps = [0.25, 0.25, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            #config["comps"] = [(-6,1),(-6,1),(-6,1)]
+            eps = [0.05, 0.05, 0.05] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
+        elif c==-34:
+            starttime = time.perf_counter()
+            curs = correctAll_MP(curs, config)
+            config["comps"] = [(-3,1),(-4,1),(-6,1)]
+            eps = [0.25, 0.25, 0.25] * len(curs)
+            name = "-34.ngi bfgs mixed my 1"
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config_callback)),
+                                        bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            ml(name, starttime, ret)
+            #eps = [0.1, 0.1, 0.1] * len(curs)
+            #ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='L-BFGS-B',
+            #                            jac=gradf3, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+            #                            options={'maxiter': 100, 'eps': eps, 'disp': True})
+            #curs = applyRots(curs, ret.x)
+            starttime = time.perf_counter()
+            eps = [0.025, 0.025, 0.025] * len(curs)
+            name = "-34.ngi bfgs mixed my 2"
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config_callback)),
+                                        bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
+            ml(name, starttime, ret)
         elif c==-35:
+            config["comps"] = [(-3,1),(-4,1),(-6,1)]
             curs = correctAll_MP(curs, config)
-            eps = [0.5, 0.5, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
             eps = [0.25, 0.25, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
             eps = [0.05, 0.05, 0.05] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
+            eps = [0.01, 0.01, 0.01] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
             curs = applyRots(curs, ret.x)
             curs = correctAll_MP(curs, config)
         elif c==-36:
-            #curs = correctAll_MP(curs, config)
-            eps = [0.5, 0.5, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
-            curs = applyRots(curs, ret.x)
+            config["comps"] = [(-1,1),(-2,1),(-8,1)]
             curs = correctAll_MP(curs, config)
-            eps = [0.25, 0.25, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
-            curs = applyRots(curs, ret.x)
-            curs = correctAll_MP(curs, config)
-            eps = [0.05, 0.05, 0.05] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
+            eps = [0.1, 0.1, 0.1] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
             curs = applyRots(curs, ret.x)
             curs = correctAll_MP(curs, config)
         elif c==-37:
             curs = correctAll_MP(curs, config)
-            eps = [0.5, 0.5, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            config["comps"] = [(-3,1),(-4,1),(-6,1)]
             eps = [0.25, 0.25, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            #config["comps"] = [(-6,1),(-6,1),(-6,1)]
             eps = [0.05, 0.05, 0.05] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
+            ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf, bounds=[(-2,2),(-2,2),(-2,2)]*len(curs),
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
             curs = applyRots(curs, ret.x)
             curs = correctAll_MP(curs, config)
@@ -301,83 +367,108 @@ def bfgs(curs, reg_config, c):
             print("no method selected", c)
     else:
         
-        config["GIoldold"] = [None]*len(curs)
-        config["absp1"] = [None]*len(curs)
-        config["p1"] = [None]*len(curs)
-        gis = [{} for _ in range(len(curs))]
-
         if c==-22:
             eps = [2, 2, 2] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
         elif c==-23:
             eps = [2, 2, 2, 2, 2, 10] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
             eps = [0.5, 0.5, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
         elif c==-24:
-            eps = [1, 1, 1] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
-
+            starttime = time.perf_counter()
+            curs = correctAll_MP(curs, config)
             eps = [0.25, 0.25, 0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf,
+            name = "-24 bfgs mixed ngi 1"
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf, callback=utils.minimize_callback(name, f, (curs,eps,config)),
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
-
+            curs = applyRots(curs, ret.x)
+            ml(name, starttime, ret)
+            starttime = time.perf_counter()
+            curs = correctAll_MP(curs, config)
+            eps = [0.05, 0.05, 0.05] * len(curs)
+            name = "-24 bfgs mixed ngi 2"
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf, callback=utils.minimize_callback(name, f, (curs,eps,config)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            ml(name, starttime, ret)
+            starttime = time.perf_counter()
+            curs = correctAll_MP(curs, config)
             eps = [0.01, 0.01, 0.01] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            name = "-24 bfgs mixed ngi 3"
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf, callback=utils.minimize_callback(name, f, (curs,eps,config)),
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
+            ml(name, starttime, ret)
+        elif c==-25:
+            curs = correctAll_MP(curs, config)
+            eps = [0.25, 0.25, 0.25] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
-
-        elif c==-25:
-            eps = [2, 2, 2] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
-                                        options={'maxiter': 50, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            eps = [0.05, 0.05, 0.05] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            eps = [0.01, 0.01, 0.01] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
 
         elif c==-26:
             eps = [2, 2, 2] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
             eps = [0.5, 0.5, 0.5] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps,config), method='L-BFGS-B',
                                         jac=gradf3,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True})
 
         elif c==-27:
-            eps = [1,1,1] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps), method='L-BFGS-B',
-                                        jac=gradf3,
-                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
-
+            curs = correctAll_MP(curs, config)
             eps = [0.25,0.25,0.25] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
-
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
+            eps = [0.05,0.05,0.05] * len(curs)
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
+                                        jac=gradf3,
+                                        options={'maxiter': 100, 'eps': eps, 'disp': True})
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
             eps = [0.01,0.01,0.01] * len(curs)
-            ret = scipy.optimize.minimize(f, np.array(ret.x), args=(curs,eps), method='L-BFGS-B',
+            ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf3,
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
-
+            curs = applyRots(curs, ret.x)
+            curs = correctAll_MP(curs, config)
 
         else:
             print("no method selected", c)
     
     res = applyRots(curs, ret.x)
-    angles_noise += ret.x.reshape(angles_noise.shape)
+    angles_noise += np.array(ret.x).reshape(angles_noise.shape)
 
     #reg_config["noise"] = (config["trans_noise"], config["angle_noise"])
 
