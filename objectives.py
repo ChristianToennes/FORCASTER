@@ -375,45 +375,16 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
 
     elif comp==-1:
         d = good_new[:,0]-good_old[:,0]
-        if len(d)==0:
-            f = -1
-        else:
-            std = np.std(d)
-            mean = np.mean(d)
-            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
-            #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
-            #print(d.shape, fd.shape, mean, std)
-            if len(fd)==0:
-                f = -1
-            else:
-                f = np.abs(np.median( fd ))
+        f = np.var( np.abs(d) )
     elif comp==-2:
         d = good_new[:,1]-good_old[:,1]
-        if len(d)==0:
-            f = -1
-        else:
-            std = np.std(d)
-            mean = np.mean(d)
-            fd = d[np.bitwise_and(d<mean+3*std, d>mean-3*std)]
-            #fd = d[np.bitwise_and(d>np.quantile(d,0.1), d<np.quantile(d,0.9))]
-            if len(fd)==0:
-                f = -1
-            else:
-                f = np.abs(np.median( fd ))
+        f = np.var( np.abs(d) )
     elif comp==-3:
-        dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in good_new for r in good_new])
-        dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in good_old for r in good_old])
-        if np.count_nonzero(dist_new) > 5:
-            f = np.abs(np.median(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
-        else:
-            f = -1
+        d = good_new[:,0]-good_old[:,0]
+        f = np.mean( np.abs(d) )
     elif comp==-4:
-        d = np.linalg.norm(good_new-good_old, ord=2, axis=1)
-        std = np.std(d)
-        mean = np.mean(d)
-        fd = d[np.bitwise_and(d<=mean+3*std, d>=mean-3*std)]
-
-        f = np.median( fd )
+        d = good_new[:,1]-good_old[:,1]
+        f = np.mean( np.abs(d) )
     elif comp==-5:
         d = good_new-good_old
         #std = np.std(d, axis=0)
@@ -438,11 +409,6 @@ def calcPointsObjective(comp, good_new, good_old, img_shape=(0,0)):
         f = np.sum( d )
     elif comp==-8:
         d = good_new-good_old
-        #std = np.std(d, axis=0)
-        #mean = np.mean(d, axis=0)
-        #filt = np.bitwise_and(d<=mean+2*std, d>=mean-2*std)
-        #filt = np.bitwise_or(filt[:,0], filt[:,1])
-
         d = np.linalg.norm(d, ord=2, axis=1)
         f = np.var( d )
     elif comp==-9:
