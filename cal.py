@@ -16,6 +16,7 @@ from feature_matching import *
 from simple_cal import *
 from objectives import *
 import cal_bfgs_rot
+from skimage.metrics import structural_similarity,normalized_root_mse
 
 class OptimizationFailedException(Exception):
     pass
@@ -492,6 +493,11 @@ def binsearch(in_cur, axis, config):
     if both:
         return cur, change
     return cur
+
+def log_error(cur, config):
+    Ax = config["Ax"]
+    proj = Ax(np.array([cur]))[:,0]
+    config["log_queue"].put( ("logs/"+config["name"], (structural_similarity(config["target_sino"], proj), normalized_root_mse(config["target_sino"], proj))) )
 
 def roughRegistration(in_cur, reg_config, c):
     cur = np.array(in_cur)
@@ -1071,11 +1077,17 @@ def roughRegistration(in_cur, reg_config, c):
         
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "33 QUT-AF my " + config["name"]
+        log_error(cur, config)
         cur = correctFlip(cur, config)
         config["it"] = 3
+        log_error(cur, config)
         cur = correctXY(cur, config)
+        log_error(cur, config)
         cur = correctZ(cur, config)
+        log_error(cur, config)
         cur = correctXY(cur, config)
+        log_error(cur, config)
 
         config["it"] = 2
         config["both"] = True
@@ -1090,14 +1102,19 @@ def roughRegistration(in_cur, reg_config, c):
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
             cur = applyRot(cur, d0, d1, d2)
+            log_error(cur, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
+            log_error(cur, config)
         
         config["it"] = 3
         cur = correctXY(cur, config)
+        log_error(cur, config)
         cur = correctZ(cur, config)
+        log_error(cur, config)
         cur = correctXY(cur, config)
+        log_error(cur, config)
         ml("33 QUT-AF my", starttime, res)
 
     elif c==34:
@@ -1188,11 +1205,17 @@ def roughRegistration(in_cur, reg_config, c):
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
         config["my"] = False
+        config["name"] = "42 QUT-AF ngi " + config["name"]
+        log_error(cur, config)
         cur = correctFlip(cur, config)
+        log_error(cur, config)
         config["it"] = 3
         cur = correctXY(cur, config)
+        log_error(cur, config)
         cur = correctZ(cur, config)
+        log_error(cur, config)
         cur = correctXY(cur, config)
+        log_error(cur, config)
 
         config["it"] = 3
         config["both"] = True
@@ -1205,12 +1228,19 @@ def roughRegistration(in_cur, reg_config, c):
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
             cur = applyRot(cur, d0, d1, d2)
+            log_error(cur, config)
             cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
         
         config["it"] = 3
         cur = correctXY(cur, config)
+        log_error(cur, config)
         cur = correctZ(cur, config)
+        log_error(cur, config)
         cur = correctXY(cur, config)
+        log_error(cur, config)
         ml("42 QUT-AF ngi", starttime, res)
 
     return cur

@@ -16,6 +16,7 @@ import cProfile, pstats
 import cv2
 import scipy.ndimage
 import re
+from feature_matching import Projection_Preprocessing
 from skimage.metrics import structural_similarity,normalized_root_mse
 import skimage.measure
 import skimage.morphology
@@ -25,6 +26,7 @@ import matplotlib.pyplot as plt
 import cal_bfgs_full
 import cal_bfgs_rot
 import cal_bfgs_trans
+import cal_bfgs_both
 
 def write_vectors(name, vecs):
     with open(name+".csv", "w") as f:
@@ -370,6 +372,7 @@ def reg_all(ims, params, config, c=0):
     real_img = cal.Projection_Preprocessing(ims)
     config["real_img"] = real_img
     config["noise"] = (noise[0], noise[1])
+    target_sino = config["target_sino"]
     try:
         #cur, noise = cal.bfgs_trans_all(params, config, c)
         if c <= -60:
@@ -377,14 +380,25 @@ def reg_all(ims, params, config, c=0):
         elif c <= -40:
             config["real_img"] = real_img[:len(params)//2]
             config["noise"] = (noise[0][:len(params)//2], noise[1][:len(params)//2])
+            config["target_sino"] = target_sino[:,:len(params)//2]
             cur1, noise1 = cal_bfgs_full.bfgs(params[:len(params)//2], config, c)
             config["real_img"] = real_img[len(params)//2:]
             config["noise"] = (noise[0][len(params)//2:], noise[1][len(params)//2:])
+            config["target_sino"] = target_sino[:,len(params)//2:]
             cur2, noise2 = cal_bfgs_full.bfgs(params[len(params)//2:], config, c)
             cur = np.concatenate((cur1,cur2))
-            nouse = np.concatenate((noise1,noise2))
+            noise = np.concatenate((noise1,noise2))
         else:
-            cur, noise = cal_bfgs_rot.bfgs(params, config, c)
+            config["real_img"] = real_img[:len(params)//2]
+            config["noise"] = (noise[0][:len(params)//2], noise[1][:len(params)//2])
+            config["target_sino"] = target_sino[:,:len(params)//2]
+            #cur1, noise1 = cal_bfgs_rot.bfgs(params[:len(params)//2], config, c)
+            config["real_img"] = real_img[len(params)//2:]
+            config["noise"] = (noise[0][len(params)//2:], noise[1][len(params)//2:])
+            config["target_sino"] = target_sino[:,len(params)//2:]
+            cur2, noise2 = cal_bfgs_rot.bfgs(params[len(params)//2:], config, c)
+            cur = np.concatenate((cur1,cur2))
+            noise = np.concatenate((noise1,noise2))
     except Exception as ex:
         print(ex)
         raise
@@ -396,6 +410,7 @@ def reg_all(ims, params, config, c=0):
 def reg_rough(ims, params, config, c=0):
     corrs = [None]*len(params)
     noise = config["noise"]
+    config["log_queue"] = mp.Queue()
     for i in reversed(range(len(params))):
     #for i in [29]:
         print(i, end=",", flush=True)
@@ -409,7 +424,10 @@ def reg_rough(ims, params, config, c=0):
                 if config["estimate"]:
                     cur = cal.est_position(cur, config)
                 else:
-                    cur = cal.roughRegistration(cur, config, c)
+                    if c >= 0:
+                        cur = cal.roughRegistration(cur, config, c)
+                    else:
+                        cur = cal_bfgs_both.bfgs(cur, config, c)
                 noise[0][i], noise[1][i] = config["noise"]
             except Exception as ex:
                 print(i, ex, cur)
@@ -429,7 +447,7 @@ import multiprocessing as mp
 import sys
 import io
 
-def it_func(con, Ax_params, ready, name):
+def it_func(con, Ax_params, log_queue, ready, name):
     if name != None:
         profiler = cProfile.Profile()
     try:
@@ -442,7 +460,7 @@ def it_func(con, Ax_params, ready, name):
             try:
                 con.send(("ready",))
                 ready.set()
-                (i, cur, im, noise, method) = con.recv()
+                (i, cur, im, target_sino, noise, method) = con.recv()
                 #print(i)
                 old_stdout = sys.stdout
                 sys.stdout = stringout = io.StringIO()
@@ -450,11 +468,15 @@ def it_func(con, Ax_params, ready, name):
                 if name != None:
                     profiler.enable()    
                 real_img = cal.Projection_Preprocessing(im)
-                cur_config = {"real_img": real_img, "Ax": Ax, "noise": noise}
+                cur_config = {"real_img": real_img, "Ax": Ax, "log_queue": log_queue, "name": str(i), "target_sino": target_sino}
                 try:
-                    cur = cal.roughRegistration(cur, cur_config, method)
+                    if method >= 0:
+                        cur = cal.roughRegistration(cur, cur_config, method)
+                    else:
+                        cur = cal_bfgs_both.bfgs(cur, cur_config, method)
                 except Exception as ex:
                     print(ex, type(ex), i, cur, file=sys.stderr)
+                    con.send(("error",))
                 #corrs.append(cur)
                 if name != None:
                     profiler.disable()
@@ -481,6 +503,17 @@ def it_func(con, Ax_params, ready, name):
     except KeyboardInterrupt:
         exit()
 
+def it_log(log_queue):
+    while True:
+        try:
+            name, value = log_queue.get()
+            if name == "exit":
+                return
+            with open(name+".csv", "a") as f:
+                f.write("{};".format(value))
+        except Exception as ex:
+            print("logger faulty: ", ex)
+
 def reg_rough_parallel(ims, params, config, c=0):
     corrs = []
     pool_size = mp.cpu_count()
@@ -500,6 +533,10 @@ def reg_rough_parallel(ims, params, config, c=0):
     corrs = np.array([None]*len(params))
     indices = list(range(len(params)))
 
+    log_queue = mp.Queue()
+    log_proc = mp.Process(target=it_log, args=(log_queue,), daemon=True)
+    log_proc.start()
+
     while np.array([e is None for e in corrs]).any(): #len(indices)>0:
         ready_con = None
         while ready_con is None:
@@ -509,7 +546,7 @@ def reg_rough_parallel(ims, params, config, c=0):
                     name = config["name"]+"_"+str(proc_count)
                 else:
                     name = None
-                proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], ready, name), daemon=True)
+                proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], log_queue, ready, name), daemon=True)
                 proc.start()
                 proc_count += 1
                 pool.append([p[0], p[1], proc, -1])
@@ -529,6 +566,7 @@ def reg_rough_parallel(ims, params, config, c=0):
                                 print(res[1], end='; ', flush=True)
                             elif res[0] == "error":
                                 finished_con.append(con)
+                                exit(0)
                             else:
                                 print("error", res)
                     else:
@@ -545,13 +583,15 @@ def reg_rough_parallel(ims, params, config, c=0):
                 ready.wait(1)
         if len(indices) > 0:
             i = indices.pop()
-            ready_con[0].send((i, params[i], ims[i], (config["noise"][0][i],config["noise"][1][i]), c))
+            ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], (config["noise"][0][i],config["noise"][1][i]), c))
             ready_con[3] = i
 
     for con in pool:
         con[2].terminate()
         con[0].close()
         con[1].close()
+
+    log_queue.put(("exit", 0))
         
     corrs = np.array(corrs.tolist())
     print()
@@ -1127,14 +1167,14 @@ def reg_and_reco(ims_big, ims, in_params, config):
         sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims,0,1)))
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd"), True)
         del sino
+    if not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
+        reg_geo = Ax.create_geo(params)
+        write_rec(reg_geo, ims_big, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"))
     if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
         sino = cal.Projection_Preprocessing(Ax(params))
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd"), True)
         del sino
-    if not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
-        reg_geo = Ax.create_geo(params)
-        write_rec(reg_geo, ims_big, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"))
 
     cali = {}
     cali['feat_thres'] = 80
@@ -1606,6 +1646,10 @@ def reg_real_data():
             else:
                 outpath = r"D:\lumbal_spine_13.10.2020\recos"
 
+            target_sino = sitk.ReadImage(os.path.join(outpath, "target_sino.nrrd"))
+            target_sino = sitk.GetArrayFromImage(target_sino)
+            print("target_sino", target_sino.shape)
+
             #ims = ims[:20]
             #coord_systems = coord_systems[:20]
             #skip = max(1, int(len(ims_un)/500))
@@ -1721,7 +1765,7 @@ def reg_real_data():
             #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape, outpath, geo); exit(0)
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False}
+            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, "target_sino": target_sino}
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
             for method in methods:

@@ -117,7 +117,7 @@ def correctFlip(in_cur, config):
     return curs[np.argmin(values)]
 
 def correctTrans(cur, config):
-    config["it"] = 3
+    #config["it"] = 3
     cur = correctXY(cur, config)
     cur = correctZ(cur, config)
     cur = correctXY(cur, config)
