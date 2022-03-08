@@ -1182,7 +1182,7 @@ def applyTrans(in_params, x, y, z):
 
 
 def filt_conf(config):
-    d = {"real_img": config["real_img"], "my": config["my"], "use_cpu": config["use_cpu"], "AKAZE_params": config["AKAZE_params"], "comps": config["comps"]}#, "p1": None, "absp1": None, "GIoldold": None, "data_real": None, "points_real": None}
+    d = {"real_img": config["real_img"], "my": config["my"], "use_cpu": config["use_cpu"], "AKAZE_params": config["AKAZE_params"], "comps": config["comps"], "target_sino": config["target_sino"]}#, "p1": None, "absp1": None, "GIoldold": None, "data_real": None, "points_real": None}
     if "p1" in config:
         d["p1"] = config["p1"]
     if "absp1" in config:
@@ -1195,9 +1195,10 @@ def filt_conf(config):
         d["points_real"] = [None]*len(config["points_real"])
     return d
 
-def minimize_callback(name, obj, args):
-    with open(name+".csv", "a") as f:
-        f.write("\n")
+def minimize_callback(name, obj, args, newline=False):
+    if newline:
+        with open(name+".csv", "a") as f:
+            f.write("\n")
     def callback(x):
         with open(name+".csv", "a") as f:
             f.write("{};".format(obj(x, *args)))
