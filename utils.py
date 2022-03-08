@@ -3,6 +3,8 @@ import astra
 import os
 import SimpleITK as sitk
 import time
+import matplotlib.pyplot as plt
+from itertools import zip_longest
 
 default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 4},
 "my": True, "grad_width": (1,25), "noise": None, "both": False, "max_change": 1}
@@ -1215,9 +1217,166 @@ def load_minimize_log():
             key = filename.split()[0]
             if key not in data:
                 data[key] = []
+                data[key+"p"] = []
             lines = f.readlines()[1:]
+            #print(filename, key)
             for i, content in enumerate(lines):
                 while len(data[key]) <= i:
                     data[key].append([])
-                data[key][i] += [float(d) for d in content.strip()[:-1].split(";")]
+                    data[key+"p"].append([])
+                if "err" in filename:
+                    linedata = [np.array([float(d[1:-1].split()[0]),float(d[1:-1].split()[1])]) for d in content.strip()[:-1].split(";") if d != ""]
+                else:
+                    linedata = [float(d) for d in content.strip()[:-1].split(";") if d != ""]
+                data[key][i] += linedata
+                data[key+"p"][i].append(len(data[key][i])-1)
+                #print(len(linedata), end=", ")
+            #print("")
+    for k in data.keys():
+        if k[-1] == "p": continue
+        for i in range(len(data[k])):
+            data[k][i] = np.array(data[k][i])
     return data
+
+def load_qut_log():
+    files = sorted([f for f in os.listdir("logs")])
+    data = {}
+    for filename in files:
+        with open(os.path.join("logs", filename)) as f:
+            key = filename.split()[0]
+            if key not in data:
+                data[key] = [[]]*496
+            index = int(filename.split()[-1].split(".")[0])
+            data[key][index] = np.array([np.array([float(d[1:-1].split(",")[0]), float(d[1:-1].split(",")[1])]) for d in f.read().split(";") if d != ""])
+    
+    for key in data.keys():
+        filt = np.ones(len(data[key][0]), dtype=bool)
+        if key == "33":
+            filt[0:2] = False
+            filt[3:5] = False
+        else:
+            filt[0] = False
+            filt[2:4] = False
+
+        filt[-3:-1] = False
+        filt[-5] = False
+        filt[-7] = False
+        filt[-9] = False
+        filt[-11] = False
+        filt[-13] = False
+        filt[-15] = False
+            
+        data[key] = np.array(data[key])[:,filt]
+    odata = {}
+    for key in data.keys():
+        odata[key] = [
+            np.mean(data[key], axis=0)
+        ]
+
+    return odata
+
+
+def get_plot_data(suffix):
+    labels = {"-44.err": "BFGS - Our Objective", "-58.err": "BFGS - NGI Objective", 
+                "--43.err": "BFGS - Our Objective - Reduced Noise", "-57.err": "BFGS - NGI Objective - Reduced Noise",
+                "-24.err": "Mixed BFGS - NGI Objective", "-34.err": "Mixed BFGS - Our Objective",
+                "42": "FORCASTER - NGI Objective", "33": "FORCASTER - Our Objective", "--45.err": "BFGS - Our Objective",
+                }
+    colors = {"-44.err": "#550000", "-58.err": "#000055", 
+                "-43.err": "#000000", "-57.err": "#000000",
+                "-34.err": "#770000", "-24.err": "#000077",
+                "33": "#FF0000",  "42": "#0000FF", "-45.err": "#FF0000"}
+    ls = {"-44.err": "-", "-58.err": "-", 
+            "-43.err": "-.", "-57.err": "-.",
+            "-34.err": "--", "-24.err": "--",
+            "33": ":",  "42": ":", "-45.err": "-."}
+
+    labels = {k.replace("err", suffix): labels[k] for k in labels}
+    colors = {k.replace("err", suffix): colors[k] for k in colors}
+    ls = {k.replace("err", suffix): ls[k] for k in ls}
+    data = load_minimize_log()
+    for k in data.keys():
+        fillvalue = data[k][1][-1] if len(data[k][0]) > len(data[k][1]) else data[k][0][-1]
+        data[k] = [np.array(list(map(lambda x: 0.5*(x[0]+x[1]), zip_longest(data[k][0], data[k][1], fillvalue=fillvalue))))]
+    odata = load_qut_log()
+    data.update(odata)
+    return data, labels, colors, ls
+
+def plot_log():
+
+    if False:
+        data, labels, colors, ls = get_plot_data("ngi")
+        plt.figure()
+        #for k in data.keys():
+        for k in labels.keys():
+            if k not in data:
+                continue
+            #fillvalue = data[k][1][-1] if len(data[k][0]) > len(data[k][1]) else data[k][0][-1]
+            #d = [list(map(lambda x: x[0]+x[1], zip_longest(data[k][0], data[k][1], fillvalue=fillvalue)))]
+            #d = [data[k][0] + data[k][1]]
+            d = data[k]
+            for i,values in enumerate(d):
+                if "Mixed" in labels[k]:
+                    #plt.plot([0]+list(range(4,len(values)+3)), values, label=labels[k]+" " + str(len(values)) + " " + k, color=colors[k], linestyle=ls[k])
+                    plt.plot(list(range(len(values))), values, label=labels[k]+" " + str(len(values)) + " " + k, color=colors[k], linestyle=ls[k])
+                    plt.scatter(np.array(data[k+"p"][i])-1, np.array(values)[np.array(data[k+"p"][i])-1], color="k", marker="|", s=500)
+                    plt.scatter(np.array([1]+data[k+"p"][i]), np.array(values)[np.array([1]+data[k+"p"][i])], color="gray", marker="|", s=500)
+                else:
+                    plt.plot(list(range(len(values))), values, label=labels[k]+" " + str(len(values)) + " " + k, color=colors[k], linestyle=ls[k])
+                    plt.scatter(data[k+"p"][i], np.array(values)[np.array(data[k+"p"][i])], color="k", marker="|", s=500)
+                break
+        plt.legend()
+        plt.title("NGI")
+    
+    data, labels, colors, ls = get_plot_data("err")
+
+    if False:
+        plt.figure()
+        #for k in data.keys():
+        for k in labels.keys():
+            if k not in data:
+                continue
+            #fillvalue = data[k][1][-1] if len(data[k][0]) > len(data[k][1]) else data[k][0][-1]
+            #d = [np.array(list(map(lambda x: x[0]+x[1], zip_longest(data[k][0], data[k][1], fillvalue=fillvalue))))]
+            #d = [data[k][0] + data[k][1]]
+            d = data[k]
+            for i,values in enumerate(d):
+                #if i == 0: continue
+                values = values[:,0]
+                if "Mixed" in labels[k]:
+                    #plt.plot([0]+list(range(4,len(values)+3)), values, label=labels[k]+" " + str(len(values)) + " " + k, color=colors[k], linestyle=ls[k])
+                    plt.plot(list(range(len(values))), values, label=labels[k], color=colors[k], linestyle=ls[k])
+                else:
+                    plt.plot(list(range(len(values))), values, label=labels[k], color=colors[k], linestyle=ls[k])
+                #break
+        plt.legend()
+        plt.tight_layout()
+        
+        plt.title("SSIM")
+        
+    plt.figure()
+    #for k in data.keys():
+    for k in labels.keys():
+        if k not in data:
+            continue
+        #fillvalue = data[k][1][-1] if len(data[k][0]) > len(data[k][1]) else data[k][0][-1]
+        #d = [np.array(list(map(lambda x: x[0]+x[1], zip_longest(data[k][0], data[k][1], fillvalue=fillvalue))))]
+        #d = [data[k][0] + data[k][1]]
+        d = data[k]
+        for i,values in enumerate(d):
+            #if i == 0: continue
+            values = values[:,1]
+            if "Mixed" in labels[k]:
+                #plt.plot([0]+list(range(4,len(values)+3)), values, label=labels[k]+" " + str(len(values)) + " " + k, color=colors[k], linestyle=ls[k])
+                plt.plot(list(range(len(values))), values, label=labels[k], color=colors[k], linestyle=ls[k])
+            else:
+                plt.plot(list(range(len(values))), values, label=labels[k], color=colors[k], linestyle=ls[k])
+            #break
+    
+    plt.legend(fontsize='large')
+    plt.xlabel('Iterations')
+    plt.ylabel('NRMSE')
+    plt.title("NRMSE / Iterations for the 3rd experiment")
+    plt.tight_layout()
+
+    plt.show()
