@@ -1382,8 +1382,10 @@ def get_proj_paths():
 
     if os.path.exists("F:\\output"):
         prefix = r"F:\output"
-    else:
+    elif os.path.exists("D:\\lumbal_spine_13.10.2020\\output"):
         prefix = r"D:\lumbal_spine_13.10.2020\output"
+    else:
+        prefix = r".\output"
     
     cbct_path = prefix + r"\CKM4Baltimore2019\20191108-081024.994000\DCT Head Clear Nat Fill Full HU Normal [AX3D]"
     projs += [
