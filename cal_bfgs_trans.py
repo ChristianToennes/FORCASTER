@@ -261,6 +261,8 @@ def bfgs(curs, reg_config, c):
             eps = [2, 2, 2] * len(curs)
             starttime = time.perf_counter()
             name = "-72 bfgs trans my reduced noise 1"
+            callback = utils.minimize_callback(name, f, (curs,eps,config_callback))
+            callback(np.array([0,0,0] * len(curs)))
             ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config)),
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
@@ -283,6 +285,8 @@ def bfgs(curs, reg_config, c):
             config["comps"] = [(-3,1),(-4,1),(-6,1)]
             eps = [2, 2, 2] * len(curs)
             name = "-73 bfgs trans my 1"
+            callback = utils.minimize_callback(name, f, (curs,eps,config_callback))
+            callback(np.array([0,0,0] * len(curs)))
             ret = scipy.optimize.minimize(f, np.array([0,0,0] * len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config)),
                                         options={'maxiter': 100, 'eps': eps, 'disp': True})
@@ -453,6 +457,8 @@ def bfgs(curs, reg_config, c):
             starttime = time.perf_counter()
             eps = [2, 2, 2] * len(curs)
             name = "-66 bfgs trans ngi reduced noise 1"
+            callback = utils.minimize_callback(name, f, (curs,eps,config_callback))
+            callback(np.array([0,0,0] * len(curs)))
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config)),
                                         options={'maxiter': 200, 'eps': eps, 'disp': True})
@@ -482,6 +488,8 @@ def bfgs(curs, reg_config, c):
             starttime = time.perf_counter
             eps = [2, 2, 2] * len(curs)
             name = "-67 bfgs trans ngi 1"
+            callback = utils.minimize_callback(name, f, (curs,eps,config_callback))
+            callback(np.array([0,0,0] * len(curs)))
             ret = scipy.optimize.minimize(f, np.array([0,0,0]*len(curs)), args=(curs,eps,config), method='BFGS',
                                         jac=gradf3, callback=utils.minimize_callback(name, f, (curs,eps,config)),
                                         options={'maxiter': 200, 'eps': eps, 'disp': True})
