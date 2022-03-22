@@ -381,22 +381,22 @@ def reg_all(ims, params, config, c=0):
             config["real_img"] = real_img[:len(params)//2]
             config["noise"] = (noise[0][:len(params)//2], noise[1][:len(params)//2])
             config["target_sino"] = target_sino[:,:len(params)//2]
-            cur1, noise1 = cal_bfgs_full.bfgs(params[:len(params)//2], config, c)
+            cur1, noise1 = cal_bfgs_full.bfgs_single(params[:len(params)//2], config, c)
             config["real_img"] = real_img[len(params)//2:]
             config["noise"] = (noise[0][len(params)//2:], noise[1][len(params)//2:])
             config["target_sino"] = target_sino[:,len(params)//2:]
-            cur2, noise2 = cal_bfgs_full.bfgs(params[len(params)//2:], config, c)
+            cur2, noise2 = cal_bfgs_full.bfgs_single(params[len(params)//2:], config, c)
             cur = np.concatenate((cur1,cur2))
             noise = np.concatenate((noise1,noise2))
         else:
             config["real_img"] = real_img[:len(params)//2]
             config["noise"] = (noise[0][:len(params)//2], noise[1][:len(params)//2])
             config["target_sino"] = target_sino[:,:len(params)//2]
-            #cur1, noise1 = cal_bfgs_rot.bfgs(params[:len(params)//2], config, c)
+            cur1, noise1 = cal_bfgs_rot.bfgs_single(params[:len(params)//2], config, c)
             config["real_img"] = real_img[len(params)//2:]
             config["noise"] = (noise[0][len(params)//2:], noise[1][len(params)//2:])
             config["target_sino"] = target_sino[:,len(params)//2:]
-            cur2, noise2 = cal_bfgs_rot.bfgs(params[len(params)//2:], config, c)
+            cur2, noise2 = cal_bfgs_rot.bfgs_single(params[len(params)//2:], config, c)
             cur = np.concatenate((cur1,cur2))
             noise = np.concatenate((noise1,noise2))
     except Exception as ex:
