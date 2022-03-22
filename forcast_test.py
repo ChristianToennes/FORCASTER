@@ -142,7 +142,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     return norm_images_gained, norm_images_ungained, offset+gain*fs, fs
 
 def read_dicoms(indir, max_ims=np.inf):
-    print("read dicoms")
+    print("read dicoms", indir)
     kvs = []
     mas = []
     μas = []
@@ -517,10 +517,10 @@ def it_log(log_queue):
 def reg_rough_parallel(ims, params, config, c=0):
     corrs = []
     pool_size = mp.cpu_count()
-    if c==28:
-        pool_size = 2
-    elif c >= 40:
-        pool_size = mp.cpu_count()-4
+    #if c==28:
+    #    pool_size = 2
+    #elif c >= 40:
+    #    pool_size = mp.cpu_count()-4
     pool = []
     proc_count = 0
     #corrsq = mp.Queue()
@@ -1380,8 +1380,10 @@ def i0_est(real_img, proj_img):
 def i0_data(skip, edges):
     if os.path.exists("F:\\output"):
         prefix = r"F:\output"
-    else:
+    elif os.path.exists(r"D:\lumbal_spine_13.10.2020\output"):
         prefix = r"D:\lumbal_spine_13.10.2020\output"
+    else:
+        prefix = r".\output"
 
     path = os.path.join(prefix, '70kVp')
 
@@ -1679,8 +1681,10 @@ def reg_real_data():
             
             if os.path.exists("Z:\\\\recos"):
                 outpath = "Z:\\\\recos"
-            else:
+            elif os.path.exists(r"D:\lumbal_spine_13.10.2020\recos"):
                 outpath = r"D:\lumbal_spine_13.10.2020\recos"
+            else:
+                outpath = r".\recos"
 
             target_sino = sitk.ReadImage(os.path.join(outpath, "target_sino.nrrd"))
             target_sino = sitk.GetArrayFromImage(target_sino)
@@ -1801,7 +1805,7 @@ def reg_real_data():
             #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape, outpath, geo); exit(0)
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, "target_sino": target_sino}
+            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, "target_sino": target_sino, "threads": mp.cpu_count()}
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
             for method in methods:

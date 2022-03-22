@@ -13,7 +13,7 @@ def trackFeatures(next_img, data, config):
     #matcher = cv2.FlannBasedMatcher(index_params,search_params)
     #matcher = cv2.DescriptorMatcher_create(cv2.DescriptorMatcher_FLANNBASED)
     #matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    matchFeatures(data, sim_data)
+    return matchFeatures(data, sim_data)
 
 def matchFeatures(real_data, sim_data):
     base_points, f1 = real_data
