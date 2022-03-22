@@ -112,7 +112,7 @@ def correctFlip(in_cur, config):
     points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
 
-    values = np.array([calcPointsObjective(-5, normalize_points(points[v], projs[:,i]), points_real[v]) for i,(points,v) in enumerate(features)])
+    values = np.array([calcPointsObjective(-6, normalize_points(points[v], projs[:,i]), points_real[v]) for i,(points,v) in enumerate(features)])
 
     return curs[np.argmin(values)]
 
