@@ -211,9 +211,8 @@ def read_dicoms(indir, max_ims=np.inf):
                 else:
                     ims = np.vstack([ims, ds.pixel_array])
 
-
-                #thetas.append(float(ds.PositionerPrimaryAngle))
-                #phis.append(float(ds.PositionerSecondaryAngle))
+                thetas.append(float(ds.PositionerPrimaryAngle))
+                phis.append(float(ds.PositionerSecondaryAngle))
 
                 stparmdata = utils.unpack_sh_stparm(ds[0x0021,0x1012].value)
 
@@ -362,8 +361,8 @@ def read_dicoms(indir, max_ims=np.inf):
 
     ims_gained, ims_ungained, i0s_gained, i0s_ungained = normalize(ims, μas, kvs, percent_gain)
 
-    if len(cs_interpol) > 0:
-        coord_systems = np.array(cs_interpol)
+    #if len(cs_interpol) > 0:
+    #    coord_systems = np.array(cs_interpol)
 
     return ims_gained, ims_ungained, mas, kvs, angles, coord_systems, sids, sods
 
@@ -1201,11 +1200,14 @@ def reg_and_reco(ims_big, ims, in_params, config):
         sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims,0,1)))
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd"), True)
         del sino
-    if not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
+    if False and not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         write_rec(reg_geo, ims_big, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"))
     if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
         sino = cal.Projection_Preprocessing(Ax(params))
+        img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
+            np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
+        cv2.imwrite("check_" + name + "_pre.png", img)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd"), True)
         del sino
@@ -1229,7 +1231,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
         corrs = read_vectors(name+"-rough-corr")
     else:
         if method>-20:
-            if mp.cpu_count() > 1:
+            if config["paralell"] and  mp.cpu_count() > 1:
                 corrs = reg_rough_parallel(ims, params, config, method)
             else:
                 corrs = reg_rough(ims, params, config, method)
@@ -1246,6 +1248,9 @@ def reg_and_reco(ims_big, ims, in_params, config):
     #print(params, corrs)
     if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
         sino = Ax(corrs)
+        img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
+            np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
+        cv2.imwrite("check_" + name + "_post.png", img)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-output.nrrd"), True)
         #evalPerformance(np.swapaxes(sino, 0, 1), ims, perftime, name)
@@ -1255,7 +1260,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
         print_stats(config["noise"][1])
     print("rough reg done ", perftime)
 
-    if not perf:
+    if False and not perf:
         reg_geo = Ax.create_geo(corrs)
         mult = 1
         write_rec(reg_geo, ims_big, os.path.join(outpath, "forcast_"+name+"_reco-output.nrrd"), mult)
@@ -1370,7 +1375,8 @@ def i0_est(real_img, proj_img):
     filt = np.zeros_like(real_img, dtype=bool)
     filt[filt.shape[0]//3:-filt.shape[0]//3,filt.shape[1]//3:-filt.shape[1]//3] = True
     real = float(np.mean(real_img[filt]))
-    proj = np.mean(proj_img[filt])
+    p = scipy.ndimage.zoom(proj_img, np.array(real_img.shape)/np.array(proj_img.shape))
+    proj = np.mean(p[filt])
     i0 = real * np.exp(proj)
     
     #i0 = i0*1.4
@@ -1447,7 +1453,7 @@ def get_proj_paths():
     #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
     #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
-    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-44,-34]), # normal noise
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [50,52]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-44,-58,-34,-24,33,42]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-43,-57,34,41]), # reduced noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-73,-67]), # normal noise trans
@@ -1464,7 +1470,7 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, []),
+    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, []),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
@@ -1484,6 +1490,59 @@ def get_proj_paths():
     #('201207_opti_', prefix + '\\CKM\\Opti Traj\\20201207-163001.022000-P16_DR_HD', cbct_path, [4, 28, 29]),
     #('201207_sin_', prefix + '\\CKM\\Sin Traj\\20201207-131203.754000-P16_Card_HD', cbct_path, [24]),
     #('201207_tomo_', prefix + '\\CKM\\Tomo\\20201208-110616.312000-P16_DR_HD', cbct_path, [4, 28, 29]),
+    ]
+    cbct_path = r"D:\rothfuss\ProejctionData\test\DCT_BODY_NAT_FILL_FULL_HU_NORMAL_[AX3D]_0061"
+    projs += [
+        #('rothfuss_', r"D:\rothfuss\ProejctionData\test\DR_OVERVIEW_0065", cbct_path, [6]),
+    ]
+    cbct_path = r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_152920_434000\DCT_BODY_NAT_FILL_FULL_HU_NORMAL_[AX3D]_0001"
+    projs += [
+        #('r_pre_05',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_152920_434000\DR_OVERVIEW_0005", cbct_path, [6]),
+        #('r_pre_12',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_152920_434000\DR_OVERVIEW_0012", cbct_path, [6]),
+        #('r_pre_13',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_152920_434000\DR_OVERVIEW_0013", cbct_path, [6]),
+    ]
+    cbct_path = r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_152920_434000\DCT_BODY_NAT_FILL_FULL_HU_NORMAL_[AX3D]_0017"
+    projs += [
+        #('r_post_05',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_152920_434000\DR_OVERVIEW_0005", cbct_path, [6]),
+        #('r_post_12',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_152920_434000\DR_OVERVIEW_0012", cbct_path, [6]),
+        #('r_post_13',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_152920_434000\DR_OVERVIEW_0013", cbct_path, [6]),
+    ]
+    cbct_path = r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DCT_BODY_NAT_FILL_FULL_HU_NORMAL_[AX3D]_0002"
+    s = [4,6,33]
+    projs += [
+        ('r_pre_04_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0004", cbct_path, s+[]),
+        ('r_pre_05_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0005", cbct_path, s+[]),
+        ('r_pre_06_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0006", cbct_path, s+[]),
+        ('r_pre_07_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0007", cbct_path, s+[]),
+        ('r_pre_08_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0008", cbct_path, s+[]),
+        ('r_pre_09_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0009", cbct_path, s+[]),
+        ('r_pre_10_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0010", cbct_path, s+[]),
+        ('r_pre_11_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0011", cbct_path, s+[]),
+        ('r_pre_12_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0012", cbct_path, s+[]),
+    ]
+    cbct_path = r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\3D_BODY_NAT_FILL_FULL_HU_AUTO_[AX3D]_0003"
+    projs += [
+        ('r_mid_04_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0004", cbct_path, s+[]),
+        ('r_mid_05_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0005", cbct_path, s+[]),
+        ('r_mid_06_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0006", cbct_path, s+[]),
+        ('r_mid_07_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0007", cbct_path, s+[]),
+        ('r_mid_08_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0008", cbct_path, s+[]),
+        ('r_mid_09_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0009", cbct_path, s+[]),
+        ('r_mid_10_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0010", cbct_path, s+[]),
+        ('r_mid_11_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0011", cbct_path, s+[]),
+        ('r_mid_12_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0012", cbct_path, s+[]),
+    ]
+    cbct_path = r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DCT_BODY_NAT_FILL_FULL_HU_NORMAL_[AX3D]_0013"
+    projs += [
+        ('r_post_04_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0004", cbct_path, s+[]),
+        ('r_post_05_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0005", cbct_path, s+[]),
+        ('r_post_06_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0006", cbct_path, s+[]),
+        ('r_post_07_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0007", cbct_path, s+[]),
+        ('r_post_08_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0008", cbct_path, s+[]),
+        ('r_post_09_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0009", cbct_path, s+[]),
+        ('r_post_10_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0010", cbct_path, s+[]),
+        ('r_post_11_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0011", cbct_path, s+[]),
+        ('r_post_12_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0012", cbct_path, s+[]),
     ]
     return projs
 
@@ -1694,31 +1753,32 @@ def reg_real_data():
             #coord_systems = coord_systems[:20]
             #skip = max(1, int(len(ims_un)/500))
             skip = np.zeros(len(ims_un), dtype=bool)
-            skip[::max(1, int(len(ims_un)/500))] = True
+            skip[-1] = True
+            #skip[::max(1, int(len(ims_un)/500))] = True
             random = np.random.default_rng(23)
             #angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
             angles_noise = random.uniform(low=-2, high=2, size=(len(ims_un),3))
             #angles_noise = np.zeros_like(angles_noise)
             #trans_noise = random.normal(loc=0, scale=20, size=(len(ims), 3))
             min_trans, max_trans = -10, 10
-            #min_trans, max_trans = -5, 5
+            min_trans, max_trans = -5, 5
             trans_noise = random.uniform(low=min_trans, high=max_trans, size=(len(ims_un),2))
-            zoom_noise = random.uniform(low=0.95, high=1, size=len(ims_un))
-            #zoom_noise = random.uniform(low=0.98, high=1, size=len(ims_un))
+            #zoom_noise = random.uniform(low=0.95, high=1, size=len(ims_un))
+            zoom_noise = random.uniform(low=0.98, high=1, size=len(ims_un))
 
             #skip = 4
             ims = ims[skip]
             ims_un = ims_un[skip]
             #coord_systems = coord_systems[skip]
-            angles = angles[skip]
+            #angles = angles[skip]
             sids = np.mean(sids[skip])
             sods = np.mean(sods[skip])
             angles_noise = angles_noise[skip]
             trans_noise = trans_noise[skip]
             zoom_noise = zoom_noise[skip]
-            #angles_noise = np.ones_like(angles_noise)*0
-            #trans_noise = np.ones_like(trans_noise)*0
-            #zoom_noise = np.ones_like(zoom_noise)
+            angles_noise = np.ones_like(angles_noise)*0
+            trans_noise = np.ones_like(trans_noise)*0
+            zoom_noise = np.ones_like(zoom_noise)
             #angles_noise[0][0] = -0.05
             #angles_noise[0][1] = -0.166
             #angles_noise[0][2] = -0.393
@@ -1744,11 +1804,12 @@ def reg_real_data():
             if coord_systems.shape[1] == 4:
                 coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
                 params = params[skip]
-            coord_systems = coord_systems[skip]
+            #coord_systems = coord_systems[skip]
 
             Ax_gen = (real_image.shape, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing), real_image)
             geo = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
             geo_from_angles = utils.create_astra_geo_coords(coords_from_angles, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+            #geo = geo_from_angles
             
             r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
 
@@ -1785,6 +1846,7 @@ def reg_real_data():
             i0s = np.array([i0_est(ims_un[i], projs[:,i])*res for i in range(ims_un.shape[0])])
             i0s = np.mean(i0s, axis=0)
             i0s[i0s==0] = 1e-8
+            i0s = np.mean(i0s)
             ims_un = -np.log(ims_un/i0s)
 
             #sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
@@ -1800,12 +1862,13 @@ def reg_real_data():
             i0s = np.array([i0_est(ims[i], projs[:,i])*res for i in range(ims.shape[0])])
             i0s = np.mean(i0s, axis=0)
             i0s[i0s==0] = 1e-8
+            i0s = np.mean(i0s)
             ims = -np.log(ims/i0s)
             
             #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape, outpath, geo); exit(0)
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, "target_sino": target_sino, "threads": mp.cpu_count()}
+            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, "target_sino": target_sino, "threads": mp.cpu_count(), "paralell": False}
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
             for method in methods:

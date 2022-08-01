@@ -13,12 +13,16 @@ def trackFeatures(next_img, data, config):
     #matcher = cv2.FlannBasedMatcher(index_params,search_params)
     #matcher = cv2.DescriptorMatcher_create(cv2.DescriptorMatcher_FLANNBASED)
     #matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    return matchFeatures(data, sim_data)
+    #return matchFeatures(data, sim_data)
 
-def matchFeatures(real_data, sim_data):
-    base_points, f1 = real_data
+#def matchFeatures(real_data, sim_data):
+    base_points, f1 = data
     new_points, f2 = sim_data
-    matcher = cv2.DescriptorMatcher_create(cv2.DescriptorMatcher_BRUTEFORCE_HAMMING)
+    #matcher = cv2.DescriptorMatcher_create(cv2.DescriptorMatcher_BRUTEFORCE_HAMMING)
+    matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+    #matcher = cv2.BFMatcher(cv2.NORM_HAMMING2, crossCheck=False)
+    #matcher = cv2.BFMatcher(cv2.NORM_L1, crossCheck=False)
+    #matcher = cv2.BFMatcher(cv2.NORM_L2, crossCheck=False)
     if f1 is None:
         print("no features in old image")
     if f2 is None:
@@ -38,7 +42,7 @@ def matchFeatures(real_data, sim_data):
         if len(ms) > 1:
             m,n = ms    
             dists.append(m.distance)
-            if m.distance < 0.7*n.distance:
+            if m.distance < 0.75*n.distance:
                 matchesMask[i,0]=1
                 valid[m.queryIdx] = True
                 points[m.queryIdx] = m.trainIdx
@@ -82,6 +86,7 @@ def matchFeatures(real_data, sim_data):
         r=-40
         t=25
         b=-25
+        print(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8).shape)
         img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
             np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=np.zeros_like(matchesMask), matchColor=(0,255,0), singlePointColor=(100,100,255))
         cv2.imwrite("featurepoints.png", img[t:b,l:r])
@@ -154,18 +159,21 @@ def findInitialFeatures(img, config):
 
     if mask is None:
         mask = np.zeros_like(img, dtype=np.uint8)
-        mask[50:-50,50:-50] = True
+        mask[100:-100,100:-100] = True
     
     if config["use_cpu"]:
         #detector = cv2.xfeatures2d_SURF.create(100, 4, 3, False, True)
-        #detector = cv2.SIFT_create()
+        #detector = cv2.SIFT_create(nfeatures = 0, nOctaveLayers = 3, contrastThreshold = 0.04, edgeThreshold = 10, sigma = 1.6, descriptorType = cv2.CV_8U)
         detector = cv2.AKAZE_create(**config["AKAZE_params"])
         #detector = cv2.xfeatures2d.StarDetector_create(maxSize=45,responseThreshold=10,lineThresholdProjected=10,lineThresholdBinarized=8,suppressNonmaxSize=5)
         #brief = cv2.xfeatures2d.BriefDescriptorExtractor_create()
-        #detector = cv2.ORB_create(nfeatures=300, scaleFactor=1.4, nlevels=4, edgeThreshold=41, patchSize=41, fastThreshold=5)
-        points, features = detector.detectAndCompute(img, mask)
+        #detector = cv2.ORB_create(nfeatures=500, scaleFactor=1.2, nlevels=8, edgeThreshold=31, patchSize=21, fastThreshold=20)
+        #img = np.repeat(img[:,:,np.newaxis], 3, axis=2)
+        #img = np.stack([img, np.zeros_like(img), np.zeros_like(img)], axis=-1)
+        #print(img.shape, img.dtype)
+        points, features = detector.detectAndCompute(img, np.ones_like(img, dtype=np.uint8))
         #points = detector.detect(img, mask)
-        #points, features = brief.compute(img, points)
+        #points, features = brief.compute(np.repeat(img[:,:,np.newaxis], 3, axis=2), points)
         points = np.array(points)
         
         #feature_params = {"maxCorners": 200, "qualityLevel": 0.01, "minDistance": 19, "blockSize": 21}
