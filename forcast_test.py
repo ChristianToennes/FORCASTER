@@ -29,7 +29,7 @@ import cal_bfgs_trans
 import cal_bfgs_both
 
 def write_vectors(name, vecs):
-    with open(name+".csv", "w") as f:
+    with open("csv\\"+name+".csv", "w") as f:
         f.writelines([",".join([str(v) for v in vec])+"\n" for vec in vecs])
 
 def read_vectors(path):
@@ -111,7 +111,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     #    norm_img = images[i][sel[i]].reshape(norm_images_gained[0].shape)
     #    norm_images_ungained[i] = norm_img
 
-    oskip = 2
+    oskip = 4
     if images.shape[2] > 2000:
         oskip = 4
     if edges <= 0:
@@ -374,30 +374,33 @@ def reg_all(ims, params, config, c=0):
     target_sino = config["target_sino"]
     try:
         #cur, noise = cal.bfgs_trans_all(params, config, c)
-        if c <= -60:
-            cur, noise = cal_bfgs_trans.bfgs(params, config, c)
-        elif c <= -40:
-            config["real_img"] = real_img[:len(params)//2]
-            config["noise"] = (noise[0][:len(params)//2], noise[1][:len(params)//2])
-            config["target_sino"] = target_sino[:,:len(params)//2]
-            cur1, noise1 = cal_bfgs_full.bfgs_single(params[:len(params)//2], config, c)
-            config["real_img"] = real_img[len(params)//2:]
-            config["noise"] = (noise[0][len(params)//2:], noise[1][len(params)//2:])
-            config["target_sino"] = target_sino[:,len(params)//2:]
-            cur2, noise2 = cal_bfgs_full.bfgs_single(params[len(params)//2:], config, c)
-            cur = np.concatenate((cur1,cur2))
-            noise = np.concatenate((noise1,noise2))
+        if config["estimate"]:
+            cur, _rots = cal.est_position(params[0], config["Ax"], real_img)
         else:
-            config["real_img"] = real_img[:len(params)//2]
-            config["noise"] = (noise[0][:len(params)//2], noise[1][:len(params)//2])
-            config["target_sino"] = target_sino[:,:len(params)//2]
-            cur1, noise1 = cal_bfgs_rot.bfgs_single(params[:len(params)//2], config, c)
-            config["real_img"] = real_img[len(params)//2:]
-            config["noise"] = (noise[0][len(params)//2:], noise[1][len(params)//2:])
-            config["target_sino"] = target_sino[:,len(params)//2:]
-            cur2, noise2 = cal_bfgs_rot.bfgs_single(params[len(params)//2:], config, c)
-            cur = np.concatenate((cur1,cur2))
-            noise = np.concatenate((noise1,noise2))
+            if c <= -60:
+                cur, noise = cal_bfgs_trans.bfgs(params, config, c)
+            elif c <= -40:
+                config["real_img"] = real_img[:len(params)//2]
+                config["noise"] = (noise[0][:len(params)//2], noise[1][:len(params)//2])
+                config["target_sino"] = target_sino[:,:len(params)//2]
+                cur1, noise1 = cal_bfgs_full.bfgs_single(params[:len(params)//2], config, c)
+                config["real_img"] = real_img[len(params)//2:]
+                config["noise"] = (noise[0][len(params)//2:], noise[1][len(params)//2:])
+                config["target_sino"] = target_sino[:,len(params)//2:]
+                cur2, noise2 = cal_bfgs_full.bfgs_single(params[len(params)//2:], config, c)
+                cur = np.concatenate((cur1,cur2))
+                noise = np.concatenate((noise1,noise2))
+            else:
+                config["real_img"] = real_img[:len(params)//2]
+                config["noise"] = (noise[0][:len(params)//2], noise[1][:len(params)//2])
+                config["target_sino"] = target_sino[:,:len(params)//2]
+                cur1, noise1 = cal_bfgs_rot.bfgs_single(params[:len(params)//2], config, c)
+                config["real_img"] = real_img[len(params)//2:]
+                config["noise"] = (noise[0][len(params)//2:], noise[1][len(params)//2:])
+                config["target_sino"] = target_sino[:,len(params)//2:]
+                cur2, noise2 = cal_bfgs_rot.bfgs_single(params[len(params)//2:], config, c)
+                cur = np.concatenate((cur1,cur2))
+                noise = np.concatenate((noise1,noise2))
     except Exception as ex:
         print(ex)
         raise
@@ -421,7 +424,10 @@ def reg_rough(ims, params, config, c=0):
             try:
                 old_cur = np.array(cur)
                 if config["estimate"]:
-                    cur = cal.est_position(cur, config)
+                    if "est_data" not in config or config["est_data"] is None:
+                        config["est_data"] = cal.simulate_est_data(cur, config["Ax"])
+                    cur, _rots = cal.est_position(cur, config["Ax"], [real_img], config["est_data"])
+                    cur = cur[0]
                 else:
                     if c >= 0:
                         cur = cal.roughRegistration(cur, config, c)
@@ -455,6 +461,7 @@ def it_func(con, Ax_params, log_queue, ready, name):
         np.seterr(all='raise')
         Ax = None
         Ax = utils.Ax_param_asta(*Ax_params)
+        est_data = None
         while True:
             try:
                 con.send(("ready",))
@@ -467,7 +474,10 @@ def it_func(con, Ax_params, log_queue, ready, name):
                 if name != None:
                     profiler.enable()    
                 real_img = cal.Projection_Preprocessing(im)
-                cur_config = {"real_img": real_img, "Ax": Ax, "log_queue": log_queue, "name": str(i), "target_sino": target_sino}
+                if method == "estimate":
+                    if est_data is None:
+                        est_data = cal.simulate_est_data(cur, Ax)
+                cur_config = {"real_img": real_img, "Ax": Ax, "log_queue": log_queue, "name": str(i), "target_sino": target_sino, "est_data": est_data}
                 try:
                     if method >= 0:
                         cur = cal.roughRegistration(cur, cur_config, method)
@@ -508,7 +518,7 @@ def it_log(log_queue):
             name, value = log_queue.get()
             if name == "exit":
                 return
-            with open(name+".csv", "a") as f:
+            with open("csv\\"+name+".csv", "a") as f:
                 f.write("{};".format(value))
         except Exception as ex:
             print("logger faulty: ", ex)
@@ -582,7 +592,10 @@ def reg_rough_parallel(ims, params, config, c=0):
                 ready.wait(1)
         if len(indices) > 0:
             i = indices.pop()
-            ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], (config["noise"][0][i],config["noise"][1][i]), c))
+            if config["estimate"]:
+                ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], (config["noise"][0][i],config["noise"][1][i]), "estimate"))
+            else:
+                ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], (config["noise"][0][i],config["noise"][1][i]), c))
             ready_con[3] = i
 
     for con in pool:
@@ -1207,7 +1220,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
         sino = cal.Projection_Preprocessing(Ax(params))
         img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
             np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
-        cv2.imwrite("check_" + name + "_pre.png", img)
+        cv2.imwrite("img\\check_" + name + "_pre.png", img)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd"), True)
         del sino
@@ -1230,7 +1243,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
         vecs = read_vectors(name+"-rough")
         corrs = read_vectors(name+"-rough-corr")
     else:
-        if method>-20:
+        if method>-20:# and not config["estimate"]:
             if config["paralell"] and  mp.cpu_count() > 1:
                 corrs = reg_rough_parallel(ims, params, config, method)
             else:
@@ -1250,7 +1263,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
         sino = Ax(corrs)
         img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
             np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
-        cv2.imwrite("check_" + name + "_post.png", img)
+        cv2.imwrite("img\\check_" + name + "_post.png", img)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-output.nrrd"), True)
         #evalPerformance(np.swapaxes(sino, 0, 1), ims, perftime, name)
@@ -1260,10 +1273,10 @@ def reg_and_reco(ims_big, ims, in_params, config):
         print_stats(config["noise"][1])
     print("rough reg done ", perftime)
 
-    if False and not perf:
+    if not perf:
         reg_geo = Ax.create_geo(corrs)
         mult = 1
-        write_rec(reg_geo, ims_big, os.path.join(outpath, "forcast_"+name+"_reco-output.nrrd"), mult)
+        write_rec(reg_geo, ims, os.path.join(outpath, "forcast_"+name+"_reco-output.nrrd"), mult)
 
     return vecs, corrs
 
@@ -1470,13 +1483,14 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, []),
+    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33, 60, 62, 63]),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
     #('2010201_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path, [4, 28, 29]),
     #('2010201_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     ]
+    return projs
     cbct_path = prefix + r"\CKM4Baltimore\CBCT_2021_01_11_16_04_12"
     projs += [
     #('210111_balt_cbct_', prefix + '\\CKM4Baltimore\\CBCT_SINO', cbct_path, [4, 28, 29]),
@@ -1508,7 +1522,7 @@ def get_proj_paths():
         #('r_post_13',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_152920_434000\DR_OVERVIEW_0013", cbct_path, [6]),
     ]
     cbct_path = r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DCT_BODY_NAT_FILL_FULL_HU_NORMAL_[AX3D]_0002"
-    s = [4,6,33]
+    s = [4]
     projs += [
         ('r_pre_04_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0004", cbct_path, s+[]),
         ('r_pre_05_',r"D:\rothfuss\GUIDOO_MK2_TESTDATASET_GUIDOO_MK2-TESTDATASET\__20210624_154436_571000\DR_OVERVIEW_0005", cbct_path, s+[]),
@@ -1753,7 +1767,8 @@ def reg_real_data():
             #coord_systems = coord_systems[:20]
             #skip = max(1, int(len(ims_un)/500))
             skip = np.zeros(len(ims_un), dtype=bool)
-            skip[-1] = True
+            #skip[200] = True
+            skip[::1] = True
             #skip[::max(1, int(len(ims_un)/500))] = True
             random = np.random.default_rng(23)
             #angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
@@ -1769,7 +1784,7 @@ def reg_real_data():
             #skip = 4
             ims = ims[skip]
             ims_un = ims_un[skip]
-            #coord_systems = coord_systems[skip]
+            coord_systems = coord_systems[skip]
             #angles = angles[skip]
             sids = np.mean(sids[skip])
             sods = np.mean(sods[skip])
@@ -1791,30 +1806,34 @@ def reg_real_data():
             detector_mult = int(np.floor(detector_shape[0] / ims_un.shape[1]))
             
             detector_shape = np.array(ims_un.shape[1:])
-            detector_spacing = np.array((0.125, 0.125)) * detector_mult
+            detector_spacing = np.array((0.154, 0.154)) * detector_mult
 
             real_image = utils.fromHU(sitk.GetArrayFromImage(image))
+            real_image = np.swapaxes(np.swapaxes(real_image, 0,2), 0,1)[::-1,:,::-1]
 
             global out_rec_meta
             out_rec_meta = (image.GetOrigin(), image.GetSize(), image.GetSpacing(), real_image.shape)
             del image
 
-            Ax = utils.Ax_param_asta(real_image.shape, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing), real_image)
+            image_spacing = 1.0 / np.min(spacing)
+            print(spacing, image_spacing, np.array((1920,2480))/np.array(ims_un[0].shape), detector_mult)
+
+            Ax = utils.Ax_param_asta(real_image.shape, detector_spacing, detector_shape, sods, sids-sods, image_spacing, real_image)
 
             if coord_systems.shape[1] == 4:
-                coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+                coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
                 params = params[skip]
             #coord_systems = coord_systems[skip]
 
-            Ax_gen = (real_image.shape, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing), real_image)
-            geo = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
-            geo_from_angles = utils.create_astra_geo_coords(coords_from_angles, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+            Ax_gen = (real_image.shape, detector_spacing, detector_shape, sods, sids-sods, image_spacing, real_image)
+            geo = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
+            geo_from_angles = utils.create_astra_geo_coords(coords_from_angles, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
             #geo = geo_from_angles
             
             r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
 
             if 'arc' in name:
-                coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, 1.2/np.min(spacing))
+                coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
                 params = params[skip]
                 coord_systems = coord_systems[skip]
             elif 'angle' in name or 'both' in name:
@@ -1823,8 +1842,16 @@ def reg_real_data():
                 params[:,2] = np.array([r.dot(v) for v in geo_from_angles['Vectors'][:, 9:12]])
             else:
                 params = np.zeros((len(geo['Vectors']), 3, 3), dtype=float)
-                params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
-                params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
+                params0 = np.zeros((len(geo['Vectors']), 3, 3), dtype=float)
+                params0[:,1,0] = 1
+                params0[:,2,1] = 1
+                #params[:,0] = coord_systems[:,:,3]
+                #params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
+                params[:,1] = np.array(geo['Vectors'][:, 6:9])
+                #params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
+                params[:,2] = np.array(geo['Vectors'][:, 9:12])
+            
+            print(params[0,1], params[0,2])
 
             if True:
                 for i, (α,β,γ) in enumerate(angles_noise):
@@ -1836,7 +1863,10 @@ def reg_real_data():
                     params[i] = cal.applyTrans(params[i], 0, 0, 1-z)
 
             projs = Ax(params)
+            #Ax0201i0 = utils.Ax_param_asta(real_image0201i0.shape, detector_spacing, detector_shape, sods, sids-sods, image_spacing, real_image0201i0)
+            #projs0201i0 = Ax0201i0(params0)
             #sitk.WriteImage(sitk.GetImageFromArray(projs), "recos/projs.nrrd")
+            #sitk.WriteImage(sitk.GetImageFromArray(projs0201i0), "recos/projs0201i0.nrrd")
             #sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ims,0,1)), "recos/ims.nrrd")
 
             i0_ims, i0_mas, i0_kvs = i0_data(detector_mult, 60)
@@ -1868,7 +1898,8 @@ def reg_real_data():
             #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape, outpath, geo); exit(0)
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, "target_sino": target_sino, "threads": mp.cpu_count(), "paralell": False}
+            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, 
+                    "target_sino": target_sino, "threads": mp.cpu_count(), "paralell": True}
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
             for method in methods:
@@ -1876,6 +1907,13 @@ def reg_real_data():
                 config["method"] = method
                 config["noise"] = (np.zeros((len(ims),3)), np.array(angles_noise))
                 vecs, corrs = reg_and_reco(ims, ims_un, np.array(params), config)
+                #iso = (geo['Vectors'][0,0:3]+(sods/sids)*(geo['Vectors'][0,3:6]-geo['Vectors'][0,0:3]))/image_spacing
+                #print((params-corrs)[:,0] / image_spacing, origin[0], params[:,0], corrs[:,0]/image_spacing, np.array(real_image.shape)*spacing)
+                #print(coord_systems[0,:,3]-iso, geo['Vectors'][0,0:3]/image_spacing-iso, vecs[0,0:3]/image_spacing)
+                #print(np.linalg.norm(geo['Vectors'][0,0:3]-geo['Vectors'][0,3:6])/image_spacing, np.linalg.norm(vecs[0,0:3]-vecs[0,3:6])/image_spacing, sids, sods)
+                #print(iso)
+                #print((vecs[0,0:3]+(sods/sids)*(vecs[0,3:6]-vecs[0,0:3])) /image_spacing)
+                #exit()
         except Exception as e:
             print(name, "cali failed", e)
             raise

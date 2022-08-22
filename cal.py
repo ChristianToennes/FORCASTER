@@ -495,6 +495,7 @@ def binsearch(in_cur, axis, config):
     return cur
 
 def log_error(cur, config):
+    return
     Ax = config["Ax"]
     proj = Ax(np.array([cur]))[:,0]
     config["log_queue"].put( ("logs/"+config["name"], (structural_similarity(config["target_sino"], proj), normalized_root_mse(config["target_sino"], proj))) )
@@ -1242,6 +1243,136 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
         log_error(cur, config)
         ml("42 QUT-AF ngi", starttime, res)
+
+    elif c==60:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "33 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        if("est_data" in config):
+            est_data = config["est_data"]
+        else:
+            est_data = simulate_est_data(cur0, Ax)
+            config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+    elif c==62:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["my"] = False
+        config["name"] = "42 QUT-AF ngi " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        if("est_data" in config):
+            est_data = config["est_data"]
+        else:
+            est_data = simulate_est_data(cur0, Ax)
+            config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        log_error(cur, config)
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+
+        config["it"] = 3
+        config["both"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        ml("62 EST-QUT-AF ngi", starttime, res)
+
+    elif c==63:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "33 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        if("est_data" in config):
+            est_data = config["est_data"]
+        else:
+            est_data = simulate_est_data(cur0, Ax)
+            config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        config["it"] = 3
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+
+        config["it"] = 2
+        config["both"] = True
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        ml("63 EST-QUT-AF my", starttime, res)
+
+
 
     return cur
 
@@ -2176,15 +2307,9 @@ def bfgs_trans_all(curs, reg_config, c):
 
     return np.array(res), (trans_noise, angles_noise)
 
-
-def est_position(in_cur, Ax, real_img):
-    cur = np.array(in_cur)
-    config = dict(default_config)
-
-    data_real = findInitialFeatures(real_img, config)
-    
-    points_real = normalize_points(data_real[0], real_img)
-
+def simulate_est_data(cur, Ax, config=None):
+    if config is None:
+        config = dict(default_config)
     primary = np.linspace(-200, 200, 400, True)
     #primary = [0]
     secondary = np.linspace(-200, 200, 400, True)
@@ -2215,35 +2340,71 @@ def est_position(in_cur, Ax, real_img):
     curs = np.array(curs)
     
     projs = Projection_Preprocessing(Ax(curs))
-
-    no_valid = []
+    projs_data = []
     for i in range(projs.shape[1]):
         proj = projs[:,i]
-        (p,v) = trackFeatures(proj, data_real, config)
-        valid = v==1
-        no_valid.append(np.count_nonzero(valid))
+        projs_data.append(findInitialFeatures(proj, config))
 
-    no_valid = np.array(no_valid)
+    return pos, projs, projs_data
 
-    lv = np.argsort(no_valid)[::-1]
-    b = lv[0]
 
-    title = str(b)
-    if b < len(primary):
-        bp = primary[b]
-        primary = []
-        title += " " + str(bp) + " primary"
-    elif b < (len(primary)+len(secondary)):
-        bs = secondary[b-len(primary)]
-        secondary = []
-        title += " " + str(bs) + " secondary"
+def est_position(in_cur, Ax, real_imgs, est_data=None):
+    cur = np.array(in_cur)
+    config = dict(default_config)
+
+    perftime = time.perf_counter()
+    print("simulate and find", end=' ')
+    if est_data is None:
+        pos, projs, projs_data = simulate_est_data(cur, Ax, config)
     else:
-        bt = tertiary[b-len(primary)-len(secondary)]
-        tertiary = []
-        title += " " + str(bt) + " tertiary"
-    
+        pos, projs, projs_data = est_data
+    print(time.perf_counter()-perftime)
+    perftime = time.perf_counter()
+    #print("evaluate", end=' ')
+    curs = []
+    poss = []
+    for real_img in real_imgs:
+        data_real = findInitialFeatures(real_img, config)
+        no_valid = []
+        for i in range(projs.shape[1]):
+            #proj = projs[:,i]
+            #(p,v) = trackFeatures(proj, data_real, config)
+            (p,v) = matchFeatures(projs_data[i], data_real)
+            valid = v==1
+            no_valid.append(np.count_nonzero(valid))
+
+        no_valid = np.array(no_valid)
+
+        lv = np.argsort(no_valid)[::-1]
+        b = lv[0]
+        #print(time.perf_counter()-perftime)
+        perftime = time.perf_counter()
+        #print("rotate", end=' ')
+
+        bp, bs, bt = pos[b]
+
+        proj = projs[:,b]
+        (p,v) = trackFeatures(proj, data_real, config)
+        points_new = normalize_points(p, proj)
+        points_real = normalize_points(data_real[0], real_img)
+        
+        new_mid = np.mean(points_new, axis=0)
+        real_mid = np.mean(points_real, axis=0)
+
+        points_new = points_new - new_mid
+        points_real = points_real - real_mid
+
+        c = np.linalg.norm(points_new-points_real, axis=-1)
+        a = np.linalg.norm(points_new, axis=-1)
+        b = np.linalg.norm(points_real, axis=-1)
+
+        angle = np.arccos((a*a+b*b-c*c) / (2*a*b))*180.0/np.pi
+        print(np.min(angle), np.mean(angle), np.median(angle), np.max(angle))
+        bt = -np.median(angle)
+        #print(time.perf_counter()-perftime)
+        curs.append(applyRot(in_cur, bp, bs, bt))
+        poss.append(np.array([bp, bs, bt]))
     #plt.figure()
     #plt.title(title)
     #plt.plot(np.arange(len(no_valid)), no_valid)
-
-    return applyRot(in_cur, bp, bs, bt), np.array([bp, bs, bt])
+    return np.array(curs), np.array(poss)

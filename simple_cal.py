@@ -5,6 +5,7 @@ from utils import applyRot, Ax_param_asta, default_config
 import multiprocessing as mp
 import sys
 import io
+import matplotlib.pyplot as plt
 
 def correctXY(in_cur, config):
     cur = np.array(in_cur)
@@ -103,14 +104,15 @@ def correctFlip(in_cur, config):
     real_img = config["real_img"]
     Ax = config["Ax"]
 
-    curs = np.array([np.array(in_cur), applyRot(in_cur, 0, 0, 180)])
+    curs = np.array([np.array(in_cur), applyRot(in_cur, 0, 0, 180), applyRot(in_cur, 180, 0, 180), applyRot(in_cur, 180, 0, 0)])
     projs = Projection_Preprocessing(Ax(curs))
 
+    #print(projs.shape)
     features = [trackFeatures(projs[:,i], data_real, config) for i in range(projs.shape[1])]
 
     points_real, features_real = data_real
     points_real = normalize_points(points_real, real_img)
-    real_img = Projection_Preprocessing(real_img)
+    #real_img = Projection_Preprocessing(real_img)
 
     values = np.array([calcPointsObjective(-6, normalize_points(points[v], projs[:,i]), points_real[v]) for i,(points,v) in enumerate(features)])
 

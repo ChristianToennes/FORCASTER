@@ -13,10 +13,10 @@ def trackFeatures(next_img, data, config):
     #matcher = cv2.FlannBasedMatcher(index_params,search_params)
     #matcher = cv2.DescriptorMatcher_create(cv2.DescriptorMatcher_FLANNBASED)
     #matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-    #return matchFeatures(data, sim_data)
+    return matchFeatures(data, sim_data, config)
 
-#def matchFeatures(real_data, sim_data):
-    base_points, f1 = data
+def matchFeatures(real_data, sim_data, config=None):
+    base_points, f1 = real_data
     new_points, f2 = sim_data
     #matcher = cv2.DescriptorMatcher_create(cv2.DescriptorMatcher_BRUTEFORCE_HAMMING)
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
@@ -53,6 +53,7 @@ def trackFeatures(next_img, data, config):
             valid[ms[0].queryIdx] = False
 
     dists = np.array(dists)
+    #print(np.count_nonzero(valid))
     
     matchesMask2 = np.array(matchesMask)
 
@@ -65,6 +66,7 @@ def trackFeatures(next_img, data, config):
                     matchesMask2[i2,0] = 0
 
     matchesMask3 = np.array(matchesMask2)
+    #print(np.count_nonzero(valid))
 
     if len(dists[valid])>0:
         p_new = np.array([[p.pt[0], p.pt[1]] for p in new_points[points]])
@@ -79,6 +81,7 @@ def trackFeatures(next_img, data, config):
         #print(np.count_nonzero(out[valid]))
         valid[out] = False
 
+    #print(np.count_nonzero(valid))
     
     if False:
         real_img = config["real_img"]

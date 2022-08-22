@@ -5,8 +5,10 @@ import SimpleITK as sitk
 import time
 import matplotlib.pyplot as plt
 from itertools import zip_longest
+import cv2
 
-default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 4},
+default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 5, 
+    "descriptor_type": cv2.AKAZE_DESCRIPTOR_MLDB, "descriptor_size": 0, "descriptor_channels": 3, "diffusivity": cv2.KAZE_DIFF_PM_G2},
 "my": True, "grad_width": (1,25), "noise": None, "both": False, "max_change": 1}
 
 def FP(img, dist_detector_source, ratio):
@@ -666,7 +668,6 @@ def coord_systems2vecs(coord_systems, detector_spacing, dist_source_origin, dist
         
         prims.append(np.arctan2(z_axis[1], z_axis[2]))
         secs.append(np.arctan2(z_axis[0], z_axis[2]))
-
         v_detector = z_axis * dist_origin_detector*image_spacing + iso*image_spacing
         v_source = -z_axis * dist_source_origin*image_spacing + iso*image_spacing
 
@@ -993,7 +994,7 @@ def read_cbct_info(path):
     os.dup2(null_fds[1], 2)
 
     # *** run the function ***
-
+    
     sitk.ProcessObject_GlobalDefaultDebugOff()
     sitk.ProcessObject_GlobalWarningDisplayOff()
     reader = sitk.ImageSeriesReader()
