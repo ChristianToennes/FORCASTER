@@ -105,6 +105,7 @@ def correctFlip(in_cur, config):
     Ax = config["Ax"]
 
     curs = np.array([np.array(in_cur), applyRot(in_cur, 0, 0, 180), applyRot(in_cur, 180, 0, 180), applyRot(in_cur, 180, 0, 0)])
+    #curs = np.array([np.array(in_cur), applyRot(in_cur, 180, 0, 0)])
     projs = Projection_Preprocessing(Ax(curs))
 
     #print(projs.shape)
@@ -123,6 +124,65 @@ def correctTrans(cur, config):
     cur = correctXY(cur, config)
     cur = correctZ(cur, config)
     cur = correctXY(cur, config)
+    return cur
+
+def correctRotZ(in_cur, config): 
+    cur = np.array(in_cur)
+
+    data_real = config["data_real"]
+    real_img = config["real_img"]
+    Ax = config["Ax"]
+
+    points_real, features_real = data_real
+    points_real = normalize_points(points_real, real_img)
+    real_img = Projection_Preprocessing(real_img)
+
+    its = 3
+    if "it" in config:
+        its = config["it"]
+    for i in range(its):
+        projs = Projection_Preprocessing(Ax(np.array([cur])))
+        p,v = trackFeatures(projs[:,0], data_real, config)
+        points = normalize_points(p, projs[:,0])
+        valid = v==1
+    
+        points = points[valid]
+        
+        points_r = points_real[valid]
+        new_mid = np.mean(points, axis=0)
+        real_mid = np.mean(points_r, axis=0)
+
+        points = points - new_mid
+        points_r = points_r- real_mid
+
+        #c = np.linalg.norm(points_new-points_real, axis=-1)
+        #a = np.linalg.norm(points, axis=-1)
+        #b = np.linalg.norm(points_r, axis=-1)
+        #print(a.shape, b.shape, points_new.shape)
+
+        #angle = np.arccos((a*a+b*b-c*c) / (2*a*b))*180.0/np.pi
+        #angle_cos = np.arccos( (points[:,0]*points_r[:,0]+points[:,1]*points_r[:,1]) / (a*b) )*180.0/np.pi
+        angle = (np.arctan2(points[:,0], points[:,1])-np.arctan2(points_r[:,0], points_r[:,1])) * 180.0/np.pi
+        angle[angle<-180] += 360
+        angle[angle>180] -= 360
+
+        #print(np.min(angle), np.mean(angle), np.median(angle), np.max(angle))
+        #print(np.min(angle_cos), np.mean(angle_cos), np.median(angle_cos), np.max(angle_cos))
+        projs = Projection_Preprocessing(Ax(np.array([applyRot(cur, 0,0,-np.median(angle)), applyRot(cur, 0,0,np.median(angle))])))
+        p,v = trackFeatures(projs[:,0], data_real, config)
+        points = normalize_points(p, projs[:,0])
+        valid = v==1
+        diffn = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])
+        p,v = trackFeatures(projs[:,1], data_real, config)
+        points = normalize_points(p, projs[:,1])
+        valid = v==1
+        diffp = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])
+
+        if np.sum(np.abs(diffn)) < np.sum(np.abs(diffp)):
+            cur = applyRot(cur, 0, 0, -np.median(angle))
+        else:
+            cur = applyRot(cur, 0, 0, np.median(angle))
+        #bt = -np.median(angle)
     return cur
 
 def correctAll(curs, config):
