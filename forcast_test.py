@@ -1161,12 +1161,13 @@ def write_rec(geo, ims, filepath, mult=1):
     mult = int(np.round(ims.shape[1] / geo['DetectorRowCount']))
     geo = astra.create_proj_geom('cone_vec', ims.shape[1], ims.shape[2], geo["Vectors"]*mult)
     out_shape = (out_rec_meta[3][0]*mult, out_rec_meta[3][1]*mult, out_rec_meta[3][2]*mult)
+    print(ims.shape, len(geo['Vectors']))
     rec = utils.FDK_astra(out_shape, geo, np.swapaxes(ims, 0,1))
     #mask = np.zeros(rec.shape, dtype=bool)
-    mask = create_circular_mask(rec.shape)
-    rec = rec*mask
-    del mask
-    write_images(rec, filepath, mult)
+    #mask = create_circular_mask(rec.shape)
+    #rec = rec*mask
+    #del mask
+    write_images(rec*1000, filepath, mult)
     return
 
     rec = utils.SIRT_astra(out_shape, geo, np.swapaxes(ims, 0,1), 200)
@@ -1203,7 +1204,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
 
     print(name, grad_width)
     params = np.array(in_params[:])
-    if not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
+    if False and not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
         rec = sitk.GetImageFromArray(real_image)*100
         rec.SetOrigin(out_rec_meta[0])
         out_spacing = (out_rec_meta[2][0],out_rec_meta[2][1],out_rec_meta[2][2])
@@ -1483,7 +1484,7 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33, 60, 62, 63]),
+    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33,60,60.5,61,62,63,64,65]),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
