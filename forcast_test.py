@@ -84,7 +84,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     
     fs = np.array(fs).flatten()
 
-    skip = 4
+    skip = 2
     if images.shape[1] < 1000:
         skip = 2
     #if images.shape[1] < 600:
@@ -111,7 +111,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     #    norm_img = images[i][sel[i]].reshape(norm_images_gained[0].shape)
     #    norm_images_ungained[i] = norm_img
 
-    oskip = 4
+    oskip = 2
     if images.shape[2] > 2000:
         oskip = 4
     if edges <= 0:
@@ -1214,14 +1214,14 @@ def reg_and_reco(ims_big, ims, in_params, config):
         sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims,0,1)))
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd"), True)
         del sino
-    if False and not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         write_rec(reg_geo, ims_big, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"))
     if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
         sino = cal.Projection_Preprocessing(Ax(params))
-        img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
-            np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
-        cv2.imwrite("img\\check_" + name + "_pre.png", img)
+        #img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
+        #    np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
+        #cv2.imwrite("img\\check_" + name + "_pre.png", img)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd"), True)
         del sino
@@ -1807,10 +1807,11 @@ def reg_real_data():
             detector_mult = int(np.floor(detector_shape[0] / ims_un.shape[1]))
             
             detector_shape = np.array(ims_un.shape[1:])
+            #detector_spacing = np.array((0.125, 0.125)) * detector_mult
             detector_spacing = np.array((0.154, 0.154)) * detector_mult
 
             real_image = utils.fromHU(sitk.GetArrayFromImage(image))
-            real_image = np.swapaxes(np.swapaxes(real_image, 0,2), 0,1)[::-1,:,::-1]
+            #real_image = np.swapaxes(np.swapaxes(real_image, 0,2), 0,1)[::-1,:,::-1]
 
             global out_rec_meta
             out_rec_meta = (image.GetOrigin(), image.GetSize(), image.GetSpacing(), real_image.shape)
@@ -1847,12 +1848,12 @@ def reg_real_data():
                 params0[:,1,0] = 1
                 params0[:,2,1] = 1
                 #params[:,0] = coord_systems[:,:,3]
-                #params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
-                params[:,1] = np.array(geo['Vectors'][:, 6:9])
-                #params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
-                params[:,2] = np.array(geo['Vectors'][:, 9:12])
+                params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
+                #params[:,1] = np.array(geo['Vectors'][:, 6:9])
+                params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
+                #params[:,2] = np.array(geo['Vectors'][:, 9:12])
             
-            print(params[0,1], params[0,2])
+            #print(params[0,1], params[0,2])
 
             if True:
                 for i, (α,β,γ) in enumerate(angles_noise):
@@ -1877,7 +1878,7 @@ def reg_real_data():
             i0s = np.array([i0_est(ims_un[i], projs[:,i])*res for i in range(ims_un.shape[0])])
             i0s = np.mean(i0s, axis=0)
             i0s[i0s==0] = 1e-8
-            i0s = np.mean(i0s)
+            #i0s = np.mean(i0s)
             ims_un = -np.log(ims_un/i0s)
 
             #sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
@@ -1893,7 +1894,7 @@ def reg_real_data():
             i0s = np.array([i0_est(ims[i], projs[:,i])*res for i in range(ims.shape[0])])
             i0s = np.mean(i0s, axis=0)
             i0s[i0s==0] = 1e-8
-            i0s = np.mean(i0s)
+            #i0s = np.mean(i0s)
             ims = -np.log(ims/i0s)
             
             #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
