@@ -413,6 +413,10 @@ def reg_rough(ims, params, config, c=0):
     corrs = [None]*len(params)
     noise = config["noise"]
     config["log_queue"] = mp.Queue()
+    with open("est_data.dump", "rb") as f:
+        est_data_ser = pickle.load(f)
+        config["est_data"] = utils.unserialize_est_data(est_data_ser)
+        est_data_ser = None
     for i in reversed(range(len(params))):
     #for i in [29]:
         print(i, end=",", flush=True)
@@ -449,10 +453,12 @@ def reg_rough(ims, params, config, c=0):
     return corrs
 
 import multiprocessing as mp
+from multiprocessing import shared_memory as mp_shm
+import pickle
 import sys
 import io
 
-def it_func(con, Ax_params, log_queue, ready, name):
+def it_func(con, Ax_params, log_queue, ready, name, est_data_name):
     if name != None:
         profiler = cProfile.Profile()
     try:
@@ -462,11 +468,29 @@ def it_func(con, Ax_params, log_queue, ready, name):
         Ax = None
         Ax = utils.Ax_param_asta(*Ax_params)
         est_data = None
+        #cur0 = np.zeros((3, 3), dtype=float)
+        #cur0[1,0] = 1
+        #cur0[2,1] = 1
+        #est_data = cal.simulate_est_data(cur0, Ax)
+        #est_data_ser = [None, None]
+        #shm = mp_shm.SharedMemory(est_data_name+"_0")
+        #est_data_ser[0] = pickle.loads(shm.buf)
+        #shm.close()
+        #shm = mp_shm.SharedMemory(est_data_name+"_1")
+        #est_data_ser[1] = pickle.loads(shm.buf)
+        #shm.close()
+        with open("est_data.dump", "rb") as f:
+            est_data_ser = pickle.load(f)
+            est_data = utils.unserialize_est_data(est_data_ser)
+            est_data_ser = None
+            con.send(("loaded",))
         while True:
             try:
                 con.send(("ready",))
                 ready.set()
                 (i, cur, im, target_sino, noise, method) = con.recv()
+                if i == None:
+                    break
                 #print(i)
                 old_stdout = sys.stdout
                 sys.stdout = stringout = io.StringIO()
@@ -474,9 +498,9 @@ def it_func(con, Ax_params, log_queue, ready, name):
                 if name != None:
                     profiler.enable()    
                 real_img = cal.Projection_Preprocessing(im)
-                if method == "estimate":
-                    if est_data is None:
-                        est_data = cal.simulate_est_data(cur, Ax)
+                #if method == "estimate":
+                #    if est_data is None:
+                #        est_data = cal.simulate_est_data(cur, Ax)
                 cur_config = {"real_img": real_img, "Ax": Ax, "log_queue": log_queue, "name": str(i), "target_sino": target_sino, "est_data": est_data}
                 try:
                     if method >= 0:
@@ -546,6 +570,13 @@ def reg_rough_parallel(ims, params, config, c=0):
     log_proc = mp.Process(target=it_log, args=(log_queue,), daemon=True)
     log_proc.start()
 
+    #d = pickle.dumps(config["est_data_ser"][0])
+    #shm = mp_shm.SharedMemory(name="est_data_0", create=True, size=len(d))
+    #shm.buf[:] = d
+    #d = pickle.dumps(config["est_data_ser"][1])
+    #shm1 = mp_shm.SharedMemory(name="est_data_1", create=True, size=len(d))
+    #shm1.buf[:] = d
+
     while np.array([e is None for e in corrs]).any(): #len(indices)>0:
         ready_con = None
         while ready_con is None:
@@ -555,10 +586,14 @@ def reg_rough_parallel(ims, params, config, c=0):
                     name = config["name"]+"_"+str(proc_count)
                 else:
                     name = None
-                proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], log_queue, ready, name), daemon=True)
+                proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], log_queue, ready, name, "est_data"), daemon=True)
                 proc.start()
                 proc_count += 1
                 pool.append([p[0], p[1], proc, -1])
+                res = p[0].recv()
+                if res[0] != "loaded":
+                    print(res)
+                    return
             ready.clear()
             finished_con = []
             for con in pool:
@@ -595,14 +630,20 @@ def reg_rough_parallel(ims, params, config, c=0):
             if config["estimate"]:
                 ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], (config["noise"][0][i],config["noise"][1][i]), "estimate"))
             else:
-                ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], (config["noise"][0][i],config["noise"][1][i]), c))
+                ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], None, c))
+                #ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], config["est_data_ser"], c))
             ready_con[3] = i
 
     for con in pool:
+        con[0].send((None,2,3,4,5,6))
         con[2].terminate()
         con[0].close()
         con[1].close()
 
+    #shm.close()
+    #shm.unlink()
+    #shm1.close()
+    #shm1.unlink()
     log_queue.put(("exit", 0))
         
     corrs = np.array(corrs.tolist())
@@ -1163,10 +1204,10 @@ def write_rec(geo, ims, filepath, mult=1):
     out_shape = (out_rec_meta[3][0]*mult, out_rec_meta[3][1]*mult, out_rec_meta[3][2]*mult)
     print(ims.shape, len(geo['Vectors']))
     rec = utils.FDK_astra(out_shape, geo, np.swapaxes(ims, 0,1))
-    #mask = np.zeros(rec.shape, dtype=bool)
-    #mask = create_circular_mask(rec.shape)
-    #rec = rec*mask
-    #del mask
+    mask = np.zeros(rec.shape, dtype=bool)
+    mask = create_circular_mask(rec.shape)
+    rec = rec*mask
+    del mask
     write_images(rec*1000, filepath, mult)
     return
 
@@ -1262,9 +1303,9 @@ def reg_and_reco(ims_big, ims, in_params, config):
     #print(params, corrs)
     if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
         sino = Ax(corrs)
-        img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
-            np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
-        cv2.imwrite("img\\check_" + name + "_post.png", img)
+        #img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
+        #    np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
+        #cv2.imwrite("img\\check_" + name + "_post.png", img)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-output.nrrd"), True)
         #evalPerformance(np.swapaxes(sino, 0, 1), ims, perftime, name)
@@ -1467,6 +1508,7 @@ def get_proj_paths():
     #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
     #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
+    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33,42,60,61,62,63,64,65]),
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [50,52]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-44,-58,-34,-24,33,42]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-43,-57,34,41]), # reduced noise
@@ -1484,7 +1526,7 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33,60,60.5,61,62,63,64,65]),
+    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [42,35]),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
@@ -1902,6 +1944,22 @@ def reg_real_data():
 
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, 
                     "target_sino": target_sino, "threads": mp.cpu_count(), "paralell": True}
+
+            if not os.path.exists("est_data.dump"): 
+                perftime = time.perf_counter()
+                cur0 = np.zeros((3, 3), dtype=float)
+                cur0[1,0] = 1
+                cur0[2,1] = 1
+                est_data = cal.simulate_est_data(cur0, Ax)
+                est_data_ser = utils.serialize_est_data(est_data)
+                with open("est_data.dump", "wb") as f:
+                    pickle.dump(est_data_ser, f)
+                #est_data = utils.unserialize_est_data(config["est_data_ser"])
+                est_data = None
+                est_data_ser = None
+                print("est data", time.perf_counter()-perftime)
+                #print(config["est_data"][1][0], est_data[1][0])
+
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
             for method in methods:
