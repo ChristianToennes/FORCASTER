@@ -84,7 +84,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     
     fs = np.array(fs).flatten()
 
-    skip = 4
+    skip = 2
     if images.shape[1] < 1000:
         skip = 2
     #if images.shape[1] < 600:
@@ -111,7 +111,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     #    norm_img = images[i][sel[i]].reshape(norm_images_gained[0].shape)
     #    norm_images_ungained[i] = norm_img
 
-    oskip = 4
+    oskip = 2
     if images.shape[2] > 2000:
         oskip = 4
     if edges <= 0:
@@ -1161,12 +1161,13 @@ def write_rec(geo, ims, filepath, mult=1):
     mult = int(np.round(ims.shape[1] / geo['DetectorRowCount']))
     geo = astra.create_proj_geom('cone_vec', ims.shape[1], ims.shape[2], geo["Vectors"]*mult)
     out_shape = (out_rec_meta[3][0]*mult, out_rec_meta[3][1]*mult, out_rec_meta[3][2]*mult)
+    print(ims.shape, len(geo['Vectors']))
     rec = utils.FDK_astra(out_shape, geo, np.swapaxes(ims, 0,1))
     #mask = np.zeros(rec.shape, dtype=bool)
-    mask = create_circular_mask(rec.shape)
-    rec = rec*mask
-    del mask
-    write_images(rec, filepath, mult)
+    #mask = create_circular_mask(rec.shape)
+    #rec = rec*mask
+    #del mask
+    write_images(rec*1000, filepath, mult)
     return
 
     rec = utils.SIRT_astra(out_shape, geo, np.swapaxes(ims, 0,1), 200)
@@ -1203,7 +1204,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
 
     print(name, grad_width)
     params = np.array(in_params[:])
-    if not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
+    if False and not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd")):
         rec = sitk.GetImageFromArray(real_image)*100
         rec.SetOrigin(out_rec_meta[0])
         out_spacing = (out_rec_meta[2][0],out_rec_meta[2][1],out_rec_meta[2][2])
@@ -1213,14 +1214,14 @@ def reg_and_reco(ims_big, ims, in_params, config):
         sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims,0,1)))
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd"), True)
         del sino
-    if False and not perf and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
+    if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         write_rec(reg_geo, ims_big, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"))
     if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
         sino = cal.Projection_Preprocessing(Ax(params))
-        img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
-            np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
-        cv2.imwrite("img\\check_" + name + "_pre.png", img)
+        #img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
+        #    np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
+        #cv2.imwrite("img\\check_" + name + "_pre.png", img)
         sino = sitk.GetImageFromArray(sino)
         sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd"), True)
         del sino
@@ -1483,7 +1484,7 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33, 60, 62, 63]),
+    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33,60,60.5,61,62,63,64,65]),
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
@@ -1809,10 +1810,11 @@ def reg_real_data():
             detector_mult = int(np.floor(detector_shape[0] / ims_un.shape[1]))
             
             detector_shape = np.array(ims_un.shape[1:])
+            #detector_spacing = np.array((0.125, 0.125)) * detector_mult
             detector_spacing = np.array((0.154, 0.154)) * detector_mult
 
             real_image = utils.fromHU(sitk.GetArrayFromImage(image))
-            real_image = np.swapaxes(np.swapaxes(real_image, 0,2), 0,1)[::-1,:,::-1]
+            #real_image = np.swapaxes(np.swapaxes(real_image, 0,2), 0,1)[::-1,:,::-1]
 
             global out_rec_meta
             out_rec_meta = (image.GetOrigin(), image.GetSize(), image.GetSpacing(), real_image.shape)
@@ -1849,12 +1851,12 @@ def reg_real_data():
                 params0[:,1,0] = 1
                 params0[:,2,1] = 1
                 #params[:,0] = coord_systems[:,:,3]
-                #params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
-                params[:,1] = np.array(geo['Vectors'][:, 6:9])
-                #params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
-                params[:,2] = np.array(geo['Vectors'][:, 9:12])
+                params[:,1] = np.array([r.dot(v) for v in geo['Vectors'][:, 6:9]])
+                #params[:,1] = np.array(geo['Vectors'][:, 6:9])
+                params[:,2] = np.array([r.dot(v) for v in geo['Vectors'][:, 9:12]])
+                #params[:,2] = np.array(geo['Vectors'][:, 9:12])
             
-            print(params[0,1], params[0,2])
+            #print(params[0,1], params[0,2])
 
             if True:
                 for i, (α,β,γ) in enumerate(angles_noise):
@@ -1879,7 +1881,7 @@ def reg_real_data():
             i0s = np.array([i0_est(ims_un[i], projs[:,i])*res for i in range(ims_un.shape[0])])
             i0s = np.mean(i0s, axis=0)
             i0s[i0s==0] = 1e-8
-            i0s = np.mean(i0s)
+            #i0s = np.mean(i0s)
             ims_un = -np.log(ims_un/i0s)
 
             #sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
@@ -1895,7 +1897,7 @@ def reg_real_data():
             i0s = np.array([i0_est(ims[i], projs[:,i])*res for i in range(ims.shape[0])])
             i0s = np.mean(i0s, axis=0)
             i0s[i0s==0] = 1e-8
-            i0s = np.mean(i0s)
+            #i0s = np.mean(i0s)
             ims = -np.log(ims/i0s)
             
             #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
