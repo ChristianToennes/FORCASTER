@@ -207,7 +207,7 @@ def read_dicoms(indir, max_ims=np.inf):
 
             elif "NumberOfFrames" in dir(ds):
                 if len(ims) == 0:
-                    ims = ds.pixel_array
+                    ims = ds.pixel_array[2:668]
                 else:
                     ims = np.vstack([ims, ds.pixel_array])
 
@@ -1487,6 +1487,8 @@ def get_proj_paths():
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
+    ('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\Arc\\20201020-150938.350000-P16_DR_LD', cbct_path, [60,61,62,63,64,65]),
+    #('2010201_noimbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\P16_DR_LD', cbct_path, [60,61,62,63,64,65]),
     #('2010201_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path, [4, 28, 29]),
     #('2010201_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     ]
@@ -1498,6 +1500,7 @@ def get_proj_paths():
     ]
     cbct_path = prefix + r"\CKM\CBCT\20201207-093148.064000-DCT Head Clear Nat Fill Full HU Normal [AX3D]"
     projs += [
+    ('201207_arc_', prefix + '\\CKM\\ArcTest', cbct_path, [60,61,62,63,64,65])
     #('201207_cbct_', prefix + '\\CKM\\CBCT\\20201207-093148.064000-20sDCT Head 70kV', cbct_path, [4, 28, 29]),
     #('201207_circ_', prefix + '\\CKM\\Circ Tomo 2. Versuch\\20201207-105441.287000-P16_DR_HD', cbct_path, [4, 28, 29]),
     #('201207_eight_', prefix + '\\CKM\\Eight die Zweite\\20201207-143732.946000-P16_DR_HD', cbct_path, [4, 28, 29]),
