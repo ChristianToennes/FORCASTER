@@ -206,8 +206,10 @@ def read_dicoms(indir, max_ims=np.inf):
                 μas = xray_info[2::4]*0.001
 
             elif "NumberOfFrames" in dir(ds):
+                NumberOfFrames = ds.NumberOfFrames
                 if len(ims) == 0:
                     ims = ds.pixel_array[2:668]
+                    NumberOfFrames = len(ims)
                 else:
                     ims = np.vstack([ims, ds.pixel_array])
 
@@ -220,8 +222,8 @@ def read_dicoms(indir, max_ims=np.inf):
                 #cs[:,2] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,2])
                 #cs[:,1] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,1])
 
-                coord_systems.append(cs)
-                cs_interpol.append([cs, float(ds.PositionerPrimaryAngle), float(ds.PositionerSecondaryAngle), int(ds.NumberOfFrames)])
+                #coord_systems.append(cs)
+                #cs_interpol.append([cs, float(ds.PositionerPrimaryAngle), float(ds.PositionerSecondaryAngle), int(NumberOfFrames)])
 
                 rv = cs[:,2]
                 rv /= np.sum(rv**2, axis=-1)
@@ -246,7 +248,9 @@ def read_dicoms(indir, max_ims=np.inf):
                 prims.append(prim)
                 secs.append(sec)
 
-                for i in range(int(ds.NumberOfFrames)):
+                coord_systems = []
+                for i in range(int(NumberOfFrames)):
+                    coord_systems.append(cs)
                     ts.append(len(ts))
                     kvs.append(float(ds.KVP))
                     mas.append(float(ds.XRayTubeCurrent)*float(ds.ExposureTime)*0.001)
@@ -1508,7 +1512,7 @@ def get_proj_paths():
     #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
     #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
-    ('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33,42,60,61,62,63,64,65]),
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33,42,60,61,62,63,64,65]),
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [50,52]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-44,-58,-34,-24,33,42]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-43,-57,34,41]), # reduced noise
@@ -1530,7 +1534,7 @@ def get_proj_paths():
     #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
-    ('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\Arc\\20201020-150938.350000-P16_DR_LD', cbct_path, [60,61,62,63,64,65]),
+    ('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\Arc\\20201020-150938.350000-P16_DR_LD', cbct_path, [60,61,62]),
     #('2010201_noimbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\P16_DR_LD', cbct_path, [60,61,62,63,64,65]),
     #('2010201_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path, [4, 28, 29]),
     #('2010201_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path, [4, 28, 29]),
@@ -1879,7 +1883,7 @@ def reg_real_data():
             
             r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
 
-            if 'arc' in name:
+            if False and 'arc' in name:
                 coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
                 params = params[skip]
                 coord_systems = coord_systems[skip]
