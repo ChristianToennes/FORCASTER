@@ -138,6 +138,7 @@ def correctRotZ(in_cur, config):
     real_img = Projection_Preprocessing(real_img)
 
     its = 3
+    bt = 0
     if "it" in config:
         its = config["it"]
     for i in range(its):
@@ -145,12 +146,17 @@ def correctRotZ(in_cur, config):
         p,v = trackFeatures(projs[:,0], data_real, config)
         points = normalize_points(p, projs[:,0])
         valid = v==1
+        #print(i, np.count_nonzero(valid))
     
         points = points[valid]
         
         points_r = points_real[valid]
-        new_mid = np.mean(points, axis=0)
-        real_mid = np.mean(points_r, axis=0)
+        try:
+            new_mid = np.mean(points, axis=0)
+            real_mid = np.mean(points_r, axis=0)
+        except Exception as e:
+            print(e)
+            return in_cur
 
         points = points - new_mid
         points_r = points_r- real_mid
@@ -172,17 +178,21 @@ def correctRotZ(in_cur, config):
         p,v = trackFeatures(projs[:,0], data_real, config)
         points = normalize_points(p, projs[:,0])
         valid = v==1
+        #print(i, np.count_nonzero(valid))
         diffn = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])
         p,v = trackFeatures(projs[:,1], data_real, config)
         points = normalize_points(p, projs[:,1])
         valid = v==1
+        #print(i, np.count_nonzero(valid))
         diffp = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])
 
+        #print(len(diffn), np.sum(np.abs(diffn)), len(diffp), np.sum(np.abs(diffp)))
         if np.sum(np.abs(diffn)) < np.sum(np.abs(diffp)):
             cur = applyRot(cur, 0, 0, -np.median(angle))
+            bt = -np.median(angle)
         else:
             cur = applyRot(cur, 0, 0, np.median(angle))
-        #bt = -np.median(angle)
+            bt = np.median(angle)
     return cur
 
 def correctAll(curs, config):

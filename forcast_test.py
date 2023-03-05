@@ -84,7 +84,7 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     
     fs = np.array(fs).flatten()
 
-    skip = 2
+    skip = 4
     if images.shape[1] < 1000:
         skip = 2
     #if images.shape[1] < 600:
@@ -422,6 +422,7 @@ def reg_rough(ims, params, config, c=0):
         config["est_data"] = utils.unserialize_est_data(est_data_ser)
         est_data_ser = None
     for i in reversed(range(len(params))):
+        #if i != 486: continue
     #for i in [29]:
         print(i, end=",", flush=True)
         cur = params[i]
@@ -553,7 +554,7 @@ def it_log(log_queue):
 
 def reg_rough_parallel(ims, params, config, c=0):
     corrs = []
-    pool_size = mp.cpu_count()
+    pool_size = config["threads"]
     #if c==28:
     #    pool_size = 2
     #elif c >= 40:
@@ -573,6 +574,8 @@ def reg_rough_parallel(ims, params, config, c=0):
     log_queue = mp.Queue()
     log_proc = mp.Process(target=it_log, args=(log_queue,), daemon=True)
     log_proc.start()
+
+    print(len(params), len(ims), config["target_sino"].shape)
 
     #d = pickle.dumps(config["est_data_ser"][0])
     #shm = mp_shm.SharedMemory(name="est_data_0", create=True, size=len(d))
@@ -614,6 +617,7 @@ def reg_rough_parallel(ims, params, config, c=0):
                                 print(res[1], end='; ', flush=True)
                             elif res[0] == "error":
                                 finished_con.append(con)
+                                #corrs[con[3]] = params[con[3]]
                                 exit(0)
                             else:
                                 print("error", res)
@@ -623,7 +627,7 @@ def reg_rough_parallel(ims, params, config, c=0):
                     finished_con.append(con)
 
             for con in finished_con:
-                indices.append(con[3])
+                #indices.append(con[3])
                 pool.remove(con)
                 con[0].close()
                 con[1].close()
@@ -660,7 +664,7 @@ def create_circular_mask(shape, center=None, radius=None, radius_off=5, end_off=
     if center is None: # use the middle of the image
         center = (int(w/2), int(h/2))
     if radius is None: # use the smallest distance between the center and image walls
-        radius = min(center[0], center[1], w-center[0], h-center[1])
+        radius = min(center[0], center[1], w-center[0], h-center[1])-10
 
     Y, X = np.ogrid[:h, :w]
     dist_from_center = np.sqrt((X - center[0])**2 + (Y-center[1])**2)
@@ -1471,7 +1475,7 @@ def i0_est(real_img, proj_img):
     i0 += 400
     return i0
 
-def i0_data(skip, edges):
+def i0_data(skip, i_edges):
     if os.path.exists("F:\\output"):
         prefix = r"F:\output"
     elif os.path.exists(r"D:\lumbal_spine_13.10.2020\output"):
@@ -1489,6 +1493,8 @@ def i0_data(skip, edges):
         for entry in files:
             path = os.path.abspath(os.path.join(root, entry))
             ds = pydicom.dcmread(path)
+            #print(ds.pixel_array.shape,i_edges, ds.pixel_array.shape[1]//skip)
+            edges = skip*(ds.pixel_array.shape[1]//skip-i_edges)//2
             if edges <= 0:
                 ims.append(np.mean(ds.pixel_array[:,::skip, ::skip], axis=0))
             else:
@@ -1541,7 +1547,7 @@ def get_proj_paths():
     #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
     #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
-    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [33,42,60,61,62,63,64,65]),
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [62,631]),
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [50,52]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-44,-58,-34,-24,33,42]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-43,-57,34,41]), # reduced noise
@@ -1559,11 +1565,11 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [42,35]),
-    #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
-    #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
-    #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
-    ('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\Arc\\20201020-150938.350000-P16_DR_LD', cbct_path, [60,61,62]),
+    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [62,621,632]),
+    ('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [62,621,631,632]),
+    #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4,42,60,60.5,61,62,631]),
+    #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [62,631]),
+    #('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\Arc\\20201020-150938.350000-P16_DR_LD', cbct_path, [62,631]),
     #('2010201_noimbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\P16_DR_LD', cbct_path, [60,61,62,63,64,65]),
     #('2010201_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path, [4, 28, 29]),
     #('2010201_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path, [4, 28, 29]),
@@ -1846,7 +1852,7 @@ def reg_real_data():
             #coord_systems = coord_systems[:20]
             #skip = max(1, int(len(ims_un)/500))
             skip = np.zeros(len(ims_un), dtype=bool)
-            #skip[200] = True
+            #skip[-480:-450] = True
             skip[::1] = True
             #skip[::max(1, int(len(ims_un)/500))] = True
             random = np.random.default_rng(23)
@@ -1889,6 +1895,13 @@ def reg_real_data():
             detector_spacing = np.array((0.154, 0.154)) * detector_mult
 
             real_image = utils.fromHU(sitk.GetArrayFromImage(image))
+            #print(real_image.shape)
+            #real_image = sitk.GetArrayFromImage(sitk.ReadImage("Z:\\recos\\forcast_201020_imbu_cbct_4_reco-output.nrrd"))
+            mask = np.zeros(real_image.shape, dtype=bool)
+            mask = create_circular_mask(real_image.shape)
+            real_image = real_image*mask*0.001
+            del mask
+            print(real_image.shape)
             #real_image = np.swapaxes(np.swapaxes(real_image, 0,2), 0,1)[::-1,:,::-1]
 
             global out_rec_meta
@@ -1912,11 +1925,12 @@ def reg_real_data():
             
             r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
 
-            if False and 'arc' in name:
-                coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
-                params = params[skip]
-                coord_systems = coord_systems[skip]
-            elif 'angle' in name or 'both' in name:
+            if 'arc' in name:
+                #coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
+                #params = params[skip]
+                #coord_systems = coord_systems[skip]
+                target_sino = np.swapaxes(ims, 0,1)
+            if 'angle' in name or 'both' in name:
                 params = np.zeros((len(geo_from_angles['Vectors']), 3, 3), dtype=float)
                 params[:,1] = np.array([r.dot(v) for v in geo_from_angles['Vectors'][:, 6:9]])
                 params[:,2] = np.array([r.dot(v) for v in geo_from_angles['Vectors'][:, 9:12]])
@@ -1949,7 +1963,7 @@ def reg_real_data():
             #sitk.WriteImage(sitk.GetImageFromArray(projs0201i0), "recos/projs0201i0.nrrd")
             #sitk.WriteImage(sitk.GetImageFromArray(np.swapaxes(ims,0,1)), "recos/ims.nrrd")
 
-            i0_ims, i0_mas, i0_kvs = i0_data(detector_mult, 60)
+            i0_ims, i0_mas, i0_kvs = i0_data(detector_mult, ims_un.shape[1])
 
             res = np.mean( np.mean(i0_ims, axis=(1,2))[:,np.newaxis,np.newaxis] / i0_ims, axis=0)
 
@@ -1968,6 +1982,9 @@ def reg_real_data():
             #sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(-np.log(ims/i0s) ,0,1)))
             #sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs_int-input.nrrd"), True)
             #del sino
+            i0_ims, i0_mas, i0_kvs = i0_data(detector_mult, ims.shape[1])
+
+            res = np.mean( np.mean(i0_ims, axis=(1,2))[:,np.newaxis,np.newaxis] / i0_ims, axis=0)
 
             i0s = np.array([i0_est(ims[i], projs[:,i])*res for i in range(ims.shape[0])])
             i0s = np.mean(i0s, axis=0)
@@ -1979,9 +1996,9 @@ def reg_real_data():
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape, outpath, geo); exit(0)
 
             config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, 
-                    "target_sino": target_sino, "threads": mp.cpu_count(), "paralell": True}
+                    "target_sino": target_sino, "threads": mp.cpu_count()-2, "paralell": True}
 
-            if not os.path.exists("est_data.dump"): 
+            if True or not os.path.exists("est_data.dump"): 
                 perftime = time.perf_counter()
                 cur0 = np.zeros((3, 3), dtype=float)
                 cur0[1,0] = 1
