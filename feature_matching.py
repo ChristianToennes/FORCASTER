@@ -15,7 +15,34 @@ def trackFeatures(next_img, data, config):
     #matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     return matchFeatures(data, sim_data, config)
 
-def matchFeatures(real_data, sim_data, config=None):
+def debug_imgs_features(config, next_img, base_points, new_points, matches, matchesMask):
+    real_img = config["real_img"]
+    i = config["prefix"]
+    l=60
+    r=-40
+    t=25
+    b=-25
+    #print(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8).shape)
+    #img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+    #    np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=np.zeros_like(matchesMask), matchColor=(0,255,0), singlePointColor=(100,100,255))
+    #cv2.imwrite(i+"_featurepoints.png", img[t:b,l:r])
+    #m = np.zeros_like(matchesMask)
+    #m[:,0] = 1
+    img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+            np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,matchesMask=matchesMask, matchColor=(0,255,0), singlePointColor=(100,100,255))
+    cv2.imwrite(i+"_knnmatch.png", img[t:b,l:r])
+    #import matplotlib.pyplot as plt
+    #f, (ax1, ax2) = plt.subplots(1,2, squeeze=True)
+    #ax1.imshow(img)
+    #f.savefig("knnmath.png")
+    #img = cv2.drawMatchesKnn(np.array(255*(real_img-np.min(real_img))/(np.max(real_img)-np.min(real_img)),dtype=np.uint8),base_points,
+    #    np.array(255*(next_img-np.min(next_img))/(np.max(next_img)-np.min(next_img)),dtype=np.uint8),new_points,matches,None,
+    #    matchesMask=matchesMask2, matchColor=(0,255,0), singlePointColor=(0,0,255))
+    #ax2.imshow(img)
+    #plt.show()
+    #plt.close()
+
+def matchFeatures(real_data, sim_data, config=None, next_img=None):
     base_points, f1 = real_data
     new_points, f2 = sim_data
     #matcher = cv2.DescriptorMatcher_create(cv2.DescriptorMatcher_BRUTEFORCE_HAMMING)
@@ -42,7 +69,7 @@ def matchFeatures(real_data, sim_data, config=None):
         if len(ms) > 1:
             m,n = ms    
             dists.append(m.distance)
-            if m.distance < 0.75*n.distance:
+            if m.distance < 0.8*n.distance:
                 matchesMask[i,0]=1
                 valid[m.queryIdx] = True
                 points[m.queryIdx] = m.trainIdx
@@ -138,6 +165,9 @@ def matchFeatures(real_data, sim_data, config=None):
         #plt.show()
         #plt.close()
         exit()
+
+    if config is not None and next_img is not None:
+        debug_imgs_features(config, next_img, base_points, new_points, matches, matchesMask3)
 
     if np.count_nonzero(valid) > 100:
         pass
