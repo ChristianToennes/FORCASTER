@@ -556,8 +556,6 @@ def roughRegistration(in_cur, reg_config, c):
         return cal_bfgs_rot.bfgs(cur, reg_config, c)
     if c<=-20:
         return bfgs_trans_all(cur, reg_config, c)
-    config = dict(default_config)
-    config.update(reg_config)
 
     real_img = config["real_img"]
     noise = config["noise"]
@@ -570,6 +568,8 @@ def roughRegistration(in_cur, reg_config, c):
     if noise is None:
         config["noise"] = np.zeros((2,3))
         noise = config["noise"]
+    
+    est_data = config["est_data"]
 
     trans_noise, angles_noise = noise
     config["angle_noise"] = np.array(angles_noise)
@@ -1151,30 +1151,47 @@ def roughRegistration(in_cur, reg_config, c):
         ml("34 QUT-AF my reduced noise", starttime, res)
 
     elif c==35:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "35 QUT-AF my " + config["name"]
+        log_error(cur, config)
         cur = correctFlip(cur, config)
         config["it"] = 3
+        log_error(cur, config)
         cur = correctXY(cur, config)
+        log_error(cur, config)
         cur = correctZ(cur, config)
+        log_error(cur, config)
         cur = correctXY(cur, config)
+        log_error(cur, config)
 
         config["it"] = 2
         config["both"] = True
-        config["objectives"] = {0: -3, 1: -4, 2: -6}
+        config["objectives"] = {0: -4, 1: -3, 2: -6}
         config["use_combined"] = True
         for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
             config["grad_width"]=grad_width
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
             cur = applyRot(cur, d0, d1, d2)
+            log_error(cur, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
+            log_error(cur, config)
         
         config["it"] = 3
         cur = correctXY(cur, config)
+        log_error(cur, config)
         cur = correctZ(cur, config)
+        log_error(cur, config)
         cur = correctXY(cur, config)
+        log_error(cur, config)
+        ml("35 QUT-AF my", starttime, res)
 
     elif c==41:
         starttime = time.perf_counter()
@@ -1247,50 +1264,127 @@ def roughRegistration(in_cur, reg_config, c):
     elif c==60:
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
-        config["name"] = "33 QUT-AF my " + config["name"]
+        config["name"] = "60 QUT-AF my " + config["name"]
 
         cur0 = np.zeros((3, 3), dtype=float)
         cur0[1,0] = 1
         cur0[2,1] = 1
 
-        if("est_data" in config):
-            est_data = config["est_data"]
-        else:
-            est_data = simulate_est_data(cur0, Ax)
-            config["est_data"] = est_data
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
+
+        ml("60 EST-QUT-AF my", starttime, res)
+
+    elif c==60.5:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "60 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        config["it"] = 1
+        cur = correctFlip(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctRotZ(cur, config)
+        cur = correctXY(cur, config)
+
+        ml("60.5 EST-QUT-AF my", starttime, res)
+
+    elif c==61:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "61 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+        #print("e", cur)
+
+        config["it"] = 2
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctRotZ(cur, config)
+        #print("f", cur)
+        log_error(cur, config)
+        cur2 = np.array(cur)
+        for i in range(2):
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            #print("z", cur)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+            cur2 = np.array(cur)
+            try:
+                cur = correctRotZ(cur, config)
+                #print("rz", cur)
+                log_error(cur, config)
+            except Exception as e:
+                print(e)
+                cur = cur2
+
+        ml("61 EST-QUT-AF my", starttime, res)
 
     elif c==62:
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
         config["my"] = False
-        config["name"] = "42 QUT-AF ngi " + config["name"]
+        config["name"] = "62 QUT-AF ngi " + config["name"]
 
         cur0 = np.zeros((3, 3), dtype=float)
         cur0[1,0] = 1
         cur0[2,1] = 1
 
-        if("est_data" in config):
-            est_data = config["est_data"]
-        else:
-            est_data = simulate_est_data(cur0, Ax)
-            config["est_data"] = est_data
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
 
+        config["it"] = 2
         log_error(cur, config)
         cur = correctFlip(cur, config)
         log_error(cur, config)
-        config["it"] = 3
-        cur = correctXY(cur, config)
-        log_error(cur, config)
-        cur = correctZ(cur, config)
-        log_error(cur, config)
-        cur = correctXY(cur, config)
-        log_error(cur, config)
+        for i in range(2):
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
 
-        config["it"] = 3
+        config["it"] = 1
         config["both"] = True
         for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
             res["nit"] += 1
@@ -1300,11 +1394,12 @@ def roughRegistration(in_cur, reg_config, c):
             _cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
-            cur = applyRot(cur, d0, d1, d2)
+            cur = applyRot(cur, d0, d1, 0)
             log_error(cur, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
+            #cur = correctRotZ(cur, config)
             log_error(cur, config)
         
         config["it"] = 3
@@ -1314,37 +1409,93 @@ def roughRegistration(in_cur, reg_config, c):
         log_error(cur, config)
         cur = correctXY(cur, config)
         log_error(cur, config)
+        #cur = correctRotZ(cur, config)
+        #log_error(cur, config)
         ml("62 EST-QUT-AF ngi", starttime, res)
 
-    elif c==63:
+    elif c==621:
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
-        config["name"] = "33 QUT-AF my " + config["name"]
+        config["my"] = False
+        config["name"] = "62 QUT-AF ngi " + config["name"]
 
         cur0 = np.zeros((3, 3), dtype=float)
         cur0[1,0] = 1
         cur0[2,1] = 1
 
-        if("est_data" in config):
-            est_data = config["est_data"]
-        else:
-            est_data = simulate_est_data(cur0, Ax)
-            config["est_data"] = est_data
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
 
+        config["it"] = 1
         log_error(cur, config)
         cur = correctFlip(cur, config)
-        config["it"] = 3
         log_error(cur, config)
+
+        config["it"] = 1
+        config["both"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, 0)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
         cur = correctXY(cur, config)
         log_error(cur, config)
         cur = correctZ(cur, config)
         log_error(cur, config)
         cur = correctXY(cur, config)
         log_error(cur, config)
+        #cur = correctRotZ(cur, config)
+        #log_error(cur, config)
+        ml("62 EST-QUT-AF ngi", starttime, res)
+
+    elif c==63:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "63 QUT-AF my " + config["name"]
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
 
         config["it"] = 2
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        log_error(cur, config)
+        for i in range(2):
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+
+        config["it"] = 1
         config["both"] = True
         config["objectives"] = {0: -6, 1: -6, 2: -6}
         config["use_combined"] = True
@@ -1353,14 +1504,15 @@ def roughRegistration(in_cur, reg_config, c):
             res["nfev"] += grad_width[1] * 2 * 3
             res["njev"] += 3
             config["grad_width"]=grad_width
-            _cur, d2 = linsearch(cur, 2, config)
+            #_cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
-            cur = applyRot(cur, d0, d1, d2)
+            cur = applyRot(cur, d0, d1, 0)
             log_error(cur, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
+            cur = correctRotZ(cur, config)
             log_error(cur, config)
         
         config["it"] = 3
@@ -1370,8 +1522,310 @@ def roughRegistration(in_cur, reg_config, c):
         log_error(cur, config)
         cur = correctXY(cur, config)
         log_error(cur, config)
+        cur = correctRotZ(cur, config)
+        log_error(cur, config)
         ml("63 EST-QUT-AF my", starttime, res)
 
+    elif c==630:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "63 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        config["it"] = 2
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        log_error(cur, config)
+        for i in range(2):
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+
+        config["it"] = 1
+        config["both"] = True
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            #_cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, 0)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctRotZ(cur, config)
+        log_error(cur, config)
+        ml("63 EST-QUT-AF my", starttime, res)
+
+    elif c==631:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "63 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        config["it"] = 2
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        log_error(cur, config)
+        for i in range(2):
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+
+        config["it"] = 1
+        config["both"] = True
+        config["objectives"] = {0: -4, 1: -3, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            #_cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, 0)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctRotZ(cur, config)
+        log_error(cur, config)
+        ml("63 EST-QUT-AF my", starttime, res)
+
+    elif c==632:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "63 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        config["it"] = 1
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        log_error(cur, config)
+
+        config["it"] = 1
+        config["both"] = True
+        config["objectives"] = {0: -4, 1: -3, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            #_cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, 0)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctRotZ(cur, config)
+        log_error(cur, config)
+        ml("63 EST-QUT-AF my", starttime, res)
+
+    elif c==64:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["my"] = False
+        config["name"] = "64 QUT-AF ngi " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        config["it"] = 2
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        log_error(cur, config)
+        for i in range(2):
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+
+        config["it"] = 1
+        config["both"] = True
+        config["my"] = False
+        for grad_width in [(3, 15), (2.5, 15), (2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            #_cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, 0)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctRotZ(cur, config)
+        log_error(cur, config)
+        ml("64 EST-QUT-AF ngi", starttime, res)
+
+    elif c==65:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "65 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        config["it"] = 2
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        log_error(cur, config)
+        for i in range(2):
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+
+        config["it"] = 1
+        config["both"] = True
+        config["objectives"] = {0: -4, 1: -3, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(3,15), (2.5,15), (2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            #_cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, 0)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctRotZ(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctRotZ(cur, config)
+        log_error(cur, config)
+        ml("65 EST-QUT-AF my", starttime, res)
 
 
     return cur
@@ -2307,102 +2761,198 @@ def bfgs_trans_all(curs, reg_config, c):
 
     return np.array(res), (trans_noise, angles_noise)
 
+pdim = 90
+sdim = 90
+
 def simulate_est_data(cur, Ax, config=None):
     if config is None:
         config = dict(default_config)
-    primary = np.linspace(-200, 200, 400, True)
+    primary = np.linspace(0, 360, pdim, False)
     #primary = [0]
-    secondary = np.linspace(-200, 200, 400, True)
-    #secondary = [0]
-    tertiary = np.linspace(-90, 90, 180, True)
+    secondary = np.linspace(0, 360, sdim, False)
+    #tertiary = [0]
+    #tertiary = np.linspace(-90, 90, 180, True)
     tertiary = [0]
+    
+    r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
 
-    bp = 0
-    bs = 0
-    bt = 0
+    bp = 90
+    bs = 10
+    bt = -90
 
-    curs = []
     pos = []
+    projs_data = []
     for p in primary:
-        dcur = applyRot(cur, p, bs, bt)
-        curs.append(dcur)
-        pos.append([p, bs, bt])
-    for s in secondary:
-        dcur = applyRot(cur, bp, s, bt)
-        curs.append(dcur)
-        pos.append([bp, s, bt])
-    for t in tertiary:
-        dcur = applyRot(cur, bp, bs, t)
-        curs.append(dcur)
-        pos.append([bp, bs, t])
+        curs = []
+        #dcur = applyRot(cur, p, bs, bt)
+        #curs.append(dcur)
+        #pos.append([p, bs, bt])
+        for s in secondary:
+            dcur = applyRot(cur, p+bp, s+bs, bt)
+            #dcur[1] = r.dot(dcur[1])
+            #dcur[2] = r.dot(dcur[2])
+            curs.append(dcur)
+            pos.append([p+bp, s+bs, bt])
+    #for t in tertiary:
+    #    dcur = applyRot(cur, bp, bs, t)
+    #    curs.append(dcur)
+    #    pos.append([bp, bs, t])
+    
+    #curs = np.array([r.dot(v) for v in curs])
+
+        curs = np.array(curs)
+        
+        projs = Projection_Preprocessing(Ax(curs))
+        #import SimpleITK as sitk
+        #sitk.WriteImage(sitk.GetImageFromArray(projs), "Z:\\recos\\est_data.nrrd")
+        #exit(0)
+        for i in range(projs.shape[1]):
+            proj = projs[:,i]
+            projs_data.append(findInitialFeatures(proj, config))
+        
 
     pos = np.array(pos)
-    curs = np.array(curs)
-    
-    projs = Projection_Preprocessing(Ax(curs))
-    projs_data = []
-    for i in range(projs.shape[1]):
-        proj = projs[:,i]
-        projs_data.append(findInitialFeatures(proj, config))
-
-    return pos, projs, projs_data
+    return pos, projs_data
 
 
-def est_position(in_cur, Ax, real_imgs, est_data=None):
+def est_position(in_cur, Ax, real_imgs, est_data):
     cur = np.array(in_cur)
     config = dict(default_config)
 
     perftime = time.perf_counter()
-    print("simulate and find", end=' ')
-    if est_data is None:
-        pos, projs, projs_data = simulate_est_data(cur, Ax, config)
-    else:
-        pos, projs, projs_data = est_data
-    print(time.perf_counter()-perftime)
+    #print("simulate and find", end=' ')
+    #if est_data is None:
+        #pos, projs_data = simulate_est_data(cur, Ax, config)
+    #else:
+    pos, projs_data = est_data
+    #print(time.perf_counter()-perftime)
     perftime = time.perf_counter()
     #print("evaluate", end=' ')
     curs = []
     poss = []
+    vmax = 0
+    index = (0,0)
     for real_img in real_imgs:
         data_real = findInitialFeatures(real_img, config)
+        points_real = normalize_points(data_real[0], real_img)
         no_valid = []
-        for i in range(projs.shape[1]):
-            #proj = projs[:,i]
-            #(p,v) = trackFeatures(proj, data_real, config)
-            (p,v) = matchFeatures(projs_data[i], data_real)
-            valid = v==1
-            no_valid.append(np.count_nonzero(valid))
+        indexes = []
+        for i in range(0, pdim, 5):
+            for j in range(0, sdim, 5):
+                #proj = projs[:,i]
+                #(p,v) = trackFeatures(proj, data_real, config)
+                (p,v) = matchFeatures(data_real, projs_data[i*sdim+j])
+                valid = np.count_nonzero(v==1)
+                #points_new = normalize_points(p[v], real_img)
+                #valid = calcPointsObjective(-6, points_new, points_real[v])
+                no_valid.append(valid)
+                indexes.append((i,j))
+                if vmax==0 or valid > vmax:
+                    vmax = valid
+                    index = (i,j)
+        #np.sort(no_valid)[::-1]
+        index2 = index
+        indexes = np.array(indexes)
+        vmax = 0
+        indexes2 = set()
+        for index in indexes[np.argsort(no_valid)[-4:]]:
+            for i in range(index[0]-4,index[0]+5,1):
+                if i < 0 or i >= pdim: continue
+                for j in range(index[1]-4,index[1]+5,1):
+                    if j < 0 or j >= sdim: continue
+                    indexes2.add((i,j))
+        for (i,j) in indexes2:
+            (p,v) = matchFeatures(data_real, projs_data[i*sdim+j])
+            valid = np.count_nonzero(v==1)
+            #points_new = normalize_points(p[v], real_img)
+            #valid = calcPointsObjective(-6, points_new, points_real[v])
+            #no_valid.append(valid)
+            if vmax == 0 or valid > vmax:
+                vmax = valid
+                index2 = (i,j)
 
-        no_valid = np.array(no_valid)
+        index = index2
 
-        lv = np.argsort(no_valid)[::-1]
-        b = lv[0]
+        #no_valid = np.array(no_valid)
+
+        #lv = np.argsort(no_valid)[::-1]
+        #b = lv[0]
+        b = index[0]*sdim+index[1]
         #print(time.perf_counter()-perftime)
         perftime = time.perf_counter()
         #print("rotate", end=' ')
 
         bp, bs, bt = pos[b]
 
-        proj = projs[:,b]
-        (p,v) = trackFeatures(proj, data_real, config)
-        points_new = normalize_points(p, proj)
-        points_real = normalize_points(data_real[0], real_img)
+        #(p,v) = matchFeatures(data_real, projs_data[b], config)
+        #print(np.count_nonzero(v), projs_data[b][0].shape, data_real[0].shape)
+        (p,v) = matchFeatures(data_real, projs_data[b], config)
+        #print(np.count_nonzero(v), projs_data[b][0].shape, data_real[0].shape)
+        #print(p.shape, v.shape, projs_data[b][0].shape, data_real[0].shape)
+        points_new = normalize_points(p[v], real_img)
+        #points_real = normalize_points(projs_data[b][0][v], real_img)
+        points_r = points_real[v]
         
         new_mid = np.mean(points_new, axis=0)
-        real_mid = np.mean(points_real, axis=0)
+        real_mid = np.mean(points_r, axis=0)
 
         points_new = points_new - new_mid
-        points_real = points_real - real_mid
+        points_r = points_r - real_mid
 
-        c = np.linalg.norm(points_new-points_real, axis=-1)
-        a = np.linalg.norm(points_new, axis=-1)
-        b = np.linalg.norm(points_real, axis=-1)
+        #c = np.linalg.norm(points_new-points_real, axis=-1)
+        #a = np.linalg.norm(points_new, axis=-1)
+        #b = np.linalg.norm(points_real, axis=-1)
+        #print(a.shape, b.shape, points_new.shape)
 
-        angle = np.arccos((a*a+b*b-c*c) / (2*a*b))*180.0/np.pi
-        print(np.min(angle), np.mean(angle), np.median(angle), np.max(angle))
-        bt = -np.median(angle)
+        #angle = np.arccos((a*a+b*b-c*c) / (2*a*b))*180.0/np.pi
+        #val = (points_new[:,0]*points_real[:,0]+points_new[:,1]*points_real[:,1]) / (a*b)
+        #angle_cos = np.arccos( val )*180.0/np.pi
+        angle = (np.arctan2(points_new[:,0], points_new[:,1])-np.arctan2(points_r[:,0], points_r[:,1])) * 180.0/np.pi
+        angle[angle<-180] += 360
+        angle[angle>180] -= 360
+
+        #print(np.min(angle), np.mean(angle), np.median(angle), np.max(angle))
+        #print(np.min(angle_cos), np.mean(angle_cos), np.median(angle_cos), np.max(angle_cos))
+        projs = Projection_Preprocessing(Ax(np.array([applyRot(cur, 0,0,-np.median(angle)), applyRot(cur, 0,0,np.median(angle)) ]))) #, applyRot(cur, 180,0,-np.median(angle)), applyRot(cur, 180,0,np.median(angle))])))
+        p,v = trackFeatures(projs[:,0], data_real, config)
+        points = normalize_points(p, projs[:,0])
+        valid = v==1
+        diffn = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+        p,v = trackFeatures(projs[:,1], data_real, config)
+        points = normalize_points(p, projs[:,1])
+        valid = v==1
+        diffp = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+        #p,v = trackFeatures(projs[:,0], data_real, config)
+        #points = normalize_points(p, projs[:,2])
+        #valid = v==1
+        #diffnf = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+        #p,v = trackFeatures(projs[:,1], data_real, config)
+        #points = normalize_points(p, projs[:,3])
+        #valid = v==1
+        #diffpf = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+
+        if diffn < diffp:
+            bt = bt - np.median(angle)
+        else:
+            bt = bt + np.median(angle)
+
+        #flip = False
+        #if diffn < diffnf and diffn < diffpf and diffn < diffp:
+        #    bt = -np.median(angle)
+        #if diffp < diffnf and diffp < diffpf and diffp < diffn:
+        #    bt = np.median(angle)
+        #if diffnf < diffn and diffnf < diffpf and diffnf < diffp:
+        #    bt = np.median(angle)
+        #    flip = True
+        #if diffpf < diffnf and diffpf < diffn and diffpf < diffp:
+        #    bt = -np.median(angle)
+        #    flip = True
+
         #print(time.perf_counter()-perftime)
         curs.append(applyRot(in_cur, bp, bs, bt))
+        #if flip:
+        #    curs[-1] = applyRot(curs[-1], 180, 0, 0)
+
         poss.append(np.array([bp, bs, bt]))
     #plt.figure()
     #plt.title(title)

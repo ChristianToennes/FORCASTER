@@ -1194,7 +1194,17 @@ def filt_conf(config):
         d["data_real"] = [None]*len(config["data_real"])
     if "points_real" in config:
         d["points_real"] = [None]*len(config["points_real"])
+    if "est_data" in config:
+        d["est_data"] = config["est_data"]
     return d
+
+def serialize_est_data(est_data):
+    projs, points = est_data
+    return projs, [([(p.pt, p.size, p.angle, p.response, p.octave, p.class_id) for p in kp], desc) for kp, desc in points]
+
+def unserialize_est_data(est_data):
+    projs, points = est_data
+    return projs, [(np.array([(cv2.KeyPoint(x=p[0][0],y=p[0][1],size=p[1],angle=p[2],response=p[3],octave=p[4],class_id=p[5])) for p in kp],dtype=object), desc) for kp,desc in points]
 
 def minimize_callback(name, obj, args, newline=False):
     if newline:
