@@ -2763,54 +2763,43 @@ def bfgs_trans_all(curs, reg_config, c):
 
 pdim = 90
 sdim = 90
+tdim = 5
 
 def simulate_est_data(cur, Ax, config=None):
     if config is None:
         config = dict(default_config)
+    
+    cur = np.zeros((3, 3), dtype=float)
+    cur[1,0] = 1
+    cur[2,1] = 1
+
     primary = np.linspace(0, 360, pdim, False)
     #primary = [0]
     secondary = np.linspace(0, 360, sdim, False)
     #tertiary = [0]
-    #tertiary = np.linspace(-90, 90, 180, True)
-    tertiary = [0]
+    tertiary = np.linspace(0, 360, tdim, False)
+    #tertiary = [0]
     
-    r = utils.rotMat(90, [1,0,0]).dot(utils.rotMat(-90, [0,0,1]))
-
     bp = 90
     bs = 10
     bt = -90
 
     pos = []
     projs_data = []
-    for p in primary:
+    for t in tertiary:
+        print(t)
         curs = []
-        #dcur = applyRot(cur, p, bs, bt)
-        #curs.append(dcur)
-        #pos.append([p, bs, bt])
-        for s in secondary:
-            dcur = applyRot(cur, p+bp, s+bs, bt)
-            #dcur[1] = r.dot(dcur[1])
-            #dcur[2] = r.dot(dcur[2])
-            curs.append(dcur)
-            pos.append([p+bp, s+bs, bt])
-    #for t in tertiary:
-    #    dcur = applyRot(cur, bp, bs, t)
-    #    curs.append(dcur)
-    #    pos.append([bp, bs, t])
-    
-    #curs = np.array([r.dot(v) for v in curs])
-
+        for p in primary:
+            for s in secondary:
+                dcur = applyRot(cur, p+bp, s+bs, t+bt)
+                curs.append(dcur)
+                pos.append([p+bp, s+bs, t+bt])
         curs = np.array(curs)
-        
         projs = Projection_Preprocessing(Ax(curs))
-        #import SimpleITK as sitk
-        #sitk.WriteImage(sitk.GetImageFromArray(projs), "Z:\\recos\\est_data.nrrd")
-        #exit(0)
         for i in range(projs.shape[1]):
             proj = projs[:,i]
             projs_data.append(findInitialFeatures(proj, config))
         
-
     pos = np.array(pos)
     return pos, projs_data
 
@@ -2831,7 +2820,10 @@ def est_position(in_cur, Ax, real_imgs, est_data):
     curs = []
     poss = []
     vmax = 0
-    index = (0,0)
+    index = (0,0,0)
+    cur0 = np.zeros((3, 3), dtype=float)
+    cur0[1,0] = 1
+    cur0[2,1] = 1
     for real_img in real_imgs:
         data_real = findInitialFeatures(real_img, config)
         points_real = normalize_points(data_real[0], real_img)
@@ -2839,45 +2831,55 @@ def est_position(in_cur, Ax, real_imgs, est_data):
         indexes = []
         for i in range(0, pdim, 5):
             for j in range(0, sdim, 5):
-                #proj = projs[:,i]
-                #(p,v) = trackFeatures(proj, data_real, config)
-                (p,v) = matchFeatures(data_real, projs_data[i*sdim+j])
-                valid = np.count_nonzero(v==1)
-                #points_new = normalize_points(p[v], real_img)
-                #valid = calcPointsObjective(-6, points_new, points_real[v])
-                no_valid.append(valid)
-                indexes.append((i,j))
-                if vmax==0 or valid > vmax:
-                    vmax = valid
-                    index = (i,j)
+                for k in range(0, tdim, 1):
+                    #proj = projs[:,i]
+                    #(p,v) = trackFeatures(proj, data_real, config)
+                    idx = k*pdim*sdim+i*sdim+j
+                    #config["prefix"] = "debug_imgs\\{:0>3}_{:0>3}_{:0>3}".format(np.round(pos[idx][0]),np.round(pos[idx][1]),np.round(pos[idx][2]))
+                    #config["real_img"] = real_img
+                    #proj = Projection_Preprocessing(Ax(np.array([applyRot(cur0, pos[idx][0],pos[idx][1],pos[idx][2])])))
+                    #(p,v) = matchFeatures(data_real, projs_data[idx], config, proj[:,0])
+                    (p,v) = matchFeatures(data_real, projs_data[idx])
+                    valid = np.count_nonzero(v==1)
+                    #points_new = normalize_points(p[v], real_img)
+                    #valid = calcPointsObjective(-6, points_new, points_real[v])
+                    no_valid.append(valid)
+                    indexes.append((i,j,k))
+                    if vmax==0 or valid > vmax:
+                        vmax = valid
+                        index = (i,j,k)
         #np.sort(no_valid)[::-1]
         index2 = index
         indexes = np.array(indexes)
         vmax = 0
         indexes2 = set()
+        #print(pos[ np.array([x[0]*sdim+x[1]+x[2]*pdim*sdim for x in indexes[np.argsort(no_valid)[-4:]]])] )
         for index in indexes[np.argsort(no_valid)[-4:]]:
             for i in range(index[0]-4,index[0]+5,1):
                 if i < 0 or i >= pdim: continue
                 for j in range(index[1]-4,index[1]+5,1):
                     if j < 0 or j >= sdim: continue
-                    indexes2.add((i,j))
-        for (i,j) in indexes2:
-            (p,v) = matchFeatures(data_real, projs_data[i*sdim+j])
+                    for k in range(index[2]-4,index[2]+5,1):
+                        if k<0 or k>=tdim: continue
+                        indexes2.add((i,j,k))
+        for (i,j,k) in indexes2:
+            (p,v) = matchFeatures(data_real, projs_data[k*sdim*pdim+i*sdim+j])
             valid = np.count_nonzero(v==1)
             #points_new = normalize_points(p[v], real_img)
             #valid = calcPointsObjective(-6, points_new, points_real[v])
             #no_valid.append(valid)
             if vmax == 0 or valid > vmax:
                 vmax = valid
-                index2 = (i,j)
+                index2 = (i,j,k)
 
         index = index2
+
 
         #no_valid = np.array(no_valid)
 
         #lv = np.argsort(no_valid)[::-1]
         #b = lv[0]
-        b = index[0]*sdim+index[1]
+        b = index[2]*sdim*pdim+index[0]*sdim+index[1]
         #print(time.perf_counter()-perftime)
         perftime = time.perf_counter()
         #print("rotate", end=' ')
