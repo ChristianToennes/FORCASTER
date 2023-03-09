@@ -749,13 +749,21 @@ def evalNeedleArea(img, img2, projname, name):
         else:
             pos = [204, 236-margin, 249-margin]
             mult = 1
-    elif True or projname in ("genB", "2010201"):
+    elif projname in ("genB", "2010201"):
         if img.shape[0] > 500:
             pos = [465, 514-margin, 525-margin]
             mult = 2
         else:
             pos = [232, 257-margin, 262-margin]
             pos = [199, 258-margin, 257-margin]
+            mult = 1
+    elif projname in ("genC", ""):
+        if img.shape[0] > 500:
+            pos = [465, 514-margin, 525-margin]
+            mult = 2
+        else:
+            #pos = [232, 257-margin, 262-margin]
+            pos = [169, 158, 157]
             mult = 1
     else:
         return 0
@@ -774,7 +782,8 @@ def evalNeedleArea(img, img2, projname, name):
     
     mask = np.zeros_like(img, dtype=bool)
     mask[pos[0]-10:pos[0]+10] = True
-    mask = skimage.morphology.binary_opening(mask*(img>(maxval*0.5)), skimage.morphology.cube(3))
+    mask = skimage.morphology.binary_opening(mask*(img>(maxval*0.5)), skimage.morphology.cube(2))
+    
     #rec = sitk.GetImageFromArray(mask*1.0)
     #rec.SetOrigin(out_rec_meta[0])
     #out_spacing = (out_rec_meta[2][0]/mult,out_rec_meta[2][1]/mult,out_rec_meta[2][2]/mult)
@@ -792,7 +801,7 @@ def evalNeedleArea(img, img2, projname, name):
     maxval = lines[maxpos]
     mask = np.zeros_like(img2, dtype=bool)
     mask[pos[0]-10:pos[0]+10] = True
-    mask = skimage.morphology.binary_opening(mask*(img2>(maxval*0.5)), skimage.morphology.cube(3))
+    mask = skimage.morphology.binary_opening(mask*(img2>(maxval*0.5)), skimage.morphology.cube(2))
     labels = skimage.measure.label(mask)
     mask2 = labels==labels[maxpos]
 
@@ -885,6 +894,13 @@ def evalFWHM(img, name, pos = [232, 262, 257]):
     return fwhm
 
 def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fwhm=None, real_area=None, gi_config={"GIoldold":[None], "absp1":[None], "p1":[None]}):
+    #output = Projection_Preprocessing(output_in)
+    #real = Projection_Preprocessing(real_in)
+    #print(name, output.shape, real.shape)
+
+    #sitk.WriteImage(sitk.GetImageFromArray(output), name + "_out.nrrd")
+    #sitk.WriteImage(sitk.GetImageFromArray(real), name + "_real.nrrd")
+
     if np.size(output[0]) != np.size(real[0]):
         return
     vals = []
@@ -893,7 +909,9 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
         vals.append(1.0/cal.calcGIObjective(real, output, 0, None, gi_config))
     else:
         for i in range(real.shape[0]):
-            vals.append(1.0/cal.calcGIObjective(real[i], output[i], 0, None, {"GIoldold":[None], "absp1":[None], "p1":[None]}))
+            v = 1.0/cal.calcGIObjective(real[i], output[i], 0, None, {"GIoldold":[None], "absp1":[None], "p1":[None]})
+            if not v!=v:
+                vals.append(v)
     print("NGI: ", np.mean(vals), np.median(vals))
 
     vals1 = []
@@ -936,7 +954,9 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
         vals7.append(normalized_root_mse(real, output))
     else:
         for i in range(real.shape[0]):
-            vals7.append(normalized_root_mse(real[i], output[i]))
+            v = normalized_root_mse(real[i], output[i])
+            if not v!=v:
+                vals7.append(v)
     print("NRMSE: ", np.mean(vals7), np.median(vals7))
 
     vals8 = []
@@ -948,7 +968,7 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
     
     vals9 = []
     if "rec" in stats_file:
-        vals9.append(evalNeedleArea(output, real, "genB", name))
+        vals9.append(evalNeedleArea(output, real, "genC", name))
         #if real_area is None:
         #    real_area = evalNeedleArea(real, "genB", name)
         #vals9.append(vals9[-1]-real_area)
@@ -967,43 +987,48 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
         #    f.write("{0};FWHM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals8]) + "\n")
         if "rec" in stats_file:
         #    f.write("{0};Area;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals9]) + "\n")
-            f.write(";".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7), np.mean(vals9)]]) + "\n")
+            f.write(" & ".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7), np.mean(vals9)]]) + "\n")
         else:
-            f.write(";".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7)]]) + "\n")
+            f.write(" & ".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7)]]) + "\n")
 
-def evalSinoResults(out_path, in_path, projname):
+def evalSinoResults(out_path, in_path, projname, methods=None):
     ims, ims_un, mas, kvs, angles, coord_systems, sids, sods = read_dicoms(in_path)
     detector_shape = np.array((1920,2480))
     detector_mult = int(np.floor(detector_shape[0] / ims_un.shape[1]))
     detector_edges = int(detector_shape[0] / detector_mult - ims_un.shape[1]), int(detector_shape[1] / detector_mult - ims_un.shape[2])
     i0_ims, i0_mas, i0_kvs = i0_data(detector_mult, (detector_mult//2)*detector_edges[0])
     i0s = i0_interpol(i0_ims, i0_mas, np.mean(mas))
-    ims_norm = np.array(-np.log(ims_un/i0s), dtype=np.float32)
+    ims_norm = (np.array(-np.log(ims_un/i0s), dtype=np.float32))
 
     for filename in os.listdir(out_path):
-        if re.fullmatch("target_sino.nrrd", filename) != None:
+        if re.fullmatch("forcast_"+projname+"4_sino-output", filename) != None:
+        #if re.fullmatch("target_sino.nrrd", filename) != None:
             img = sitk.ReadImage(os.path.join(out_path, filename))
-            proj = sitk.GetArrayFromImage(img)
+            proj = (sitk.GetArrayFromImage(img))
             if proj.dtype != np.float32:
                 proj = np.array(proj, dtype=np.float32)
             ims_norm2 = np.swapaxes(proj, 0, 1)
 
 
     def sino_data():
-        input_sino = False
+        input_sino = True
         for filename in os.listdir(out_path):
-            if re.fullmatch("forcast_(.+?)_sino-output.nrrd", filename) != None and projname in filename:
+            if re.fullmatch("forcast_(.+?)_sino-output.nrrd", filename) != None and projname in filename and float(filename.split("_")[-2]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
-                proj = sitk.GetArrayFromImage(img)
+                proj = (sitk.GetArrayFromImage(img))
                 if proj.dtype != np.float32:
                     proj = np.array(proj, dtype=np.float32)
+                img = sitk.ReadImage(os.path.join(out_path, filename.replace("sino-output", "projs-input").replace(filename.split("_")[-2], "42")))
+                target = (sitk.GetArrayFromImage(img))
+                if target.dtype != np.float32:
+                    target = np.array(target, dtype=np.float32)
                 #projs.append(proj)
                 #names.append("_".join(filename.split('_')[1:-1]))
-                yield "_".join(filename.split('_')[1:-1]), proj
+                yield "_".join(filename.split('_')[1:-1]), proj, target
             if re.fullmatch("forcast_(.+?)_sino-input.nrrd", filename) != None and projname in filename and input_sino == False:
                 input_sino = True
                 img = sitk.ReadImage(os.path.join(out_path, filename))
-                proj = sitk.GetArrayFromImage(img)
+                proj = (sitk.GetArrayFromImage(img))
                 if proj.dtype != np.float32:
                     proj = np.array(proj, dtype=np.float32)
                 #projs.append(proj)
@@ -1011,14 +1036,14 @@ def evalSinoResults(out_path, in_path, projname):
                 yield projname+"_input", proj
             if re.fullmatch("trajtomo_reco_matlab_(.+?)_output.nrrd", filename) != None and projname in filename:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
-                proj = sitk.GetArrayFromImage(img)
+                proj = (sitk.GetArrayFromImage(img))
                 if proj.dtype != np.float32:
                     proj = np.array(proj, dtype=np.float32)
                 #projs.append(proj)
                 #names.append("_".join(filename.split('_')[3:-1])+"_matlab")
                 yield "_".join(filename.split('_')[3:-1])+"_matlab", proj
 
-    for name, proj in sino_data():
+    for name, proj, target in sino_data():
         print(name)
         skip = int(np.ceil(ims_un.shape[0]/proj.shape[1]))
 
@@ -1030,12 +1055,15 @@ def evalSinoResults(out_path, in_path, projname):
         ims = ims_norm[::skip]
         ims2 = ims_norm2[::skip]
         try:
-            evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
             evalPerformance(np.swapaxes(proj, 0, 1), ims2, 0, name+"sim", 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), np.swapaxes(target,0,1), 0, name+"proj", 'stats_proj.csv')
+            #evalPerformance(Projection_Preprocessing(np.swapaxes(proj, 0, 1)), Projection_Preprocessing(ims), 0, name+"pre", 'stats_proj.csv')
         except Exception as e:
             print(e)
+            raise e
     
-def evalRecoResults(out_path, in_path, projname):
+def evalRecoResults(out_path, in_path, projname, methods=None):
     global out_rec_meta
     input_recos = {}
     input_gi_confs = {}
@@ -1086,42 +1114,42 @@ def evalRecoResults(out_path, in_path, projname):
     def reco_data():
         input_sino = False
         for filename in os.listdir(out_path):
-            if re.fullmatch("forcast_matlab_(.+?)_reco-output.nrrd", filename) != None and projname in filename:
+            if re.fullmatch("forcast_matlab_(.+?)_reco-output.nrrd", filename) != None and projname in filename and int(filename.split("_")[-2]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[2:]))
                 yield "_".join(filename.split('_')[2:]), proj, filename
-            elif re.fullmatch("forcast_matlab_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename:
+            elif re.fullmatch("forcast_matlab_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename and int(filename.split("_")[-3]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[2:]))
                 yield "_".join(filename.split('_')[2:]), proj, filename
-            elif re.fullmatch("forcast_matlab_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename:
+            elif re.fullmatch("forcast_matlab_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename and int(filename.split("_")[-3]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[2:]))
                 yield "_".join(filename.split('_')[2:]), proj, filename
-            elif re.fullmatch("forcast_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename:
+            elif re.fullmatch("forcast_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename and int(filename.split("_")[-3]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[1:]))
                 yield "_".join(filename.split('_')[1:]), proj, filename
-            elif re.fullmatch("forcast_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename:
+            elif re.fullmatch("forcast_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename and int(filename.split("_")[-3]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[1:]))
                 yield "_".join(filename.split('_')[1:]), proj, filename
-            elif re.fullmatch("forcast_(.+?)_reco-output.nrrd", filename) != None and projname in filename:
+            elif re.fullmatch("forcast_(.+?)_reco-output.nrrd", filename) != None and projname in filename and int(filename.split("_")[-2]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
@@ -1150,7 +1178,7 @@ def evalRecoResults(out_path, in_path, projname):
     for name, proj, filename in reco_data():
         print(filename, name)
         real_name = name.split('_')[0].replace('A', 'B')
-        real_name = "2010201"
+        #real_name = "2010201"
         ims = np.array(input_recos[real_name])
         #if (np.array(proj.shape)!=np.array(ims.shape)).any():
         #    ims = np.array(scipy.ndimage.zoom(ims, np.array(proj.shape)/np.array(ims.shape), order=1), dtype=np.float32)
@@ -1164,11 +1192,12 @@ def evalRecoResults(out_path, in_path, projname):
             try:
                 mask = create_circular_mask(proj.shape, radius_off=margin)
                 #write_images(1.0*mask, "mask.nrrd")
-                output = (proj*mask)[:,margin:-margin,margin:-margin]
-                real = (ims*mask)[:,margin:-margin,margin:-margin]
-                print(output.shape, real.shape)
+                output = (proj*mask)[30:-30,margin:-margin,margin:-margin]
+                real = (ims*mask)[30:-30,margin:-margin,margin:-margin]
+                #print(output.shape, real.shape)
                 input_gi_confs[real_name] = {"GIoldold":[None], "absp1":[None], "p1":[None]}
-                evalPerformance(output, real, 0, name, 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
+                #evalPerformance(output, real, 0, name, 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
+                evalPerformance(Projection_Preprocessing(output), Projection_Preprocessing(real), 0, name+"pre", 'stats_rec.csv', real_fwhm=input_fwhm[real_name], real_area=input_area[real_name], gi_config=input_gi_confs[real_name])
 
                 #if "_0_" in name:
                 #    diff = proj-input_recos["201020"]
@@ -1193,17 +1222,17 @@ def evalAllResults(evalSino=True, evalReco=True, outpath="recos"):
     if evalSino:
         with open("stats_proj.csv", "w") as f:
             f.truncate()
-            f.write(";".join(["Name", "Runtime", "NGI", "SSIM", "NRMSE"]) + "\n")
-        for name, proj_path, _, _ in projs:
+            f.write(" & ".join(["Name", "Runtime", "NGI", "SSIM", "NRMSE"]) + "\\\\\n")
+        for name, proj_path, _, methods in projs:
             print(proj_path)
-            evalSinoResults(outpath, proj_path, name)
+            evalSinoResults(outpath, proj_path, name, methods)
     if evalReco:        
         with open("stats_rec.csv", "w") as f:
             f.truncate()
-            f.write(";".join(["Name", "Runtime", "NGI", "SSIM", "NRMSE", "Area"]) + "\n")
-        for name, proj_path, _, _ in projs:
+            f.write(" & ".join(["Name", "Runtime", "NGI", "SSIM", "NRMSE", "Area"]) + "\\\\\n")
+        for name, proj_path, _, methods in projs:
             print(proj_path)
-            evalRecoResults(outpath, proj_path, name)
+            evalRecoResults(outpath, proj_path, name, methods)
 
 def write_rec(geo, ims, filepath, mult=1):
     #geo["Vectors"] = geo["Vectors"]*mult
@@ -2011,7 +2040,10 @@ if __name__ == "__main__":
     #import cProfile, io, pstats
     #profiler = cProfile.Profile()
     #profiler.enable()
+    
     reg_real_data()
+    #evalAllResults(True, True, "D:\\lumbal_spine_13.10.2020\\recos")
+    
     #profiler.disable()
     #s = io.StringIO()
     #sortby = pstats.SortKey.TIME
