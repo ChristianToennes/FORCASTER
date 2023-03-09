@@ -10,6 +10,9 @@ import pydicom
 import struct
 #import scipy.interpolate
 import astra
+astra.set_gpu_index(3)
+if __name__ == "__main__":
+    print(astra.get_gpu_info())
 import time
 import itertools
 import cProfile, pstats
@@ -525,7 +528,7 @@ def it_log(log_queue):
 
 def reg_rough_parallel(ims, params, config, c=0):
     corrs = []
-    pool_size = mp.cpu_count()
+    pool_size = config["threads"]
     #if c==28:
     #    pool_size = 2
     #elif c >= 40:
