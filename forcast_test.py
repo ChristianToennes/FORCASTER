@@ -896,10 +896,30 @@ def evalFWHM(img, name, pos = [232, 262, 257]):
     print("FWHM: ", fwhm)
     return fwhm
 
-def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fwhm=None, real_area=None, gi_config={"GIoldold":[None], "absp1":[None], "p1":[None]}):
-    #output = Projection_Preprocessing(output_in)
-    #real = Projection_Preprocessing(real_in)
+def evalPerformance(output_in, real_in, runtime, name, stats_file='stats.csv', real_fwhm=None, real_area=None, gi_config={"GIoldold":[None], "absp1":[None], "p1":[None]}):
+    if runtime == 0:
+        output = output_in
+        real = real_in
+    if runtime == 1:
+        output = Projection_Preprocessing(output_in)
+        real = Projection_Preprocessing(real_in)
+    if runtime == 2:
+        output = (output_in-np.mean(output_in))/(np.std(output_in))
+        real = (real_in-np.mean(real_in))/(np.std(real_in))
+    if True or runtime == 3:
+        output = (output_in-np.min(output_in))/(np.max(output_in)-np.min(output_in))
+        real = (real_in-np.min(real_in))/(np.max(real_in)-np.min(real_in))
+    if runtime == 4:
+        output = (output_in-np.min(output_in))/(np.max(output_in)-np.min(output_in))
+        output = (output-np.mean(output))/np.std(output)
+        real = (real_in-np.min(real_in))/(np.max(real_in)-np.min(real_in))
+        real = (real-np.mean(real))/np.std(real)
+    if runtime == 5:
+        output = (output_in-np.mean(output_in))/(np.max(output_in)-np.min(output_in))
+        real = (real_in-np.mean(real_in))/(np.max(real_in)-np.min(real_in))
     #print(name, output.shape, real.shape)
+    #name = name + str(runtime)
+
 
     #sitk.WriteImage(sitk.GetImageFromArray(output), name + "_out.nrrd")
     #sitk.WriteImage(sitk.GetImageFromArray(real), name + "_real.nrrd")
@@ -909,7 +929,7 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
     vals = []
     #for i in range(len(real)):
     if "rec" in stats_file:
-        vals.append(1.0/cal.calcGIObjective(real, output, 0, None, gi_config))
+        vals.append(1.0/cal.calcGIObjective(real, output, 0, None, {"GIoldold":[None], "absp1":[None], "p1":[None]}))
     else:
         for i in range(real.shape[0]):
             v = 1.0/cal.calcGIObjective(real[i], output[i], 0, None, {"GIoldold":[None], "absp1":[None], "p1":[None]})
@@ -970,7 +990,7 @@ def evalPerformance(output, real, runtime, name, stats_file='stats.csv', real_fw
         #vals8.append(vals8[-1]-real_fwhm)
     
     vals9 = []
-    if "rec" in stats_file:
+    if "rec" in stats_file and "proj" not in stats_file:
         vals9.append(evalNeedleArea(output, real, "genC", name))
         #if real_area is None:
         #    real_area = evalNeedleArea(real, "genB", name)
@@ -999,19 +1019,27 @@ def evalSinoResults(out_path, in_path, projname, methods=None):
     detector_shape = np.array((1920,2480))
     detector_mult = int(np.floor(detector_shape[0] / ims_un.shape[1]))
     detector_edges = int(detector_shape[0] / detector_mult - ims_un.shape[1]), int(detector_shape[1] / detector_mult - ims_un.shape[2])
-    i0_ims, i0_mas, i0_kvs = i0_data(detector_mult, (detector_mult//2)*detector_edges[0])
+    i0_ims, i0_mas, i0_kvs = i0_data(detector_mult, ims_un.shape[1])
+    res = np.mean( np.mean(i0_ims, axis=(1,2))[:,np.newaxis,np.newaxis] / i0_ims, axis=0)
     i0s = i0_interpol(i0_ims, i0_mas, np.mean(mas))
+    i0s[i0s==0] = 1e-8
+    ims_un[ims_un==0] = 1e-8
+    #print(detector_shape, detector_mult, detector_edges, ims_un.shape, i0_ims.shape, i0s.shape, np.count_nonzero(ims_un==0))
     ims_norm = (np.array(-np.log(ims_un/i0s), dtype=np.float32))
+    #print(np.count_nonzero(~np.isfinite(ims_norm)),np.count_nonzero(~np.isfinite(ims_un)),np.count_nonzero(~np.isfinite(i0s)))
+    #print(ims_norm.flatten()[np.isnan(ims_norm).flatten()][:10], ims_un.flatten()[np.isnan(ims_norm).flatten()][:10], i0s.flatten()[np.isnan(np.sum(ims_norm,axis=0)).flatten()][:10])
+    ims_norm[np.isnan(ims_norm)] = 0
 
+    print("forcast_"+projname+"4_sino-output", out_path)
     for filename in os.listdir(out_path):
-        if re.fullmatch("forcast_"+projname+"4_sino-output", filename) != None:
+        #if re.fullmatch("forcast_"+projname+"4_sino-output", filename) != None:
+        if "forcast_"+projname+"4_sino-output" in filename:
         #if re.fullmatch("target_sino.nrrd", filename) != None:
             img = sitk.ReadImage(os.path.join(out_path, filename))
             proj = (sitk.GetArrayFromImage(img))
             if proj.dtype != np.float32:
                 proj = np.array(proj, dtype=np.float32)
             ims_norm2 = np.swapaxes(proj, 0, 1)
-
 
     def sino_data():
         input_sino = True
@@ -1057,9 +1085,29 @@ def evalSinoResults(out_path, in_path, projname, methods=None):
         #ims = -np.log(ims/i0s)[::skip]
         ims = ims_norm[::skip]
         ims2 = ims_norm2[::skip]
+
+        i0s = np.array([i0_est(ims_un[i], proj[:,i])*res for i in range(ims_un.shape[0])])
+        i0s = np.mean(i0s, axis=0)
+        i0s[i0s==0] = 1e-8
+        ims_norm3 = (np.array(-np.log(ims_un/i0s), dtype=np.float32))
+        ims3 = ims_norm3[::skip]
+
         try:
             #evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims2, 0, name+"sim", 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims, 1, name, 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims2, 1, name+"sim", 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims, 2, name, 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims2, 2, name+"sim", 'stats_proj.csv')
+            evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
             evalPerformance(np.swapaxes(proj, 0, 1), ims2, 0, name+"sim", 'stats_proj.csv')
+            evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj_rec.csv')
+            evalPerformance(np.swapaxes(proj, 0, 1), ims2, 0, name+"sim", 'stats_proj_rec.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims, 4, name, 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims2, 4, name+"sim", 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims, 5, name, 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims2, 5, name+"sim", 'stats_proj.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims3, 0, name+"i0", 'stats_proj.csv')
             #evalPerformance(np.swapaxes(proj, 0, 1), np.swapaxes(target,0,1), 0, name+"proj", 'stats_proj.csv')
             #evalPerformance(Projection_Preprocessing(np.swapaxes(proj, 0, 1)), Projection_Preprocessing(ims), 0, name+"pre", 'stats_proj.csv')
         except Exception as e:
@@ -1075,7 +1123,7 @@ def evalRecoResults(out_path, in_path, projname, methods=None):
     metas = {}
     for filename in os.listdir(out_path):
         #if re.fullmatch("forcast_[^_]+_reco-input.nrrd", filename) != None:
-        if re.fullmatch("forcast_201020(1_imbu|_imbureg_noimbu)_cbct_4_reco-output.nrrd", filename) != None:
+        if re.fullmatch("forcast_201020(1_imbu|_imbureg_noimbu|_imbu)_cbct_4_reco-output.nrrd", filename) != None:
         #if re.fullmatch("target_reco.nrrd", filename) != None:
             try:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
@@ -1226,6 +1274,9 @@ def evalAllResults(evalSino=True, evalReco=True, outpath="recos"):
         with open("stats_proj.csv", "w") as f:
             f.truncate()
             f.write(" & ".join(["Name", "Runtime", "NGI", "SSIM", "NRMSE"]) + "\\\\\n")
+        with open("stats_proj_rec.csv", "w") as f:
+            f.truncate()
+            f.write(" & ".join(["Name", "Runtime", "NGI", "SSIM", "NRMSE", "Dice"]) + "\\\\\n")
         for name, proj_path, _, methods in projs:
             print(proj_path)
             evalSinoResults(outpath, proj_path, name, methods)
@@ -1496,8 +1547,8 @@ def i0_data(skip, i_edges):
         for entry in files:
             path = os.path.abspath(os.path.join(root, entry))
             ds = pydicom.dcmread(path)
-            #print(ds.pixel_array.shape,i_edges, ds.pixel_array.shape[1]//skip)
             edges = skip*(ds.pixel_array.shape[1]//skip-i_edges)//2
+            #print(ds.pixel_array.shape,i_edges, edges)
             if edges <= 0:
                 ims.append(np.mean(ds.pixel_array[:,::skip, ::skip], axis=0))
             else:
