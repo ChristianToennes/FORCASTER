@@ -1,4 +1,5 @@
 import numpy as np
+from skimage.measure import block_reduce
 import SimpleITK as sitk
 #import forcast
 import cal
@@ -8,9 +9,15 @@ from utils import bcolors
 import os
 import pydicom
 import struct
+import traceback
 #import scipy.interpolate
 import astra
-astra.set_gpu_index(3)
+if __name__ == "__main__":
+    print(astra.get_gpu_info(0))
+    print(astra.get_gpu_info(1))
+    print(astra.get_gpu_info(2))
+    print(astra.get_gpu_info(3))
+astra.set_gpu_index(1)
 if __name__ == "__main__":
     print(astra.get_gpu_info())
 import time
@@ -94,7 +101,8 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     #    skip = 1
     #skip = 2
 
-    edges = 0
+    edges = 30
+    oedges = 30
 
     #sel = np.zeros(images.shape, dtype=bool)
     #sel[:,20*skip:-20*skip:skip,20*skip:-20*skip:skip] = True
@@ -115,15 +123,18 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     #    norm_images_ungained[i] = norm_img
 
     oskip = 2
-    if images.shape[2] > 2000:
-        oskip *= 2
+    #if images.shape[2] > 2000:
+    #    oskip *= 2
     if edges <= 0:
-        norm_images_gained = np.array([image*(1+gain/100) for image,gain in zip(images[:,::oskip,::oskip], percent_gain)])
-        norm_images_ungained = np.array([image*(1+gain/100) for image,gain in zip(images[:,::skip,::skip], percent_gain)])
+        norm_images_gained = np.array([image*(1+gain/100) for image,gain in zip(images[:,::1,::1], percent_gain)])
+        norm_images_ungained = np.array([image*(1+gain/100) for image,gain in zip(images[:,::1,::1], percent_gain)])
     else:
-        norm_images_gained = np.array([image*(1+gain/100) for image,gain in zip(images[:,edges:-edges:oskip,edges:-edges:oskip], percent_gain)])
-        norm_images_ungained = np.array([image*(1+gain/100) for image,gain in zip(images[:,edges:-edges:skip,edges:-edges:skip], percent_gain)])
+        norm_images_gained = np.array([image*(1+gain/100) for image,gain in zip(images[:,oedges:-oedges:1,oedges:-oedges:1], percent_gain)])
+        norm_images_ungained = np.array([image*(1+gain/100) for image,gain in zip(images[:,edges:-edges:1,edges:-edges:1], percent_gain)])
         
+    norm_images_gained = block_reduce(norm_images_gained, (1,oskip,oskip), np.mean)
+    norm_images_ungained = block_reduce(norm_images_ungained, (1,skip,skip), np.median)
+    print("skip", skip, oskip)
     #norm_images_ungained = images[:,edges:-edges:skip, edges:-edges:skip]
     
     gain = 2.30
@@ -211,7 +222,7 @@ def read_dicoms(indir, max_ims=np.inf):
             elif "NumberOfFrames" in dir(ds):
                 NumberOfFrames = ds.NumberOfFrames
                 if len(ims) == 0:
-                    ims = ds.pixel_array[2:668]
+                    ims = ds.pixel_array[54:]
                     NumberOfFrames = len(ims)
                 else:
                     ims = np.vstack([ims, ds.pixel_array])
@@ -381,7 +392,7 @@ def reg_all(ims, params, config, c=0):
     target_sino = config["target_sino"]
     try:
         #cur, noise = cal.bfgs_trans_all(params, config, c)
-        if config["estimate"]:
+        if False and config["estimate"]:
             cur, _rots = cal.est_position(params[0], config["Ax"], real_img)
         else:
             if c <= -60:
@@ -416,11 +427,11 @@ def reg_all(ims, params, config, c=0):
     config["noise"] = noise
     return corrs
 
-def reg_rough(ims, params, config, c=0):
+def reg_rough(ims, ims_big, params, config, c=0):
     corrs = [None]*len(params)
     noise = config["noise"]
     config["log_queue"] = mp.Queue()
-    with open("est_data.dump", "rb") as f:
+    with open(config["data_dump_path"], "rb") as f:
         est_data_ser = pickle.load(f)
         config["est_data"] = utils.unserialize_est_data(est_data_ser)
         est_data_ser = None
@@ -429,22 +440,25 @@ def reg_rough(ims, params, config, c=0):
     #for i in [29]:
         print(i, end=",", flush=True)
         cur = params[i]
+        print(cur)
         real_img = cal.Projection_Preprocessing(ims[i])
-        config["real_img"] = real_img
+        config["real_img_small"] = real_img
+        real_img_big = cal.Projection_Preprocessing(ims_big[i])
+        config["real_img_big"] = real_img_big
         config["noise"] = (noise[0][i], noise[1][i])
         for si in range(1):
             try:
-                old_cur = np.array(cur)
+                #old_cur = np.array(cur)
                 if config["estimate"]:
-                    if "est_data" not in config or config["est_data"] is None:
-                        config["est_data"] = cal.simulate_est_data(cur, config["Ax"])
-                    cur, _rots = cal.est_position(cur, config["Ax"], [real_img], config["est_data"])
-                    cur = cur[0]
+                    config["Ax"] = config["Ax_small"]
+                    config["real_img"] = config["real_img_small"]
+                    cur = cal.roughRegistration(cur, config, 61)
+                config["Ax"] = config["Ax_big"]
+                config["real_img"] = config["real_img_big"]
+                if c >= 0:
+                    cur = cal.roughRegistration(cur, config, c)
                 else:
-                    if c >= 0:
-                        cur = cal.roughRegistration(cur, config, c)
-                    else:
-                        cur = cal_bfgs_both.bfgs(cur, config, c)
+                    cur = cal_bfgs_both.bfgs(cur, config, c)
                 noise[0][i], noise[1][i] = config["noise"]
             except Exception as ex:
                 print(i, ex, cur)
@@ -466,7 +480,7 @@ import pickle
 import sys
 import io
 
-def it_func(con, Ax_params, log_queue, ready, name, est_data_name):
+def it_func(con, Ax_params, Ax_params_big, log_queue, ready, name, est_data_name):
     if name != None:
         profiler = cProfile.Profile()
     try:
@@ -475,6 +489,7 @@ def it_func(con, Ax_params, log_queue, ready, name, est_data_name):
         np.seterr(all='raise')
         Ax = None
         Ax = utils.Ax_param_asta(*Ax_params)
+        Ax_big = utils.Ax_param_asta(*Ax_params_big)
         est_data = None
         #cur0 = np.zeros((3, 3), dtype=float)
         #cur0[1,0] = 1
@@ -487,38 +502,43 @@ def it_func(con, Ax_params, log_queue, ready, name, est_data_name):
         #shm = mp_shm.SharedMemory(est_data_name+"_1")
         #est_data_ser[1] = pickle.loads(shm.buf)
         #shm.close()
-        with open("est_data.dump", "rb") as f:
+        with open(est_data_name, "rb") as f:
             est_data_ser = pickle.load(f)
             est_data = utils.unserialize_est_data(est_data_ser)
-            est_data_ser = None
+            del est_data_ser
             con.send(("loaded",))
         while True:
             try:
                 con.send(("ready",))
                 ready.set()
-                (i, cur, im, target_sino, noise, method) = con.recv()
+                (i, cur, im, im_big, noise, method) = con.recv()
                 if i == None:
                     break
-                #print(i)
+                
                 old_stdout = sys.stdout
                 sys.stdout = stringout = io.StringIO()
 
                 if name != None:
                     profiler.enable()    
                 real_img = cal.Projection_Preprocessing(im)
-                #if method == "estimate":
-                #    if est_data is None:
-                #        est_data = cal.simulate_est_data(cur, Ax)
-                cur_config = {"real_img": real_img, "Ax": Ax, "log_queue": log_queue, "name": str(i), "target_sino": target_sino, "est_data": est_data}
+                real_img_big = cal.Projection_Preprocessing(im_big)
+                cur_config = {"real_img_small": real_img, "real_img_big": real_img_big, "Ax_small": Ax, "Ax_big": Ax_big, "log_queue": log_queue, "name": str(i), "est_data": est_data, "estimate": True}
                 try:
+                    if cur_config["estimate"]:
+                        cur_config["Ax"] = cur_config["Ax_small"]
+                        cur_config["real_img"] = cur_config["real_img_small"]
+                        cur = cal.roughRegistration(cur, cur_config, 61)
+                    cur_config["Ax"] = cur_config["Ax_big"]
+                    cur_config["real_img"] = cur_config["real_img_big"]
+
                     if method >= 0:
                         cur = cal.roughRegistration(cur, cur_config, method)
                     else:
                         cur = cal_bfgs_both.bfgs(cur, cur_config, method)
                 except Exception as ex:
                     print(ex, type(ex), i, cur, file=sys.stderr)
+                    traceback.print_exc(limit=5, file=sys.stderr)
                     con.send(("error",))
-                #corrs.append(cur)
                 if name != None:
                     profiler.disable()
                     profiler.dump_stats(name)
@@ -555,7 +575,7 @@ def it_log(log_queue):
         except Exception as ex:
             print("logger faulty: ", ex)
 
-def reg_rough_parallel(ims, params, config, c=0):
+def reg_rough_parallel(ims, ims_big, params, config, c=0):
     corrs = []
     pool_size = config["threads"]
     #if c==28:
@@ -578,7 +598,7 @@ def reg_rough_parallel(ims, params, config, c=0):
     log_proc = mp.Process(target=it_log, args=(log_queue,), daemon=True)
     log_proc.start()
 
-    print(len(params), len(ims), config["target_sino"].shape)
+    #print(len(params), len(ims), config["target_sino"].shape)
 
     #d = pickle.dumps(config["est_data_ser"][0])
     #shm = mp_shm.SharedMemory(name="est_data_0", create=True, size=len(d))
@@ -590,20 +610,24 @@ def reg_rough_parallel(ims, params, config, c=0):
     while np.array([e is None for e in corrs]).any(): #len(indices)>0:
         ready_con = None
         while ready_con is None:
-            for _ in range(len(pool), pool_size):
-                p = mp.Pipe(True)
-                if "profile" in config and config["profile"]:
-                    name = config["name"]+"_"+str(proc_count)
-                else:
-                    name = None
-                proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], log_queue, ready, name, "est_data"), daemon=True)
-                proc.start()
-                proc_count += 1
-                pool.append([p[0], p[1], proc, -1])
-                res = p[0].recv()
-                if res[0] != "loaded":
-                    print(res)
-                    return
+            for _ in range(len(pool), pool_size, 4):
+                p = None
+                for _ in range(4):
+                    if(len(pool) == pool_size): break
+                    p = mp.Pipe(True)
+                    if "profile" in config and config["profile"]:
+                        name = config["name"]+"_"+str(proc_count)
+                    else:
+                        name = None
+                    proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], config["Ax_gen_big"], log_queue, ready, name, config["data_dump_path"]), daemon=True)
+                    proc.start()
+                    proc_count += 1
+                    pool.append([p[0], p[1], proc, -1])
+                if p is not None:
+                    res = p[0].recv()
+                    if res[0] != "loaded":
+                        print(res)
+                        return
             ready.clear()
             finished_con = []
             for con in pool:
@@ -614,6 +638,8 @@ def reg_rough_parallel(ims, params, config, c=0):
                             if res[0] == "ready":
                                 ready_con = con
                                 break
+                            elif res[0] == "loaded":
+                                pass
                             elif res[0] == "result":
                                 corrs[res[1]] = res[2]
                                 #print(res[1], res[3], flush=True)
@@ -638,10 +664,10 @@ def reg_rough_parallel(ims, params, config, c=0):
                 ready.wait(1)
         if len(indices) > 0:
             i = indices.pop()
-            if config["estimate"]:
-                ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], (config["noise"][0][i],config["noise"][1][i]), "estimate"))
+            if False and config["estimate"]:
+                ready_con[0].send((i, params[i], ims[i], ims_big[i], (config["noise"][0][i],config["noise"][1][i]), 61))
             else:
-                ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], None, c))
+                ready_con[0].send((i, params[i], ims[i], ims_big[i], None, c))
                 #ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], config["est_data_ser"], c))
             ready_con[3] = i
 
@@ -1242,28 +1268,27 @@ def write_rec(geo, ims, filepath, mult=1):
     mult = int(np.round(ims.shape[1] / geo['DetectorRowCount']))
     geo = astra.create_proj_geom('cone_vec', ims.shape[1], ims.shape[2], geo["Vectors"]*mult)
     out_shape = (out_rec_meta[3][0]*mult, out_rec_meta[3][1]*mult, out_rec_meta[3][2]*mult)
-    print(ims.shape, len(geo['Vectors']))
+    #print(ims.shape, len(geo['Vectors']))
     rec = utils.FDK_astra(out_shape, geo, np.swapaxes(ims, 0,1))
-    #mask = np.zeros(rec.shape, dtype=bool)
-    #mask = create_circular_mask(rec.shape)
-    #rec = rec*mask
-    #del mask
-    write_images(rec*1000, filepath, mult)
-    return
-
-    rec = utils.SIRT_astra(out_shape, geo, np.swapaxes(ims, 0,1), 200)
     #mask = np.zeros(rec.shape, dtype=bool)
     mask = create_circular_mask(rec.shape)
     rec = rec*mask
     del mask
-    write_images(rec, filepath.rsplit('.', maxsplit=1)[0]+"_sirt."+filepath.rsplit('.', maxsplit=1)[1], mult)
+    write_images(utils.toHU(rec), filepath, mult)
+
+    rec = utils.SIRT_astra(out_shape, geo, np.swapaxes(ims, 0,1), 500)
+    #mask = np.zeros(rec.shape, dtype=bool)
+    mask = create_circular_mask(rec.shape)
+    rec = rec*mask
+    del mask
+    write_images(utils.toHU(rec), filepath.rsplit('.', maxsplit=1)[0]+"_sirt."+filepath.rsplit('.', maxsplit=1)[1], mult)
 
     rec = utils.CGLS_astra(out_shape, geo, np.swapaxes(ims, 0,1), 50)
     #mask = np.zeros(rec.shape, dtype=bool)
     mask = create_circular_mask(rec.shape)
     rec = rec*mask
     del mask
-    write_images(rec, filepath.rsplit('.', maxsplit=1)[0]+"_cgls."+filepath.rsplit('.', maxsplit=1)[1], mult)
+    write_images(utils.toHU(rec), filepath.rsplit('.', maxsplit=1)[0]+"_cgls."+filepath.rsplit('.', maxsplit=1)[1], mult)
 
 def write_images(rec, filepath, mult=1):
     rec = sitk.GetImageFromArray(rec)#*100
@@ -1278,6 +1303,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
     grad_width = config["grad_width"] if "grad_width" in config else (1,25)
     perf = config["perf"] if "perf" in config else False
     Ax = config["Ax"]
+    Ax_big = config["Ax_big"]
     method = config["method"]
     use_saved = config["use_saved"] if "use_saved" in config else False
     real_image = config["real_cbct"]
@@ -1293,12 +1319,15 @@ def reg_and_reco(ims_big, ims, in_params, config):
         sitk.WriteImage(rec, os.path.join(outpath, "forcast_"+name.split('_',1)[0]+"_reco-input.nrrd"))
     if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd")):
         sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims,0,1)))
-        sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_projs-input.nrrd"), True)
+        sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+("_est_" if config["estimate"] else "")+"_projs-input.nrrd"), True)
         del sino
-    if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
+        sino = sitk.GetImageFromArray(cal.Projection_Preprocessing(np.swapaxes(ims_big,0,1)))
+        sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+("_est_" if config["estimate"] else "")+"_projs-input2.nrrd"), True)
+        del sino
+    if False and not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd")):
         reg_geo = Ax.create_geo(params)
         write_rec(reg_geo, ims, os.path.join(outpath, "forcast_"+name+"_reco-input.nrrd"))
-    if not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
+    if False and not perf:# and not os.path.exists(os.path.join(outpath, "forcast_"+name+"_sino-input.nrrd")):
         sino = cal.Projection_Preprocessing(Ax(params))
         #img = cv2.drawMatchesKnn(np.array(255*(ims[-1]-np.min(ims[-1]))/(np.max(ims[-1])-np.min(ims[-1])),dtype=np.uint8), None,
         #    np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
@@ -1325,11 +1354,11 @@ def reg_and_reco(ims_big, ims, in_params, config):
         vecs = read_vectors(name+"-rough")
         corrs = read_vectors(name+"-rough-corr")
     else:
-        if method>-20:# and not config["estimate"]:
+        if True or method>-20:# and not config["estimate"]:
             if config["paralell"] and  mp.cpu_count() > 1:
-                corrs = reg_rough_parallel(ims, params, config, method)
+                corrs = reg_rough_parallel(ims, ims_big, params, config, method)
             else:
-                corrs = reg_rough(ims, params, config, method)
+                corrs = reg_rough(ims, ims_big, params, config, method)
         else:
             corrs = reg_all(ims, params, config, method)
 
@@ -1347,7 +1376,7 @@ def reg_and_reco(ims_big, ims, in_params, config):
         #    np.array(255*(sino[:,-1]-np.min(sino[:,-1]))/(np.max(sino[:,-1])-np.min(sino[:,-1])),dtype=np.uint8),None, None, None)
         #cv2.imwrite("img\\check_" + name + "_post.png", img)
         sino = sitk.GetImageFromArray(sino)
-        sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+"_sino-output.nrrd"), True)
+        sitk.WriteImage(sino, os.path.join(outpath, "forcast_"+name+("_est_" if config["estimate"] else "")+"_sino-output.nrrd"), True)
         #evalPerformance(np.swapaxes(sino, 0, 1), ims, perftime, name)
         del sino
     
@@ -1356,9 +1385,13 @@ def reg_and_reco(ims_big, ims, in_params, config):
     print("rough reg done ", perftime)
 
     if not perf:
+        reg_geo = Ax_big.create_geo(corrs)
+        mult = 1
+        write_rec(reg_geo, ims_big, os.path.join(outpath, "forcast_"+name+("_est_" if config["estimate"] else "")+"_reco-output.nrrd"), mult)
         reg_geo = Ax.create_geo(corrs)
         mult = 1
-        write_rec(reg_geo, ims, os.path.join(outpath, "forcast_"+name+"_reco-output.nrrd"), mult)
+        write_rec(reg_geo, ims, os.path.join(outpath, "forcast_"+name+("_est_" if config["estimate"] else "")+"_reco-output-small.nrrd"), mult)
+        
 
     return vecs, corrs
 
@@ -1550,16 +1583,17 @@ def get_proj_paths():
     #('genA_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genA_angle', prefix+'\\gen_dataset\\only_angle', cbct_path, [4,20,21,22,23,24,25,26]),
     #('genA_both', prefix+'\\gen_dataset\\noisy', cbct_path, [4,20,21,22,23,24,25,26]),
-    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [62,631]),
+    #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-58,42]),
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [50,52]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-44,-58,-34,-24,33,42]), # normal noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-43,-57,34,41]), # reduced noise
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-73,-67]), # normal noise trans
     #('201020_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-72,-66]), # reduced noise trans
-    #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4, 28, 29]),
+    #('201020_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [-58,42]),
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
-    #('201020_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path, [4, 28, 29]),
+    #('201020_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path, [4, 60, 61, 62]),
+    ('201020_noimbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\P16_DR_LD', cbct_path, [-70]),
     #('201020_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     ]
     
@@ -1568,12 +1602,13 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [60,60.5,61,62,621]),
-    ('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [62,621]),
-    #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4,42,60,60.5,61,62,631]),
-    #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [62,631]),
-    #('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\Arc\\20201020-150938.350000-P16_DR_LD', cbct_path, [62,631]),
-    #('2010201_noimbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\P16_DR_LD', cbct_path, [60,61,62,63,64,65]),
+    #('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [-70]),
+    ('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [-70]),
+    #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4,60,61,62]),
+    #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4,60,61,62]),
+    #('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\Arc\\20201020-150938.350000-P16_DR_LD', cbct_path, [60,62]),
+    #('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-150938.350000\\P16_DR_LD', cbct_path, [60,61,62]),
+    #('2010201_noimbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\P16_DR_LD', cbct_path, [60,62]),
     #('2010201_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path, [4, 28, 29]),
     #('2010201_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     ]
@@ -1877,7 +1912,7 @@ def reg_real_data():
             ims = ims[skip]
             ims_un = ims_un[skip]
             coord_systems = coord_systems[skip]
-            angles = angles[skip]
+            #angles = angles[skip]
             sids = np.mean(sids[skip])
             sods = np.mean(sods[skip])
             angles_noise = angles_noise[skip]
@@ -1899,8 +1934,10 @@ def reg_real_data():
             detector_mult1 = int(np.floor(detector_shape[0] / ims.shape[1]))
             
             detector_shape = np.array(ims_un.shape[1:])
+            detector_shape1 = np.array(ims.shape[1:])
             #detector_spacing = np.array((0.125, 0.125)) * detector_mult
             detector_spacing = np.array((0.154, 0.154)) * detector_mult
+            detector_spacing1 = np.array((0.154, 0.154)) * detector_mult1
 
             real_image = utils.fromHU(sitk.GetArrayFromImage(image))
             #print(real_image.shape)
@@ -1920,13 +1957,16 @@ def reg_real_data():
             print(spacing, image_spacing, np.array((1920,2480))/np.array(ims_un[0].shape), detector_mult)
 
             Ax = utils.Ax_param_asta(real_image.shape, detector_spacing, detector_shape, sods, sids-sods, image_spacing, real_image)
+            Ax_gen = (real_image.shape, detector_spacing, detector_shape, sods, sids-sods, image_spacing, real_image)
+            
+            Ax_big = utils.Ax_param_asta(real_image.shape, detector_spacing1, detector_shape1, sods, sids-sods, image_spacing, real_image)
+            Ax_gen_big = (real_image.shape, detector_spacing1, detector_shape1, sods, sids-sods, image_spacing, real_image)
 
-            if coord_systems.shape[1] == 4:
-                coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
-                params = params[skip]
+            #if coord_systems.shape[1] == 4:
+            #    coord_systems, thetas, phis, params = interpol_positions(coord_systems, Ax, ims, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
+            #    params = params[skip]
             #coord_systems = coord_systems[skip]
 
-            Ax_gen = (real_image.shape, detector_spacing, detector_shape, sods, sids-sods, image_spacing, real_image)
             geo = utils.create_astra_geo_coords(coord_systems, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
             geo_from_angles = utils.create_astra_geo_coords(coords_from_angles, detector_spacing, detector_shape, sods, sids-sods, image_spacing)
             #geo = geo_from_angles
@@ -2003,17 +2043,20 @@ def reg_real_data():
             #calc_images_matlab("input", ims, real_image, detector_shape, outpath, geo); 
             #calc_images_matlab("genA_trans", ims, real_image, detector_shape, outpath, geo); exit(0)
 
-            config = {"Ax": Ax, "Ax_gen": Ax_gen, "method": 3, "name": name, "real_cbct": real_image, "outpath": outpath, "estimate": False, 
-                    "target_sino": target_sino, "threads": mp.cpu_count()-4, "paralell": True, "angles": angles}
+            config = {"Ax": Ax, "Ax_small": Ax, "Ax_big": Ax_big, "Ax_gen": Ax_gen, "Ax_gen_big": Ax_gen_big, "method": 3, "name": name, "real_cbct": real_image,
+                    "outpath": outpath, "estimate": True, 
+                    "target_sino": None, "threads": 8, "paralell": True, "angles": angles}
 
-            if not os.path.exists("est_data.dump"): 
+            config["data_dump_path"] = os.path.join(outpath, name.split("_")[0]+"_est_data_"+str(cal.tdim)+str(cal.sdim)+str(cal.pdim) + ".dump")
+
+            if not os.path.exists(config["data_dump_path"]): 
                 perftime = time.perf_counter()
                 cur0 = np.zeros((3, 3), dtype=float)
                 cur0[1,0] = 1
                 cur0[2,1] = 1
                 est_data = cal.simulate_est_data(cur0, Ax)
                 est_data_ser = utils.serialize_est_data(est_data)
-                with open("est_data.dump", "wb") as f:
+                with open(config["data_dump_path"], "wb") as f:
                     pickle.dump(est_data_ser, f)
                 #est_data = utils.unserialize_est_data(config["est_data_ser"])
                 est_data = None

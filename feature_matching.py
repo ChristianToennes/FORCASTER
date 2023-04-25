@@ -62,6 +62,9 @@ def matchFeatures(real_data, sim_data, config=None, next_img=None):
     matchesMask = np.zeros((len(matches), 2), dtype=int)
     points = -np.ones(len(base_points), dtype=int)
     valid = np.zeros(len(base_points), dtype=bool)
+    lowe_ratio = 0.8
+    if config is not None and "lowe_ratio" in config:
+        lowe_ratio = config["lowe_ratio"]
 
     # ratio test as per Lowe's paper
     dists = []
@@ -69,7 +72,7 @@ def matchFeatures(real_data, sim_data, config=None, next_img=None):
         if len(ms) > 1:
             m,n = ms    
             dists.append(m.distance)
-            if m.distance < 0.8*n.distance:
+            if m.distance < lowe_ratio*n.distance:
                 matchesMask[i,0]=1
                 valid[m.queryIdx] = True
                 points[m.queryIdx] = m.trainIdx
@@ -192,7 +195,7 @@ def findInitialFeatures(img, config):
 
     if mask is None:
         mask = np.zeros_like(img, dtype=np.uint8)
-        mask[100:-100,100:-100] = True
+        mask[20:-20,20:-20] = True
     
     if config["use_cpu"]:
         #detector = cv2.xfeatures2d_SURF.create(100, 4, 3, False, True)
@@ -204,7 +207,8 @@ def findInitialFeatures(img, config):
         #img = np.repeat(img[:,:,np.newaxis], 3, axis=2)
         #img = np.stack([img, np.zeros_like(img), np.zeros_like(img)], axis=-1)
         #print(img.shape, img.dtype)
-        points, features = detector.detectAndCompute(img, np.ones_like(img, dtype=np.uint8))
+        #points, features = detector.detectAndCompute(img, np.ones_like(img, dtype=np.uint8))
+        points, features = detector.detectAndCompute(img, mask)
         #points = detector.detect(img, mask)
         #points, features = brief.compute(np.repeat(img[:,:,np.newaxis], 3, axis=2), points)
         points = np.array(points)

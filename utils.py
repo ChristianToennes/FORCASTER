@@ -266,7 +266,7 @@ def FDK_astra(out_shape, proj_geom, x):
     cfg['ReconstructionDataId'] = rec_id
     cfg['ProjectionDataId'] = proj_id
     cfg['Option'] = {#"VoxelSuperSampling": 3, 
-                     "ShortScan": True
+                     "ShortScan": False
                     }
     alg_id = astra.algorithm.create(cfg)
     iterations = 1

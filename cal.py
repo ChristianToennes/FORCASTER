@@ -18,6 +18,8 @@ from objectives import *
 import cal_bfgs_rot
 from skimage.metrics import structural_similarity,normalized_root_mse
 
+import cal_bfgs_both
+
 class OptimizationFailedException(Exception):
     pass
 
@@ -504,6 +506,10 @@ def roughRegistration(in_cur, reg_config, c):
     cur = np.array(in_cur)
     config = dict(default_config)
     config.update(reg_config)
+
+    config["Ax"] = config["Ax_small"]
+    config["real_img"] = config["real_img_small"]
+
     if c==-19:
         config["opti_method"] = "Newton-CG"
         return bfgs(cur, config, 1)
@@ -1323,23 +1329,27 @@ def roughRegistration(in_cur, reg_config, c):
         cur = cur[0]
         #print("e", cur)
 
-        config["it"] = 2
+        config["it"] = 3
         log_error(cur, config)
         cur = correctFlip(cur, config)
         cur = correctZ(cur, config)
-        cur = correctRotZ(cur, config)
+        cur2 = np.array(cur)
+        try:
+            cur = correctRotZ(cur, config)
+            #print("rz", cur)
+            log_error(cur, config)
+        except Exception as e:
+            print(e)
+            cur = cur2
         #print("f", cur)
         log_error(cur, config)
         cur2 = np.array(cur)
-        for i in range(2):
+        for i in range(1):
             cur = correctXY(cur, config)
             #print("xy", cur)
             log_error(cur, config)
             cur = correctZ(cur, config)
             #print("z", cur)
-            log_error(cur, config)
-            cur = correctXY(cur, config)
-            #print("xy", cur)
             log_error(cur, config)
             cur2 = np.array(cur)
             try:
@@ -1349,6 +1359,9 @@ def roughRegistration(in_cur, reg_config, c):
             except Exception as e:
                 print(e)
                 cur = cur2
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
 
         ml("61 EST-QUT-AF my", starttime, res)
 
@@ -1369,22 +1382,50 @@ def roughRegistration(in_cur, reg_config, c):
         #    config["est_data"] = est_data
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
+        #print("e", cur)
 
-        config["it"] = 2
+        config["it"] = 3
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctRotZ(cur, config)
+        #print("f", cur)
+        log_error(cur, config)
+        cur2 = np.array(cur)
+        for i in range(1):
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            #print("z", cur)
+            cur2 = np.array(cur)
+            try:
+                cur = correctRotZ(cur, config)
+                #print("rz", cur)
+                log_error(cur, config)
+            except Exception as e:
+                print(e)
+                cur = cur2
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+
+        #config["Ax"] = config["Ax_big"]
+        #config["real_img"] = config["real_img_big"]
+
         log_error(cur, config)
         cur = correctFlip(cur, config)
         log_error(cur, config)
-        for i in range(2):
-            cur = correctXY(cur, config)
-            log_error(cur, config)
-            cur = correctZ(cur, config)
-            log_error(cur, config)
-            cur = correctXY(cur, config)
-            log_error(cur, config)
-            cur = correctRotZ(cur, config)
-            log_error(cur, config)
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
 
-        config["it"] = 1
+        config["it"] = 3
         config["both"] = True
         for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
             res["nit"] += 1
@@ -1827,6 +1868,55 @@ def roughRegistration(in_cur, reg_config, c):
         log_error(cur, config)
         ml("65 EST-QUT-AF my", starttime, res)
 
+    elif c==70:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "70 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+        #print("e", cur)
+
+        config["it"] = 3
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctRotZ(cur, config)
+        #print("f", cur)
+        log_error(cur, config)
+        cur2 = np.array(cur)
+        for i in range(1):
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            #print("z", cur)
+            log_error(cur, config)
+            cur2 = np.array(cur)
+            try:
+                cur = correctRotZ(cur, config)
+                #print("rz", cur)
+                log_error(cur, config)
+            except Exception as e:
+                print(e)
+                cur = cur2
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+        
+
+        cur = cal_bfgs_both.bfgs(cur, config, -70)
+
+        ml("70 EST-QUT-AF my", starttime, res)
 
     return cur
 
@@ -2761,9 +2851,9 @@ def bfgs_trans_all(curs, reg_config, c):
 
     return np.array(res), (trans_noise, angles_noise)
 
-pdim = 90
-sdim = 90
-tdim = 5
+pdim = 99
+sdim = 99
+tdim = 3
 
 def simulate_est_data(cur, Ax, config=None):
     if config is None:
@@ -2808,14 +2898,14 @@ def est_position(in_cur, Ax, real_imgs, est_data):
     cur = np.array(in_cur)
     config = dict(default_config)
 
-    perftime = time.perf_counter()
+    #perftime = time.perf_counter()
     #print("simulate and find", end=' ')
     #if est_data is None:
         #pos, projs_data = simulate_est_data(cur, Ax, config)
     #else:
     pos, projs_data = est_data
     #print(time.perf_counter()-perftime)
-    perftime = time.perf_counter()
+    #perftime = time.perf_counter()
     #print("evaluate", end=' ')
     curs = []
     poss = []
@@ -2829,8 +2919,8 @@ def est_position(in_cur, Ax, real_imgs, est_data):
         points_real = normalize_points(data_real[0], real_img)
         no_valid = []
         indexes = []
-        for i in range(0, pdim, 5):
-            for j in range(0, sdim, 5):
+        for i in range(0, pdim, 4):
+            for j in range(0, sdim, 4):
                 for k in range(0, tdim, 1):
                     #proj = projs[:,i]
                     #(p,v) = trackFeatures(proj, data_real, config)
@@ -2839,7 +2929,7 @@ def est_position(in_cur, Ax, real_imgs, est_data):
                     #config["real_img"] = real_img
                     #proj = Projection_Preprocessing(Ax(np.array([applyRot(cur0, pos[idx][0],pos[idx][1],pos[idx][2])])))
                     #(p,v) = matchFeatures(data_real, projs_data[idx], config, proj[:,0])
-                    (p,v) = matchFeatures(data_real, projs_data[idx])
+                    (p,v) = matchFeatures(data_real, projs_data[idx], config={"lowe_ratio": 0.8})
                     valid = np.count_nonzero(v==1)
                     #points_new = normalize_points(p[v], real_img)
                     #valid = calcPointsObjective(-6, points_new, points_real[v])
@@ -2853,8 +2943,14 @@ def est_position(in_cur, Ax, real_imgs, est_data):
         indexes = np.array(indexes)
         vmax = 0
         indexes2 = set()
+        #count = {}
         #print(pos[ np.array([x[0]*sdim+x[1]+x[2]*pdim*sdim for x in indexes[np.argsort(no_valid)[-4:]]])] )
-        for index in indexes[np.argsort(no_valid)[-4:]]:
+        for p in np.argsort(no_valid)[-5:]:
+            index = indexes[p]
+            #if (index[0],index[1]) not in count:
+            #    count[(index[0],index[1])]=[0,0]
+            #count[(index[0],index[1])][0] += 1
+            #count[(index[0],index[1])][1] += no_valid[p]
             for i in range(index[0]-4,index[0]+5,1):
                 if i < 0 or i >= pdim: continue
                 for j in range(index[1]-4,index[1]+5,1):
@@ -2862,9 +2958,15 @@ def est_position(in_cur, Ax, real_imgs, est_data):
                     for k in range(index[2]-4,index[2]+5,1):
                         if k<0 or k>=tdim: continue
                         indexes2.add((i,j,k))
+        #index3 = indexes[np.argsort(no_valid)[-1]]
+        #count2 = {}
         for (i,j,k) in indexes2:
-            (p,v) = matchFeatures(data_real, projs_data[k*sdim*pdim+i*sdim+j])
+            (p,v) = matchFeatures(data_real, projs_data[k*sdim*pdim+i*sdim+j], config={"lowe_ratio": 0.7})
+            #if (i,j) not in count2:
+            #    count2[(i,j)] = [0,0]
             valid = np.count_nonzero(v==1)
+            #count2[(i,j)][0] += 1
+            #count2[(i,j)][1] += valid
             #points_new = normalize_points(p[v], real_img)
             #valid = calcPointsObjective(-6, points_new, points_real[v])
             #no_valid.append(valid)
@@ -2874,69 +2976,76 @@ def est_position(in_cur, Ax, real_imgs, est_data):
 
         index = index2
 
-
         #no_valid = np.array(no_valid)
 
         #lv = np.argsort(no_valid)[::-1]
         #b = lv[0]
-        b = index[2]*sdim*pdim+index[0]*sdim+index[1]
+        #b = index[2]*sdim*pdim+index[0]*sdim+index[1]
         #print(time.perf_counter()-perftime)
-        perftime = time.perf_counter()
+        #perftime = time.perf_counter()
         #print("rotate", end=' ')
 
-        bp, bs, bt = pos[b]
+        #bp, bs, bt = pos[b]
 
-        #(p,v) = matchFeatures(data_real, projs_data[b], config)
-        #print(np.count_nonzero(v), projs_data[b][0].shape, data_real[0].shape)
-        (p,v) = matchFeatures(data_real, projs_data[b], config)
-        #print(np.count_nonzero(v), projs_data[b][0].shape, data_real[0].shape)
-        #print(p.shape, v.shape, projs_data[b][0].shape, data_real[0].shape)
-        points_new = normalize_points(p[v], real_img)
-        #points_real = normalize_points(projs_data[b][0][v], real_img)
-        points_r = points_real[v]
-        
-        new_mid = np.mean(points_new, axis=0)
-        real_mid = np.mean(points_r, axis=0)
+        #i=sorted(count2.items(), key=lambda x: x[1][1])[-1]
+        #poss.append(np.array([bp, bs, bt]))
+        #index4=pos[pdim*sdim+i[0][0]*sdim+i[0][1]]
+        index4 = pos[index[2] *sdim*pdim+index[0]*sdim+index[1]]
+        bp, bs, bt = index4
 
-        points_new = points_new - new_mid
-        points_r = points_r - real_mid
+        if False:
+            #(p,v) = matchFeatures(data_real, projs_data[b], config)
+            #print(np.count_nonzero(v), projs_data[b][0].shape, data_real[0].shape)
+            config["lowe_ratio"] = 0.75
+            (p,v) = matchFeatures(data_real, projs_data[b], config={"lowe_ratio": 0.75})
+            #print(np.count_nonzero(v), projs_data[b][0].shape, data_real[0].shape)
+            #print(p.shape, v.shape, projs_data[b][0].shape, data_real[0].shape)
+            points_new = normalize_points(p[v], real_img)
+            #points_real = normalize_points(projs_data[b][0][v], real_img)
+            points_r = points_real[v]
+            
+            new_mid = np.mean(points_new, axis=0)
+            real_mid = np.mean(points_r, axis=0)
 
-        #c = np.linalg.norm(points_new-points_real, axis=-1)
-        #a = np.linalg.norm(points_new, axis=-1)
-        #b = np.linalg.norm(points_real, axis=-1)
-        #print(a.shape, b.shape, points_new.shape)
+            points_new = points_new - new_mid
+            points_r = points_r - real_mid
 
-        #angle = np.arccos((a*a+b*b-c*c) / (2*a*b))*180.0/np.pi
-        #val = (points_new[:,0]*points_real[:,0]+points_new[:,1]*points_real[:,1]) / (a*b)
-        #angle_cos = np.arccos( val )*180.0/np.pi
-        angle = (np.arctan2(points_new[:,0], points_new[:,1])-np.arctan2(points_r[:,0], points_r[:,1])) * 180.0/np.pi
-        angle[angle<-180] += 360
-        angle[angle>180] -= 360
+            #c = np.linalg.norm(points_new-points_real, axis=-1)
+            #a = np.linalg.norm(points_new, axis=-1)
+            #b = np.linalg.norm(points_real, axis=-1)
+            #print(a.shape, b.shape, points_new.shape)
 
-        #print(np.min(angle), np.mean(angle), np.median(angle), np.max(angle))
-        #print(np.min(angle_cos), np.mean(angle_cos), np.median(angle_cos), np.max(angle_cos))
-        projs = Projection_Preprocessing(Ax(np.array([applyRot(cur, 0,0,-np.median(angle)), applyRot(cur, 0,0,np.median(angle)) ]))) #, applyRot(cur, 180,0,-np.median(angle)), applyRot(cur, 180,0,np.median(angle))])))
-        p,v = trackFeatures(projs[:,0], data_real, config)
-        points = normalize_points(p, projs[:,0])
-        valid = v==1
-        diffn = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
-        p,v = trackFeatures(projs[:,1], data_real, config)
-        points = normalize_points(p, projs[:,1])
-        valid = v==1
-        diffp = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
-        #p,v = trackFeatures(projs[:,0], data_real, config)
-        #points = normalize_points(p, projs[:,2])
-        #valid = v==1
-        #diffnf = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
-        #p,v = trackFeatures(projs[:,1], data_real, config)
-        #points = normalize_points(p, projs[:,3])
-        #valid = v==1
-        #diffpf = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+            #angle = np.arccos((a*a+b*b-c*c) / (2*a*b))*180.0/np.pi
+            #val = (points_new[:,0]*points_real[:,0]+points_new[:,1]*points_real[:,1]) / (a*b)
+            #angle_cos = np.arccos( val )*180.0/np.pi
+            angle = (np.arctan2(points_new[:,0], points_new[:,1])-np.arctan2(points_r[:,0], points_r[:,1])) * 180.0/np.pi
+            angle[angle<-180] += 360
+            angle[angle>180] -= 360
 
-        if diffn < diffp:
-            bt = bt - np.median(angle)
-        else:
-            bt = bt + np.median(angle)
+            #print(np.min(angle), np.mean(angle), np.median(angle), np.max(angle))
+            #print(np.min(angle_cos), np.mean(angle_cos), np.median(angle_cos), np.max(angle_cos))
+            projs = Projection_Preprocessing(Ax(np.array([applyRot(cur, 0,0,-np.median(angle)), applyRot(cur, 0,0,np.median(angle)) ]))) #, applyRot(cur, 180,0,-np.median(angle)), applyRot(cur, 180,0,np.median(angle))])))
+            p,v = trackFeatures(projs[:,0], data_real, config)
+            points = normalize_points(p, projs[:,0])
+            valid = v==1
+            diffn = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+            p,v = trackFeatures(projs[:,1], data_real, config)
+            points = normalize_points(p, projs[:,1])
+            valid = v==1
+            diffp = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+            #p,v = trackFeatures(projs[:,0], data_real, config)
+            #points = normalize_points(p, projs[:,2])
+            #valid = v==1
+            #diffnf = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+            #p,v = trackFeatures(projs[:,1], data_real, config)
+            #points = normalize_points(p, projs[:,3])
+            #valid = v==1
+            #diffpf = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+
+            if diffn < diffp:
+                bt = bt - np.median(angle)
+            else:
+                bt = bt + np.median(angle)
 
         #flip = False
         #if diffn < diffnf and diffn < diffpf and diffn < diffp:
@@ -2951,11 +3060,195 @@ def est_position(in_cur, Ax, real_imgs, est_data):
         #    flip = True
 
         #print(time.perf_counter()-perftime)
-        curs.append(applyRot(in_cur, bp, bs, bt))
         #if flip:
         #    curs[-1] = applyRot(curs[-1], 180, 0, 0)
 
-        poss.append(np.array([bp, bs, bt]))
+
+        
+        poss.append(np.array([bp,bs,bt]))
+        #if bp!=index4[0] or bs !=index4[1] or bt!=index4[2]:
+        #    print([(list(pos[i[0][0]*sdim+i[0][1]]), i[1]) for i in sorted(count.items(), key=lambda x: x[1][1])], [(list(pos[i[0][0]*sdim+i[0][1]]), i[1]) for i in sorted(count2.items(), key=lambda x: x[1][1])[-3:]])
+        #    print(list(pos[index3[2]*sdim*pdim+index3[0]*sdim+index3[1]]), list(pos[index2[2]*sdim*pdim+index2[0]*sdim+index2[1]]), list(index4), [bp, bs, bt])
+        
+        curs.append(applyRot(in_cur, poss[-1][0], poss[-1][1], poss[-1][2]))
+    #plt.figure()
+    #plt.title(title)
+    #plt.plot(np.arange(len(no_valid)), no_valid)
+    return np.array(curs), np.array(poss)
+
+
+def est_position_ngi(in_cur, Ax, real_imgs, est_data):
+    cur = np.array(in_cur)
+    config = dict(default_config)
+
+    #perftime = time.perf_counter()
+    #print("simulate and find", end=' ')
+    #if est_data is None:
+        #pos, projs_data = simulate_est_data(cur, Ax, config)
+    #else:
+    pos, projs_data = est_data
+    #print(time.perf_counter()-perftime)
+    #perftime = time.perf_counter()
+    #print("evaluate", end=' ')
+    curs = []
+    poss = []
+    vmax = 0
+    index = (0,0,0)
+    cur0 = np.zeros((3, 3), dtype=float)
+    cur0[1,0] = 1
+    cur0[2,1] = 1
+    for real_img in real_imgs:
+        data_real = findInitialFeatures(real_img, config)
+        points_real = normalize_points(data_real[0], real_img)
+        no_valid = []
+        indexes = []
+        for i in range(0, pdim, 4):
+            for j in range(0, sdim, 4):
+                for k in range(0, tdim, 1):
+                    idx = k*pdim*sdim+i*sdim+j
+                    values = np.array([calcGIObjective(real_img, projs[:,idx], 0, None, config) for i in range(projs.shape[1])])
+                    (p,v) = matchFeatures(data_real, projs_data[idx], config={"lowe_ratio": 0.8})
+                    valid = np.count_nonzero(v==1)
+                    #points_new = normalize_points(p[v], real_img)
+                    #valid = calcPointsObjective(-6, points_new, points_real[v])
+                    no_valid.append(valid)
+                    indexes.append((i,j,k))
+                    if vmax==0 or valid > vmax:
+                        vmax = valid
+                        index = (i,j,k)
+        #np.sort(no_valid)[::-1]
+        index2 = index
+        indexes = np.array(indexes)
+        vmax = 0
+        indexes2 = set()
+        #count = {}
+        #print(pos[ np.array([x[0]*sdim+x[1]+x[2]*pdim*sdim for x in indexes[np.argsort(no_valid)[-4:]]])] )
+        for p in np.argsort(no_valid)[-5:]:
+            index = indexes[p]
+            #if (index[0],index[1]) not in count:
+            #    count[(index[0],index[1])]=[0,0]
+            #count[(index[0],index[1])][0] += 1
+            #count[(index[0],index[1])][1] += no_valid[p]
+            for i in range(index[0]-4,index[0]+5,1):
+                if i < 0 or i >= pdim: continue
+                for j in range(index[1]-4,index[1]+5,1):
+                    if j < 0 or j >= sdim: continue
+                    for k in range(index[2]-4,index[2]+5,1):
+                        if k<0 or k>=tdim: continue
+                        indexes2.add((i,j,k))
+        #index3 = indexes[np.argsort(no_valid)[-1]]
+        #count2 = {}
+        for (i,j,k) in indexes2:
+            (p,v) = matchFeatures(data_real, projs_data[k*sdim*pdim+i*sdim+j], config={"lowe_ratio": 0.7})
+            #if (i,j) not in count2:
+            #    count2[(i,j)] = [0,0]
+            valid = np.count_nonzero(v==1)
+            #count2[(i,j)][0] += 1
+            #count2[(i,j)][1] += valid
+            #points_new = normalize_points(p[v], real_img)
+            #valid = calcPointsObjective(-6, points_new, points_real[v])
+            #no_valid.append(valid)
+            if vmax == 0 or valid > vmax:
+                vmax = valid
+                index2 = (i,j,k)
+
+        index = index2
+
+        #no_valid = np.array(no_valid)
+
+        #lv = np.argsort(no_valid)[::-1]
+        #b = lv[0]
+        #b = index[2]*sdim*pdim+index[0]*sdim+index[1]
+        #print(time.perf_counter()-perftime)
+        #perftime = time.perf_counter()
+        #print("rotate", end=' ')
+
+        #bp, bs, bt = pos[b]
+
+        #i=sorted(count2.items(), key=lambda x: x[1][1])[-1]
+        #poss.append(np.array([bp, bs, bt]))
+        #index4=pos[pdim*sdim+i[0][0]*sdim+i[0][1]]
+        index4 = pos[index[2] *sdim*pdim+index[0]*sdim+index[1]]
+        bp, bs, bt = index4
+
+        if False:
+            #(p,v) = matchFeatures(data_real, projs_data[b], config)
+            #print(np.count_nonzero(v), projs_data[b][0].shape, data_real[0].shape)
+            config["lowe_ratio"] = 0.75
+            (p,v) = matchFeatures(data_real, projs_data[b], config={"lowe_ratio": 0.75})
+            #print(np.count_nonzero(v), projs_data[b][0].shape, data_real[0].shape)
+            #print(p.shape, v.shape, projs_data[b][0].shape, data_real[0].shape)
+            points_new = normalize_points(p[v], real_img)
+            #points_real = normalize_points(projs_data[b][0][v], real_img)
+            points_r = points_real[v]
+            
+            new_mid = np.mean(points_new, axis=0)
+            real_mid = np.mean(points_r, axis=0)
+
+            points_new = points_new - new_mid
+            points_r = points_r - real_mid
+
+            #c = np.linalg.norm(points_new-points_real, axis=-1)
+            #a = np.linalg.norm(points_new, axis=-1)
+            #b = np.linalg.norm(points_real, axis=-1)
+            #print(a.shape, b.shape, points_new.shape)
+
+            #angle = np.arccos((a*a+b*b-c*c) / (2*a*b))*180.0/np.pi
+            #val = (points_new[:,0]*points_real[:,0]+points_new[:,1]*points_real[:,1]) / (a*b)
+            #angle_cos = np.arccos( val )*180.0/np.pi
+            angle = (np.arctan2(points_new[:,0], points_new[:,1])-np.arctan2(points_r[:,0], points_r[:,1])) * 180.0/np.pi
+            angle[angle<-180] += 360
+            angle[angle>180] -= 360
+
+            #print(np.min(angle), np.mean(angle), np.median(angle), np.max(angle))
+            #print(np.min(angle_cos), np.mean(angle_cos), np.median(angle_cos), np.max(angle_cos))
+            projs = Projection_Preprocessing(Ax(np.array([applyRot(cur, 0,0,-np.median(angle)), applyRot(cur, 0,0,np.median(angle)) ]))) #, applyRot(cur, 180,0,-np.median(angle)), applyRot(cur, 180,0,np.median(angle))])))
+            p,v = trackFeatures(projs[:,0], data_real, config)
+            points = normalize_points(p, projs[:,0])
+            valid = v==1
+            diffn = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+            p,v = trackFeatures(projs[:,1], data_real, config)
+            points = normalize_points(p, projs[:,1])
+            valid = v==1
+            diffp = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+            #p,v = trackFeatures(projs[:,0], data_real, config)
+            #points = normalize_points(p, projs[:,2])
+            #valid = v==1
+            #diffnf = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+            #p,v = trackFeatures(projs[:,1], data_real, config)
+            #points = normalize_points(p, projs[:,3])
+            #valid = v==1
+            #diffpf = np.sum(np.abs(np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])))
+
+            if diffn < diffp:
+                bt = bt - np.median(angle)
+            else:
+                bt = bt + np.median(angle)
+
+        #flip = False
+        #if diffn < diffnf and diffn < diffpf and diffn < diffp:
+        #    bt = -np.median(angle)
+        #if diffp < diffnf and diffp < diffpf and diffp < diffn:
+        #    bt = np.median(angle)
+        #if diffnf < diffn and diffnf < diffpf and diffnf < diffp:
+        #    bt = np.median(angle)
+        #    flip = True
+        #if diffpf < diffnf and diffpf < diffn and diffpf < diffp:
+        #    bt = -np.median(angle)
+        #    flip = True
+
+        #print(time.perf_counter()-perftime)
+        #if flip:
+        #    curs[-1] = applyRot(curs[-1], 180, 0, 0)
+
+
+        
+        poss.append(np.array([bp,bs,bt]))
+        #if bp!=index4[0] or bs !=index4[1] or bt!=index4[2]:
+        #    print([(list(pos[i[0][0]*sdim+i[0][1]]), i[1]) for i in sorted(count.items(), key=lambda x: x[1][1])], [(list(pos[i[0][0]*sdim+i[0][1]]), i[1]) for i in sorted(count2.items(), key=lambda x: x[1][1])[-3:]])
+        #    print(list(pos[index3[2]*sdim*pdim+index3[0]*sdim+index3[1]]), list(pos[index2[2]*sdim*pdim+index2[0]*sdim+index2[1]]), list(index4), [bp, bs, bt])
+        
+        curs.append(applyRot(in_cur, poss[-1][0], poss[-1][1], poss[-1][2]))
     #plt.figure()
     #plt.title(title)
     #plt.plot(np.arange(len(no_valid)), no_valid)

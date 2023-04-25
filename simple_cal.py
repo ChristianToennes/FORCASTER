@@ -172,6 +172,7 @@ def correctRotZ(in_cur, config):
         angle[angle<-180] += 360
         angle[angle>180] -= 360
 
+        print(angle)
         #print(np.min(angle), np.mean(angle), np.median(angle), np.max(angle))
         #print(np.min(angle_cos), np.mean(angle_cos), np.median(angle_cos), np.max(angle_cos))
         projs = Projection_Preprocessing(Ax(np.array([applyRot(cur, 0,0,-np.median(angle)), applyRot(cur, 0,0,np.median(angle))])))

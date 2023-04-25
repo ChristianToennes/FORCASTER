@@ -14,6 +14,8 @@ from feature_matching import *
 from simple_cal import *
 from objectives import *
 from skimage.metrics import structural_similarity,normalized_root_mse
+import cma
+from types import SimpleNamespace
 
 def calc_obj(cur_proj, k, config):
     if config["data_real"] is None:
@@ -56,7 +58,7 @@ def bfgs(cur, reg_config, c):
         cur_x.append(applyTrans(cur_rot, x[0+3], x[0+4], x[0+5]))
         cur_x = np.array(cur_x)
         proj = Projection_Preprocessing(Ax(cur_x))
-        
+        print(config["real_img"].shape, proj[:,0].shape)
         ret.append( (structural_similarity(config["real_img"], proj[:,0]), normalized_root_mse(config["real_img"], proj[:,0])) )
         #ret.append( (0, normalized_root_mse(config["real_img"], proj[:,0])) )
 
@@ -235,7 +237,7 @@ def bfgs(cur, reg_config, c):
                                         jac=gradf3, callback=callback,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True}))
         elif c==-58:
-            eps = [0.25, 0.25, 0.25,3, 3, 3]
+            eps = [0.1, 0.1, 0.1,3, 3, 3]
             name = "-58.err " + index + " bfgs full ngi 1"
             callback = lambda x: log_queue.put((name, e(x, cur, eps, config)))
             callback(np.array([0,0,0,0,0,0]))
@@ -243,21 +245,27 @@ def bfgs(cur, reg_config, c):
                                         jac=gradf3, callback=callback,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True}))
 
-            eps = [0.05,0.05,0.05,2, 2, 2]
+            eps = [0.01,0.01,0.01,2, 2, 2]
             name = "-58.err " + index + " bfgs full ngi 2"
             callback = lambda x: log_queue.put((name, e(x, cur, eps, config)))
             ret =  ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps,config), method='BFGS',
                                         jac=gradf3, callback=callback,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True}))
 
-            eps = [0.01,0.01,0.01, 1, 1, 1]
+            eps = [0.001,0.001,0.001, 1, 1, 1]
             name = "-58.err " + index + " bfgs full ngi 3"
             callback = lambda x: log_queue.put((name, e(x, cur, eps, config)))
             ret =  ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps,config), method='BFGS',
                                         jac=gradf3, callback=callback,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True}))
 
-
+        elif c==-70:
+            eps = [0.25, 0.25, 0.25,3, 3, 3]
+            fit = lambda xs: np.array([f(x, cur, eps, config) for x in xs])
+            #opt = cma.CMA(initial_solution=np.array([0,0,0,0,0,0]), initial_step_size=1.0, fitness_function=fit, termination_no_effect=0.001)
+            #ret, score = opt.search()
+            x, score = cma.fmin2(f, np.array([0,0,0,0,0,0]), 1, args=(cur,eps,config), gradf=gradf3, options={'ftarget': 0.001, 'maxfevals': 1000})
+            ret = SimpleNamespace(x=x)
 
         else:
             print("no method selected", c)
