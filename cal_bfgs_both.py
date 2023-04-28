@@ -37,6 +37,8 @@ def bfgs(cur, reg_config, c):
     config = dict(default_config)
     config.update(reg_config)
     config["my"] = c>-50
+    
+    config["my"] = c in [-43,-44,-72]
 
     real_img = config["real_img"]
     Ax = config["Ax"]
@@ -211,6 +213,17 @@ def bfgs(cur, reg_config, c):
             ret = ml(name, time.perf_counter(), scipy.optimize.minimize(f, np.array(ret.x), args=(cur,eps,config), method='BFGS',
                                         jac=gradf3, callback=callback,
                                         options={'maxiter': 50, 'eps': eps, 'disp': True}))
+        
+        elif c==-72:
+            eps = [0.1, 0.1, 0.1, 1, 1, 1]
+            #fit = lambda xs: np.array([f(x, cur, eps, config) for x in xs])
+            #opt = cma.CMA(initial_solution=np.array([0,0,0,0,0,0]), initial_step_size=1.0, fitness_function=fit, termination_no_effect=0.001)
+            #ret, score = opt.search()
+            x, score = cma.fmin2(f, np.array([0,0,0,0,0,0]), 1, args=(cur,eps,config), gradf=gradf3, options={'ftarget': 0.001, 'maxiter': 200})
+            ret = SimpleNamespace(x=x)
+        
+        else:
+            print("no method selected", c)
        
     else:
         
@@ -260,11 +273,23 @@ def bfgs(cur, reg_config, c):
                                         options={'maxiter': 50, 'eps': eps, 'disp': True}))
 
         elif c==-70:
-            eps = [0.25, 0.25, 0.25,3, 3, 3]
-            fit = lambda xs: np.array([f(x, cur, eps, config) for x in xs])
+            eps = [0.1, 0.1, 0.1, 1, 1, 1]
+            cur = np.zeros_like(cur)
+            #fit = lambda xs: np.array([f(x, cur, eps, config) for x in xs])
             #opt = cma.CMA(initial_solution=np.array([0,0,0,0,0,0]), initial_step_size=1.0, fitness_function=fit, termination_no_effect=0.001)
             #ret, score = opt.search()
-            x, score = cma.fmin2(f, np.array([0,0,0,0,0,0]), 1, args=(cur,eps,config), gradf=gradf3, options={'ftarget': 0.001, 'maxfevals': 1000})
+            x, score = cma.fmin2(f, np.array([0,0,0,0,0,0]), 1, args=(cur,eps,config), gradf=gradf3, options={'ftarget': 0.1, 'maxiter': 10})
+            eps = [0.01, 0.01, 0.01, 1, 1, 1]
+            x, score = cma.fmin2(f, np.array(x), 0.1, args=(cur,eps,config), gradf=gradf3, options={'ftarget': 0.001, 'maxiter': 10})
+            ret = SimpleNamespace(x=x)
+        elif c==-71:
+            eps = [0.1, 0.1, 0.1, 1, 1, 1]
+            #fit = lambda xs: np.array([f(x, cur, eps, config) for x in xs])
+            #opt = cma.CMA(initial_solution=np.array([0,0,0,0,0,0]), initial_step_size=1.0, fitness_function=fit, termination_no_effect=0.001)
+            #ret, score = opt.search()
+            x, score = cma.fmin2(f, np.array([0,0,0,0,0,0]), 1, args=(cur,eps,config), gradf=gradf3, options={'ftarget': 0.1, 'maxiter': 10})
+            eps = [0.01, 0.01, 0.01, 1, 1, 1]
+            x, score = cma.fmin2(f, np.array(x), 0.1, args=(cur,eps,config), gradf=gradf3, options={'ftarget': 0.001, 'maxiter': 10})
             ret = SimpleNamespace(x=x)
 
         else:

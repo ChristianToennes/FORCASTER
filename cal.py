@@ -1306,7 +1306,14 @@ def roughRegistration(in_cur, reg_config, c):
         config["it"] = 1
         cur = correctFlip(cur, config)
         cur = correctZ(cur, config)
-        cur = correctRotZ(cur, config)
+        cur2 = np.array(cur)
+        try:
+            cur = correctRotZ(cur, config)
+            #print("rz", cur)
+            log_error(cur, config)
+        except Exception as e:
+            print(e)
+            cur = cur2
         cur = correctXY(cur, config)
 
         ml("60.5 EST-QUT-AF my", starttime, res)
@@ -1454,6 +1461,76 @@ def roughRegistration(in_cur, reg_config, c):
         #log_error(cur, config)
         ml("62 EST-QUT-AF ngi", starttime, res)
 
+    elif c==62.5:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "62.5 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        config["it"] = 1
+        cur = correctFlip(cur, config)
+        cur = correctZ(cur, config)
+        cur2 = np.array(cur)
+        try:
+            cur = correctRotZ(cur, config)
+            #print("rz", cur)
+            log_error(cur, config)
+        except Exception as e:
+            print(e)
+            cur = cur2
+        cur = correctXY(cur, config)
+
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        config["it"] = 3
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+
+        config["it"] = 2
+        config["both"] = True
+        config["objectives"] = {0: -6, 1: -6, 2: -6}
+        config["use_combined"] = True
+        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+
+        ml("62.5 EST-QUT-AF my", starttime, res)
+    
     elif c==621:
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
@@ -1871,11 +1948,13 @@ def roughRegistration(in_cur, reg_config, c):
     elif c==70:
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
-        config["name"] = "70 QUT-AF my " + config["name"]
+        config["name"] = "70 EST-QUT-AF my" + config["name"]
 
         cur0 = np.zeros((3, 3), dtype=float)
         cur0[1,0] = 1
         cur0[2,1] = 1
+
+        config["my"] = False
 
         #if("est_data" in config):
         #    est_data = config["est_data"]
@@ -1884,35 +1963,55 @@ def roughRegistration(in_cur, reg_config, c):
         #    config["est_data"] = est_data
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
-        #print("e", cur)
 
-        config["it"] = 3
-        log_error(cur, config)
+        config["it"] = 1
         cur = correctFlip(cur, config)
         cur = correctZ(cur, config)
-        cur = correctRotZ(cur, config)
-        #print("f", cur)
-        log_error(cur, config)
         cur2 = np.array(cur)
-        for i in range(1):
-            cur = correctXY(cur, config)
-            #print("xy", cur)
+        try:
+            cur = correctRotZ(cur, config)
+            #print("rz", cur)
             log_error(cur, config)
-            cur = correctZ(cur, config)
-            #print("z", cur)
+        except Exception as e:
+            print(e)
+            cur = cur2
+        cur = correctXY(cur, config)
+
+        cur = cal_bfgs_both.bfgs(cur, config, -70)
+
+        ml("70 EST-QUT-AF my", starttime, res)
+    
+    elif c==71:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "70 EST-QUT-AF my" + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        config["my"] = True
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+
+        config["it"] = 1
+        cur = correctFlip(cur, config)
+        cur = correctZ(cur, config)
+        cur2 = np.array(cur)
+        try:
+            cur = correctRotZ(cur, config)
+            #print("rz", cur)
             log_error(cur, config)
-            cur2 = np.array(cur)
-            try:
-                cur = correctRotZ(cur, config)
-                #print("rz", cur)
-                log_error(cur, config)
-            except Exception as e:
-                print(e)
-                cur = cur2
-            cur = correctXY(cur, config)
-            #print("xy", cur)
-            log_error(cur, config)
-        
+        except Exception as e:
+            print(e)
+            cur = cur2
+        cur = correctXY(cur, config)
 
         cur = cal_bfgs_both.bfgs(cur, config, -70)
 
@@ -2851,8 +2950,8 @@ def bfgs_trans_all(curs, reg_config, c):
 
     return np.array(res), (trans_noise, angles_noise)
 
-pdim = 99
-sdim = 99
+pdim = 95
+sdim = 95
 tdim = 3
 
 def simulate_est_data(cur, Ax, config=None):
