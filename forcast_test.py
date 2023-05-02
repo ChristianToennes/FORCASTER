@@ -222,7 +222,8 @@ def read_dicoms(indir, max_ims=np.inf):
             elif "NumberOfFrames" in dir(ds):
                 NumberOfFrames = ds.NumberOfFrames
                 if len(ims) == 0:
-                    ims = ds.pixel_array[54:]
+                    #ims = ds.pixel_array[54:]
+                    im = ds.pixel_array[3:370]
                     NumberOfFrames = len(ims)
                 else:
                     ims = np.vstack([ims, ds.pixel_array])
@@ -511,7 +512,7 @@ def it_func(con, Ax_params, Ax_params_big, log_queue, ready, name, est_data_name
             try:
                 con.send(("ready",))
                 ready.set()
-                (i, cur, im, im_big, noise, method) = con.recv()
+                (i, cur, im, im_big, estimate, method) = con.recv()
                 if i == None:
                     break
                 
@@ -522,7 +523,7 @@ def it_func(con, Ax_params, Ax_params_big, log_queue, ready, name, est_data_name
                     profiler.enable()    
                 real_img = cal.Projection_Preprocessing(im)
                 real_img_big = cal.Projection_Preprocessing(im_big)
-                cur_config = {"real_img_small": real_img, "real_img_big": real_img_big, "Ax_small": Ax, "Ax_big": Ax_big, "log_queue": log_queue, "name": str(i), "est_data": est_data, "estimate": True}
+                cur_config = {"real_img_small": real_img, "real_img_big": real_img_big, "Ax_small": Ax, "Ax_big": Ax_big, "log_queue": log_queue, "name": str(i), "est_data": est_data, "estimate": estimate}
                 try:
                     if cur_config["estimate"]:
                         cur_config["Ax"] = cur_config["Ax_small"]
@@ -667,7 +668,7 @@ def reg_rough_parallel(ims, ims_big, params, config, c=0):
             if False and config["estimate"]:
                 ready_con[0].send((i, params[i], ims[i], ims_big[i], (config["noise"][0][i],config["noise"][1][i]), 61))
             else:
-                ready_con[0].send((i, params[i], ims[i], ims_big[i], None, c))
+                ready_con[0].send((i, params[i], ims[i], ims_big[i], config["estimate"], c))
                 #ready_con[0].send((i, params[i], ims[i], config["target_sino"][:,i], config["est_data_ser"], c))
             ready_con[3] = i
 
@@ -1326,6 +1327,7 @@ def write_rec(geo, ims, filepath, mult=1):
     rec = rec*mask
     del mask
     write_images(utils.toHU(rec), filepath, mult)
+    return
 
     rec = utils.SIRT_astra(out_shape, geo, np.swapaxes(ims, 0,1), 500)
     #mask = np.zeros(rec.shape, dtype=bool)
@@ -1644,7 +1646,7 @@ def get_proj_paths():
     #('201020_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     #('201020_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4, -34, -35, 28, 29]),
     #('201020_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path, [4, 60, 61, 62]),
-    ('201020_noimbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\P16_DR_LD', cbct_path, [-70,70,71,60,60.5,61,62,62.5]),
+    #('201020_noimbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\P16_DR_LD', cbct_path, [-70, 70, 60.5, 62]),
     #('201020_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path, [4, 28, 29]),
     ]
     
@@ -1653,12 +1655,12 @@ def get_proj_paths():
     #('genB_trans', prefix+'\\gen_dataset\\only_trans', cbct_path, [4]),
     #('genB_angle', prefix+'\\gen_dataset\\only_angle', cbct_path),
     #('genB_both', prefix+'\\gen_dataset\\noisy', cbct_path),
-    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [4,-70,70,71,60,60.5,61,62,62.5]),
-    ('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [4,-70,70,71,60,60.5,61,62,62.5]),
+    ('2010201_imbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV', cbct_path, [60, 60.5, 62.5]),
+    #('2010201_imbu_sin_', prefix + '\\CKM_LumbalSpine\\20201020-122515.399000\\P16_DR_LD', cbct_path, [-70, 70, 4, 60.5, 62.5]),
     #('2010201_imbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\P16_DR_LD', cbct_path, [4,60,61,62]),
     #('2010201_imbu_circ_', prefix + '\\CKM_LumbalSpine\\20201020-140352.179000\\P16_DR_LD', cbct_path, [4,60,61,62]),
-    #('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\Arc\\20201020-150938.350000-P16_DR_LD', cbct_path, [60,62]),
-    #('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-150938.350000\\P16_DR_LD', cbct_path, [60,61,62]),
+    ('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\Arc\\20201020-150938.350000-P16_DR_LD', cbct_path, [60, 60.5, 62.5, 70]),
+    #('2010201_imbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-150938.350000\\P16_DR_LD', cbct_path, [60.5, 62, 70]),
     #('2010201_noimbu_arc_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\P16_DR_LD', cbct_path, [60,62]),
     #('2010201_imbureg_noimbu_cbct_', prefix + '\\CKM_LumbalSpine\\20201020-151825.858000\\20sDCT Head 70kV', cbct_path, [4, 28, 29]),
     #('2010201_imbureg_noimbu_opti_', prefix + '\\CKM_LumbalSpine\\20201020-152349.323000\\P16_DR_LD', cbct_path, [4, 28, 29]),

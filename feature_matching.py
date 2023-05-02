@@ -98,7 +98,7 @@ def matchFeatures(real_data, sim_data, config=None, next_img=None):
     matchesMask3 = np.array(matchesMask2)
     #print(np.count_nonzero(valid))
 
-    if len(dists[valid])>0:
+    if False and len(dists[valid])>0:
         p_new = np.array([[p.pt[0], p.pt[1]] for p in new_points[points]])
         p_old = np.array([[p.pt[0], p.pt[1]] for p in base_points])
         ps = p_new-p_old

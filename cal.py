@@ -1276,11 +1276,6 @@ def roughRegistration(in_cur, reg_config, c):
         cur0[1,0] = 1
         cur0[2,1] = 1
 
-        #if("est_data" in config):
-        #    est_data = config["est_data"]
-        #else:
-        #    est_data = simulate_est_data(cur0, Ax)
-        #    config["est_data"] = est_data
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
 
@@ -1295,11 +1290,6 @@ def roughRegistration(in_cur, reg_config, c):
         cur0[1,0] = 1
         cur0[2,1] = 1
 
-        #if("est_data" in config):
-        #    est_data = config["est_data"]
-        #else:
-        #    est_data = simulate_est_data(cur0, Ax)
-        #    config["est_data"] = est_data
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
 
@@ -1327,15 +1317,9 @@ def roughRegistration(in_cur, reg_config, c):
         cur0[1,0] = 1
         cur0[2,1] = 1
 
-        #if("est_data" in config):
-        #    est_data = config["est_data"]
-        #else:
-        #    est_data = simulate_est_data(cur0, Ax)
-        #    config["est_data"] = est_data
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
-        #print("e", cur)
-
+        
         config["it"] = 3
         log_error(cur, config)
         cur = correctFlip(cur, config)
@@ -2013,7 +1997,7 @@ def roughRegistration(in_cur, reg_config, c):
             cur = cur2
         cur = correctXY(cur, config)
 
-        cur = cal_bfgs_both.bfgs(cur, config, -70)
+        cur = cal_bfgs_both.bfgs(cur, config, -72)
 
         ml("70 EST-QUT-AF my", starttime, res)
 
