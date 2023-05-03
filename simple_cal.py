@@ -104,7 +104,7 @@ def correctFlip(in_cur, config):
     real_img = config["real_img"]
     Ax = config["Ax"]
 
-    curs = np.array([np.array(in_cur), applyRot(in_cur, 0, 0, 180), applyRot(in_cur, 180, 0, 180), applyRot(in_cur, 180, 0, 0)])
+    curs = np.array([np.array(in_cur), applyRot(in_cur, 0, 0, 180), applyRot(in_cur, 0, 180, 0), applyRot(in_cur, 180, 0, 0)])
     #curs = np.array([np.array(in_cur), applyRot(in_cur, 180, 0, 0)])
     projs = Projection_Preprocessing(Ax(curs))
 
