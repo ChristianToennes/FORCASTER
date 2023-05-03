@@ -6,6 +6,7 @@ import time
 import matplotlib.pyplot as plt
 from itertools import zip_longest
 import cv2
+from multiprocessing import shared_memory as sm
 
 default_config = {"use_cpu": True, "AKAZE_params": {"threshold": 0.0005, "nOctaves": 4, "nOctaveLayers": 5, 
     "descriptor_type": cv2.AKAZE_DESCRIPTOR_MLDB, "descriptor_size": 0, "descriptor_channels": 3, "diffusivity": cv2.KAZE_DIFF_PM_G2},
@@ -1200,11 +1201,72 @@ def filt_conf(config):
         d["est_data"] = config["est_data"]
     return d
 
+import pickle
+def load_est_data():
+    path = 'D:\\lumbal_spine_13.10.2020\\recos\\2010201_est_data_39595.dump'
+    with open(path, "rb") as f:
+        data = pickle.load(f)
+    return data
+
+def into_shm(est_data):
+    pos, points, descs = est_data
+    meta = {}
+    shms = []
+    sm_pos = sm.SharedMemory('pos', size=pos.nbytes, create=True)
+    sma_pos = np.ndarray(pos.shape, pos.dtype, buffer=sm_pos.buf)
+    meta['pos'] = (sma_pos.shape, sma_pos.dtype)
+    shms.append(sm_pos)
+    sma_pos[:] = pos
+
+    for i,(p,d) in enumerate(zip(points, descs)):
+        sm_p = sm.SharedMemory('p'+str(i), size=p.nbytes, create=True)
+        sma_p = np.ndarray(p.shape, p.dtype, buffer = sm_p.buf)
+        meta['p'+str(i)] = (sma_p.shape, sma_p.dtype)
+        shms.append(sm_p)
+        sma_p[:] = p
+        sm_d = sm.SharedMemory('d'+str(i), size=d.nbytes, create=True)
+        sma_d = np.ndarray(d.shape, d.dtype, buffer=sm_d.buf)
+        meta['d'+str(i)] = (sma_d.shape, sma_d.dtype)
+        shms.append(sm_d)
+        sma_d[:] = d
+    
+    return meta, shms
+
+def from_shm(meta):
+    sm_pos = sm.SharedMemory('pos')
+    pos = np.ndarray(meta['pos'][0], meta['pos'][1], buffer=sm_pos.buf)
+    pos.flags.writeable = False
+    
+    points = []
+    descs = []
+    shms = []
+    shms.append(sm_pos)
+    for k in sorted(meta.keys()):
+        if k=='pos': continue
+        shm = sm.SharedMemory(k)
+        shms.append(shm)
+        a = np.ndarray(meta[k][0], meta[k][1], buffer=shm.buf)
+        a.flags.writeable = False
+        if k[0]=='p':
+            points.append(a)
+        else:
+            descs.append(a)
+    
+    return (pos, points, descs), shms
+
+
+
 def serialize_est_data(est_data):
+    return est_data
+
+def unserialize_est_data(est_data):
+    return est_data
+
+def _serialize_est_data(est_data):
     projs, points = est_data
     return projs, [([(p.pt, p.size, p.angle, p.response, p.octave, p.class_id) for p in kp], desc) for kp, desc in points]
 
-def unserialize_est_data(est_data):
+def _unserialize_est_data(est_data):
     projs, points = est_data
     return projs, [(np.array([(cv2.KeyPoint(x=p[0][0],y=p[0][1],size=p[1],angle=p[2],response=p[3],octave=p[4],class_id=p[5])) for p in kp],dtype=object), desc) for kp,desc in points]
 

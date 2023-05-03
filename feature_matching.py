@@ -211,7 +211,7 @@ def findInitialFeatures(img, config):
         points, features = detector.detectAndCompute(img, mask)
         #points = detector.detect(img, mask)
         #points, features = brief.compute(np.repeat(img[:,:,np.newaxis], 3, axis=2), points)
-        points = np.array(points)
+        points = _normalize_points(np.array(points), img)
         
         #feature_params = {"maxCorners": 200, "qualityLevel": 0.01, "minDistance": 19, "blockSize": 21}
         #feature_params = {"maxCorners": 200, "qualityLevel": 0.05, "minDistance": 13, "blockSize": 17}
@@ -246,6 +246,12 @@ def findInitialFeatures(img, config):
     return points, features
 
 def normalize_points(points, img):
+    return points
+
+def unnormalize_points(points, img):
+    return points
+
+def _normalize_points(points, img):
     xdim, ydim = img.shape
     if len(points.shape) == 1:
         return np.array([[100.0*p.pt[0]/xdim, 100.0*p.pt[1]/ydim] for p in points])
@@ -255,7 +261,7 @@ def normalize_points(points, img):
         ret[...,1] *= 100.0/ydim
         return ret
 
-def unnormalize_points(points, img):
+def _unnormalize_points(points, img):
     xdim, ydim = img.shape
     ret = np.array(points)
     ret[:,0] *= xdim/100.0
