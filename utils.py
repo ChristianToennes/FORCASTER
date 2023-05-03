@@ -986,12 +986,13 @@ def get_data(g):
 def read_cbct_info(path):
 
     # open 2 fds
-    null_fds = [os.open(os.devnull, os.O_RDWR) for x in range(2)]
-    # save the current file descriptors to a tuple
-    save = os.dup(1), os.dup(2)
-    # put /dev/null fds on 1 and 2
-    os.dup2(null_fds[0], 1)
-    os.dup2(null_fds[1], 2)
+    if False:
+        null_fds = [os.open(os.devnull, os.O_RDWR) for x in range(2)]
+        # save the current file descriptors to a tuple
+        save = os.dup(1), os.dup(2)
+        # put /dev/null fds on 1 and 2
+        os.dup2(null_fds[0], 1)
+        os.dup2(null_fds[1], 2)
 
     # *** run the function ***
     
@@ -1005,12 +1006,13 @@ def read_cbct_info(path):
     reader.SetFileNames([os.path.join(path, f) for f in sorted(os.listdir(path))])
     image = reader.Execute()
 
-    # restore file descriptors so I can print the results
-    os.dup2(save[0], 1)
-    os.dup2(save[1], 2)
-    # close the temporary fds
-    os.close(null_fds[0])
-    os.close(null_fds[1])
+    if False:
+        # restore file descriptors so I can print the results
+        os.dup2(save[0], 1)
+        os.dup2(save[1], 2)
+        # close the temporary fds
+        os.close(null_fds[0])
+        os.close(null_fds[1])
 
     size = np.array(image.GetSize())
     origin = image.GetOrigin()
