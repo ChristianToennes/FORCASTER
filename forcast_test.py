@@ -951,6 +951,7 @@ def evalPerformance(output_in, real_in, runtime, name, stats_file='stats.csv', r
     #sitk.WriteImage(sitk.GetImageFromArray(real), name + "_real.nrrd")
 
     if np.size(output[0]) != np.size(real[0]):
+        print(name, np.size(output[0]), output.shape, np.size(real[0]), real.shape)
         return
     vals = []
     #for i in range(len(real)):
@@ -1036,9 +1037,10 @@ def evalPerformance(output_in, real_in, runtime, name, stats_file='stats.csv', r
         #    f.write("{0};FWHM;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals8]) + "\n")
         if "rec" in stats_file:
         #    f.write("{0};Area;{1};=MIN(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 4, 1, {2}));=MAX(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 3, 1, {2}));=AVERAGE(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 2, 1, {2}));=STDEV.P(OFFSET(INDIRECT(ADDRESS(ROW(),COLUMN())), 0, 1, 1, {2}));".format(name, runtime/(24*60*60), len(vals)) + ";".join([str(v) for v in vals9]) + "\n")
-            f.write(" & ".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7), np.mean(vals9)]]) + "\n")
+            print(stats_file, "bytes written", f.write(" & ".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7), np.mean(vals9)]]) + "\n"))
         else:
-            f.write(" & ".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7)]]) + "\n")
+            print(name, len(vals), len(vals6), len(vals7))
+            print(stats_file, "bytes written", f.write(" & ".join([str(d) for d in [name, runtime/(24*60*60), np.mean(vals), np.mean(vals6), np.mean(vals7)]]) + "\n"))
 
 def evalSinoResults(out_path, in_path, projname, methods=None):
     ims, ims_un, mas, kvs, angles, coord_systems, sids, sods = read_dicoms(in_path)
@@ -1070,12 +1072,12 @@ def evalSinoResults(out_path, in_path, projname, methods=None):
     def sino_data():
         input_sino = True
         for filename in os.listdir(out_path):
-            if re.fullmatch("forcast_(.+?)_sino-output.nrrd", filename) != None and projname in filename and float(filename.split("_")[-2]) in methods:
+            if re.fullmatch("forcast_(.+?)_sino-output.nrrd", filename) != None and projname in filename and float(filename.split("_")[4]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = (sitk.GetArrayFromImage(img))
                 if proj.dtype != np.float32:
                     proj = np.array(proj, dtype=np.float32)
-                img = sitk.ReadImage(os.path.join(out_path, filename.replace("sino-output", "projs-input").replace(filename.split("_")[-2], "42")))
+                img = sitk.ReadImage(os.path.join(out_path, filename.replace("sino-output", "projs-input")))
                 target = (sitk.GetArrayFromImage(img))
                 if target.dtype != np.float32:
                     target = np.array(target, dtype=np.float32)
@@ -1127,8 +1129,8 @@ def evalSinoResults(out_path, in_path, projname, methods=None):
             #evalPerformance(np.swapaxes(proj, 0, 1), ims2, 2, name+"sim", 'stats_proj.csv')
             evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj.csv')
             evalPerformance(np.swapaxes(proj, 0, 1), ims2, 0, name+"sim", 'stats_proj.csv')
-            evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj_rec.csv')
-            evalPerformance(np.swapaxes(proj, 0, 1), ims2, 0, name+"sim", 'stats_proj_rec.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims, 0, name, 'stats_proj_rec.csv')
+            #evalPerformance(np.swapaxes(proj, 0, 1), ims2, 0, name+"sim", 'stats_proj_rec.csv')
             #evalPerformance(np.swapaxes(proj, 0, 1), ims, 4, name, 'stats_proj.csv')
             #evalPerformance(np.swapaxes(proj, 0, 1), ims2, 4, name+"sim", 'stats_proj.csv')
             #evalPerformance(np.swapaxes(proj, 0, 1), ims, 5, name, 'stats_proj.csv')
