@@ -481,7 +481,7 @@ import pickle
 import sys
 import io
 
-def it_func(con, Ax_params, Ax_params_big, log_queue, ready, name, est_data_name):
+def it_func(con, Ax_params, Ax_params_big, log_queue, ready, name, shm_meta):
     if name != None:
         profiler = cProfile.Profile()
     try:
@@ -491,23 +491,24 @@ def it_func(con, Ax_params, Ax_params_big, log_queue, ready, name, est_data_name
         Ax = None
         Ax = utils.Ax_param_asta(*Ax_params)
         Ax_big = utils.Ax_param_asta(*Ax_params_big)
-        est_data = None
+        est_data, shms = utils.from_shm(shm_meta)
         #cur0 = np.zeros((3, 3), dtype=float)
         #cur0[1,0] = 1
         #cur0[2,1] = 1
         #est_data = cal.simulate_est_data(cur0, Ax)
         #est_data_ser = [None, None]
-        #shm = mp_shm.SharedMemory(est_data_name+"_0")
+        #est_data = [None, None]
+        #shm1 = mp_shm.SharedMemory(est_data_name+"_0")
+        #est_data[0] = shm1.buf
         #est_data_ser[0] = pickle.loads(shm.buf)
-        #shm.close()
-        #shm = mp_shm.SharedMemory(est_data_name+"_1")
+        #shm2 = mp_shm.SharedMemory(est_data_name+"_1")
+        #est_data[1] = shm2.buf
         #est_data_ser[1] = pickle.loads(shm.buf)
-        #shm.close()
-        with open(est_data_name, "rb") as f:
-            est_data_ser = pickle.load(f)
-            est_data = utils.unserialize_est_data(est_data_ser)
-            del est_data_ser
-            con.send(("loaded",))
+        #with open(est_data_name, "rb") as f:
+        #    est_data_ser = pickle.load(f)
+        #    est_data = utils.unserialize_est_data(est_data_ser)
+        #    del est_data_ser
+        con.send(("loaded",))
         while True:
             try:
                 con.send(("ready",))
@@ -562,6 +563,7 @@ def it_func(con, Ax_params, Ax_params_big, log_queue, ready, name, est_data_name
             pass
         except BrokenPipeError:
             pass
+        del shms
     except KeyboardInterrupt:
         exit()
 
@@ -620,7 +622,7 @@ def reg_rough_parallel(ims, ims_big, params, config, c=0):
                         name = config["name"]+"_"+str(proc_count)
                     else:
                         name = None
-                    proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], config["Ax_gen_big"], log_queue, ready, name, config["data_dump_path"]), daemon=True)
+                    proc = mp.Process(target=it_func, args=(p[1], config["Ax_gen"], config["Ax_gen_big"], log_queue, ready, name, config["shm_meta"]), daemon=True)
                     proc.start()
                     proc_count += 1
                     pool.append([p[0], p[1], proc, -1])
@@ -2119,6 +2121,15 @@ def reg_real_data():
                 print("est data", time.perf_counter()-perftime)
                 #print(config["est_data"][1][0], est_data[1][0])
 
+            with open(config["data_dump_path"], "rb") as f:
+                est_data_ser = pickle.load(f)
+                est_data = utils.unserialize_est_data(est_data_ser)
+                del est_data_ser
+                meta, shms = utils.into_shm(est_data)
+                del est_data
+                config["shm_meta"] = meta
+                config["shms"] = shms
+             
 
             #for method in [3,4,5,0,6]: #-12,-2,-13,-3,20,4,26,31,0,-1
             for method in methods:

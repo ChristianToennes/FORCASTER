@@ -2958,7 +2958,8 @@ def simulate_est_data(cur, Ax, config=None):
     bt = -90
 
     pos = []
-    projs_data = []
+    points = []
+    descs = []
     for t in tertiary:
         print(t)
         curs = []
@@ -2971,10 +2972,12 @@ def simulate_est_data(cur, Ax, config=None):
         projs = Projection_Preprocessing(Ax(curs))
         for i in range(projs.shape[1]):
             proj = projs[:,i]
-            projs_data.append(findInitialFeatures(proj, config))
+            (p,d) = findInitialFeatures(proj, config)
+            points.append(p)
+            descs.append(d)
         
     pos = np.array(pos)
-    return pos, projs_data
+    return pos, points, descs
 
 
 def est_position(in_cur, Ax, real_imgs, est_data):
@@ -2986,7 +2989,7 @@ def est_position(in_cur, Ax, real_imgs, est_data):
     #if est_data is None:
         #pos, projs_data = simulate_est_data(cur, Ax, config)
     #else:
-    pos, projs_data = est_data
+    pos, points, descs = est_data
     #print(time.perf_counter()-perftime)
     #perftime = time.perf_counter()
     #print("evaluate", end=' ')
@@ -3012,7 +3015,7 @@ def est_position(in_cur, Ax, real_imgs, est_data):
                     #config["real_img"] = real_img
                     #proj = Projection_Preprocessing(Ax(np.array([applyRot(cur0, pos[idx][0],pos[idx][1],pos[idx][2])])))
                     #(p,v) = matchFeatures(data_real, projs_data[idx], config, proj[:,0])
-                    (p,v) = matchFeatures(data_real, projs_data[idx], config={"lowe_ratio": 0.8})
+                    (p,v) = matchFeatures(data_real, (points[idx], descs[idx]), config={"lowe_ratio": 0.8})
                     valid = np.count_nonzero(v==1)
                     #points_new = normalize_points(p[v], real_img)
                     #valid = calcPointsObjective(-6, points_new, points_real[v])
@@ -3044,7 +3047,7 @@ def est_position(in_cur, Ax, real_imgs, est_data):
         #index3 = indexes[np.argsort(no_valid)[-1]]
         #count2 = {}
         for (i,j,k) in indexes2:
-            (p,v) = matchFeatures(data_real, projs_data[k*sdim*pdim+i*sdim+j], config={"lowe_ratio": 0.7})
+            (p,v) = matchFeatures(data_real, (points[k*sdim*pdim+i*sdim+j], descs[k*sdim*pdim+i*sdim+j]), config={"lowe_ratio": 0.7})
             #if (i,j) not in count2:
             #    count2[(i,j)] = [0,0]
             valid = np.count_nonzero(v==1)
