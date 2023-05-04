@@ -2140,6 +2140,8 @@ def reg_real_data():
                 #print(iso)
                 #print((vecs[0,0:3]+(sods/sids)*(vecs[0,3:6]-vecs[0,0:3])) /image_spacing)
                 #exit()
+            
+            utils.release_shm(meta)
         except Exception as e:
             print(name, "cali failed", e)
             raise
