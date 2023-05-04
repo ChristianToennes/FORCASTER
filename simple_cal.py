@@ -15,7 +15,6 @@ def correctXY(in_cur, config):
     Ax = config["Ax"]
 
     points_real, features_real = data_real
-    points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
 
     its = 3
@@ -23,13 +22,10 @@ def correctXY(in_cur, config):
         its = config["it"]
     for i in range(its):
         projs = Projection_Preprocessing(Ax(np.array([cur])))
-        p,v = trackFeatures(projs[:,0], data_real, config)
-        points = normalize_points(p, projs[:,0])
+        points,v = trackFeatures(projs[:,0], data_real, config)
         valid = v==1
-    
-        points = points[valid]
         
-        diff = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points,points_real[valid])])
+        diff = points[valid]-points_real[valid]
         if len(diff)>1:
             
             xdir = cur[1]#/np.linalg.norm(cur[1])
@@ -63,21 +59,19 @@ def correctZ(in_cur, config):
     Ax = config["Ax"]
 
     points_real, features_real = data_real
-    points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
     its = 3
     if "it" in config:
         its = config["it"]
     for i in range(its):
         projs = Projection_Preprocessing(Ax(np.array([cur])))
-        p,v = trackFeatures(projs[:,0], data_real, config)
-        points = normalize_points(p, projs[:,0])
+        points,v = trackFeatures(projs[:,0], data_real, config)
         valid = v==1
-
-        #points = points[valid]
     
-        dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points[valid] for r in points[valid]])
-        dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real[valid] for r in points_real[valid]])
+        dist_new = np.sqrt(np.sum((points[valid]-points[valid])**2, axis=1))
+        dist_real = np.sqrt(np.sum((points_real[valid]-points_real[valid])**2, axis=1))
+        #dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points[valid] for r in points[valid]])
+        #dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real[valid] for r in points_real[valid]])
         if np.count_nonzero(dist_new) > 5:
             if "mean" in config and config["mean"]:
                 scale = Ax.distance_source_origin*(np.mean(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
@@ -112,10 +106,9 @@ def correctFlip(in_cur, config):
     features = [trackFeatures(projs[:,i], data_real, config) for i in range(projs.shape[1])]
 
     points_real, features_real = data_real
-    points_real = normalize_points(points_real, real_img)
     #real_img = Projection_Preprocessing(real_img)
 
-    values = np.array([calcPointsObjective(-6, normalize_points(points[v], projs[:,i]), points_real[v]) for i,(points,v) in enumerate(features)])
+    values = np.array([calcPointsObjective(-6, points[v], points_real[v]) for i,(points,v) in enumerate(features)])
 
     return curs[np.argmin(values)]
 
@@ -134,7 +127,6 @@ def correctRotZ(in_cur, config):
     Ax = config["Ax"]
 
     points_real, features_real = data_real
-    points_real = normalize_points(points_real, real_img)
     real_img = Projection_Preprocessing(real_img)
 
     its = 3
@@ -143,11 +135,8 @@ def correctRotZ(in_cur, config):
         its = config["it"]
     for i in range(its):
         projs = Projection_Preprocessing(Ax(np.array([cur])))
-        p,v = trackFeatures(projs[:,0], data_real, config)
-        points = normalize_points(p, projs[:,0])
+        points,v = trackFeatures(projs[:,0], data_real, config)
         valid = v==1
-        #print(i, np.count_nonzero(valid))
-    
         points = points[valid]
         
         points_r = points_real[valid]
@@ -176,16 +165,14 @@ def correctRotZ(in_cur, config):
         #print(np.min(angle), np.mean(angle), np.median(angle), np.max(angle))
         #print(np.min(angle_cos), np.mean(angle_cos), np.median(angle_cos), np.max(angle_cos))
         projs = Projection_Preprocessing(Ax(np.array([applyRot(cur, 0,0,-np.median(angle)), applyRot(cur, 0,0,np.median(angle))])))
-        p,v = trackFeatures(projs[:,0], data_real, config)
-        points = normalize_points(p, projs[:,0])
+        points,v = trackFeatures(projs[:,0], data_real, config)
         valid = v==1
         #print(i, np.count_nonzero(valid))
-        diffn = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])
-        p,v = trackFeatures(projs[:,1], data_real, config)
-        points = normalize_points(p, projs[:,1])
+        diffn = points[valid] - points_real[valid]
+        points,v = trackFeatures(projs[:,1], data_real, config)
         valid = v==1
         #print(i, np.count_nonzero(valid))
-        diffp = np.array([[n[0]-r[0], n[1]-r[1]]  for n,r in zip(points[valid],points_real[valid])])
+        diffp = points[valid] - points_real[valid]
 
         #print(len(diffn), np.sum(np.abs(diffn)), len(diffp), np.sum(np.abs(diffp)))
         if np.sum(np.abs(diffn)) < np.sum(np.abs(diffp)):

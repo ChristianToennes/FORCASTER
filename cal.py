@@ -1965,7 +1965,7 @@ def roughRegistration(in_cur, reg_config, c):
 
         ml("70 EST-QUT-AF my", starttime, res)
     
-    elif c==71:
+    elif c==72:
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
         config["name"] = "70 EST-QUT-AF my" + config["name"]

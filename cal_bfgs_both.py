@@ -20,14 +20,12 @@ from types import SimpleNamespace
 def calc_obj(cur_proj, k, config):
     if config["data_real"] is None:
         config["data_real"] = findInitialFeatures(config["real_img"], config)
-        config["points_real"] = normalize_points(config["data_real"][0], config["real_img"])
+        config["points_real"] = config["data_real"][0]
 
-    (p,v) = trackFeatures(cur_proj, config["data_real"], config)
+    (points,v) = trackFeatures(cur_proj, config["data_real"], config)
     valid = v==1
-    p = p[valid]
-    points = normalize_points(p, cur_proj)
     axis, mult = config["comps"][k]
-    obj = calcPointsObjective(axis, points, config["points_real"][valid])*mult
+    obj = calcPointsObjective(axis, points[valid], config["points_real"][valid])*mult
     if obj<0:
         obj = 50
     return obj

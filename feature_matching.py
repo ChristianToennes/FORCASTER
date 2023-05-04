@@ -98,10 +98,8 @@ def matchFeatures(real_data, sim_data, config=None, next_img=None):
     matchesMask3 = np.array(matchesMask2)
     #print(np.count_nonzero(valid))
 
-    if False and len(dists[valid])>0:
-        p_new = np.array([[p.pt[0], p.pt[1]] for p in new_points[points]])
-        p_old = np.array([[p.pt[0], p.pt[1]] for p in base_points])
-        ps = p_new-p_old
+    if len(dists[valid])>0:
+        ps = new_points[points]-base_points
         m = np.mean(ps[valid], axis=0)
         std = np.std(ps[valid], axis=0)
         #print((ps-m)[valid], m, std)
@@ -208,10 +206,10 @@ def findInitialFeatures(img, config):
         #img = np.stack([img, np.zeros_like(img), np.zeros_like(img)], axis=-1)
         #print(img.shape, img.dtype)
         #points, features = detector.detectAndCompute(img, np.ones_like(img, dtype=np.uint8))
-        points, features = detector.detectAndCompute(img, mask)
+        opoints, features = detector.detectAndCompute(img, mask)
         #points = detector.detect(img, mask)
         #points, features = brief.compute(np.repeat(img[:,:,np.newaxis], 3, axis=2), points)
-        points = _normalize_points(np.array(points), img)
+        points = _normalize_points(np.array(opoints), img)
         
         #feature_params = {"maxCorners": 200, "qualityLevel": 0.01, "minDistance": 19, "blockSize": 21}
         #feature_params = {"maxCorners": 200, "qualityLevel": 0.05, "minDistance": 13, "blockSize": 17}
