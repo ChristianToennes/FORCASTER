@@ -223,7 +223,7 @@ def read_dicoms(indir, max_ims=np.inf):
                 NumberOfFrames = ds.NumberOfFrames
                 if len(ims) == 0:
                     #ims = ds.pixel_array[54:]
-                    im = ds.pixel_array[3:370]
+                    ims = ds.pixel_array[3:370]
                     NumberOfFrames = len(ims)
                 else:
                     ims = np.vstack([ims, ds.pixel_array])
@@ -2112,19 +2112,15 @@ def reg_real_data():
                 cur0[1,0] = 1
                 cur0[2,1] = 1
                 est_data = cal.simulate_est_data(cur0, Ax)
-                est_data_ser = utils.serialize_est_data(est_data)
                 with open(config["data_dump_path"], "wb") as f:
-                    pickle.dump(est_data_ser, f)
+                    pickle.dump(est_data, f)
                 #est_data = utils.unserialize_est_data(config["est_data_ser"])
                 est_data = None
-                est_data_ser = None
                 print("est data", time.perf_counter()-perftime)
                 #print(config["est_data"][1][0], est_data[1][0])
 
             with open(config["data_dump_path"], "rb") as f:
-                est_data_ser = pickle.load(f)
-                est_data = utils.unserialize_est_data(est_data_ser)
-                del est_data_ser
+                est_data = pickle.load(f)
                 meta, shms = utils.into_shm(est_data)
                 del est_data
                 config["shm_meta"] = meta

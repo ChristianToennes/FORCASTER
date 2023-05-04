@@ -1237,20 +1237,21 @@ def from_shm(meta):
     pos = np.ndarray(meta['pos'][0], meta['pos'][1], buffer=sm_pos.buf)
     pos.flags.writeable = False
     
-    points = []
-    descs = []
+    points = [None]*(len(meta.keys())-1)
+    descs = [None]*(len(meta.keys())-1)
     shms = []
     shms.append(sm_pos)
-    for k in sorted(meta.keys()):
+    for k in meta.keys():
         if k=='pos': continue
         shm = sm.SharedMemory(k)
         shms.append(shm)
         a = np.ndarray(meta[k][0], meta[k][1], buffer=shm.buf)
         a.flags.writeable = False
+        i = int(k[1:])
         if k[0]=='p':
-            points.append(a)
+            points[i] = a
         else:
-            descs.append(a)
+            descs[i] = a
     
     return (pos, points, descs), shms
 
