@@ -1254,7 +1254,10 @@ def from_shm(meta):
     
     return (pos, points, descs), shms
 
-
+def release_shm(meta):
+    for k in sorted(meta.keys()):
+        shm = sm.SharedMemory(k)
+        shm.unlink()
 
 def serialize_est_data(est_data):
     return est_data
