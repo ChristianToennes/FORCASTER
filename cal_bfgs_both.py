@@ -1,14 +1,7 @@
 import numpy as np
-import utils
-import matplotlib.pyplot as plt
 import scipy.optimize
-import warnings
-import sys
-import itertools
 import time
-import multiprocessing as mp
-import queue
-from utils import bcolors, applyRot, applyTrans, default_config, filt_conf
+from utils import applyRot, applyTrans, default_config
 from utils import minimize_log as ml
 from feature_matching import *
 from simple_cal import *

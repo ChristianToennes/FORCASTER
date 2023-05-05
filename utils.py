@@ -1460,3 +1460,67 @@ def plot_log():
     plt.tight_layout()
 
     plt.show()
+
+
+def create_circular_mask(shape, center=None, radius=None, radius_off=5, end_off=30):
+    l, h, w = shape
+    if center is None: # use the middle of the image
+        center = (int(w/2), int(h/2))
+    if radius is None: # use the smallest distance between the center and image walls
+        radius = min(center[0], center[1], w-center[0], h-center[1])-10
+
+    Y, X = np.ogrid[:h, :w]
+    dist_from_center = np.sqrt((X - center[0])**2 + (Y-center[1])**2)
+
+    mask = np.zeros((l,h,w), dtype=bool)
+    mask[:] = (dist_from_center <= (radius-radius_off))[np.newaxis,:,:]
+    for i in range(30):
+        mask[i] = (dist_from_center <= (i/30)*(radius-radius_off))
+        mask[-i-1] = (dist_from_center <= (i/30)*(radius-radius_off))
+
+    return mask
+
+def write_rec(geo, ims, filepath, out_rec_meta, mult=1):
+    #geo["Vectors"] = geo["Vectors"]*mult
+    mult = int(np.round(ims.shape[1] / geo['DetectorRowCount']))
+    geo = astra.create_proj_geom('cone_vec', ims.shape[1], ims.shape[2], geo["Vectors"]*mult)
+    out_shape = (out_rec_meta[3][0]*mult, out_rec_meta[3][1]*mult, out_rec_meta[3][2]*mult)
+    #print(ims.shape, len(geo['Vectors']))
+    rec = FDK_astra(out_shape, geo, np.swapaxes(ims, 0,1))
+    #mask = np.zeros(rec.shape, dtype=bool)
+    mask = create_circular_mask(rec.shape)
+    rec = rec*mask
+    del mask
+    write_images(toHU(rec), filepath, mult)
+    return
+
+    rec = utils.SIRT_astra(out_shape, geo, np.swapaxes(ims, 0,1), 500)
+    #mask = np.zeros(rec.shape, dtype=bool)
+    mask = create_circular_mask(rec.shape)
+    rec = rec*mask
+    del mask
+    write_images(utils.toHU(rec), filepath.rsplit('.', maxsplit=1)[0]+"_sirt."+filepath.rsplit('.', maxsplit=1)[1], mult)
+
+    rec = utils.CGLS_astra(out_shape, geo, np.swapaxes(ims, 0,1), 50)
+    #mask = np.zeros(rec.shape, dtype=bool)
+    mask = create_circular_mask(rec.shape)
+    rec = rec*mask
+    del mask
+    write_images(utils.toHU(rec), filepath.rsplit('.', maxsplit=1)[0]+"_cgls."+filepath.rsplit('.', maxsplit=1)[1], mult)
+
+def write_images(rec, filepath, out_rec_meta, mult=1):
+    rec = sitk.GetImageFromArray(rec)#*100
+    rec.SetOrigin(out_rec_meta[0])
+    out_spacing = (out_rec_meta[2][0]/mult,out_rec_meta[2][1]/mult,out_rec_meta[2][2]/mult)
+    rec.SetSpacing(out_spacing)
+    sitk.WriteImage(rec, filepath, True)
+    del rec
+   
+def write_vectors(name, vecs):
+    with open("csv\\"+name+".csv", "w") as f:
+        f.writelines([",".join([str(v) for v in vec])+"\n" for vec in vecs])
+
+def read_vectors(path):
+    with open(path, "r") as f:
+        res = np.array([[float(v) for v in l.split(',')] for l in f.readlines().split()])
+    return res

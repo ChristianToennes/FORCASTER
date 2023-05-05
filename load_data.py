@@ -1,12 +1,9 @@
 import numpy as np
-import SimpleITK as sitk
-import pydicom
-import pydicom.dataset
-import os
+from skimage.measure import block_reduce
 import struct
+import os
+import pydicom
 import utils
-import scipy.interpolate
-import matplotlib.pyplot as plt
 
 def normalize(images, mAs_array, kV_array, percent_gain):
     print("normalize images")
@@ -48,50 +45,69 @@ def normalize(images, mAs_array, kV_array, percent_gain):
     
     fs = np.array(fs).flatten()
 
-    skip = 4
-    if images.shape[1] < 1000:
-        skip = 2
+    skip = 2
+    if images.shape[1] > 1000:
+        skip *= 2 
     #if images.shape[1] < 600:
-    skip = 1
+    #    skip = 1
+    #skip = 2
 
-    edges = 1
+    edges = 30
+    oedges = 30
 
-    sel = np.zeros(images.shape, dtype=bool)
+    #sel = np.zeros(images.shape, dtype=bool)
     #sel[:,20*skip:-20*skip:skip,20*skip:-20*skip:skip] = True
     #norm_images_gained = np.zeros((images.shape[0],images[0,20*skip:-20*skip:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,20*skip:-20*skip:skip].shape[0]))), dtype=np.float32)
     #norm_images_ungained = np.zeros((images.shape[0],images[0,20*skip:-20*skip:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,20*skip:-20*skip:skip].shape[0]))), dtype=np.float32)
-    sel[:,edges:-edges:skip,edges:-edges:skip] = True
-    sel_shape = (images.shape[0],images[0,edges:-edges:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,edges:-edges:skip].shape[0])))
-    norm_images_gained = np.zeros(sel_shape, dtype=np.float32)
-    norm_images_ungained = np.zeros(sel_shape, dtype=np.float32)
+    #sel[:,edges:-edges:skip,edges:-edges:skip] = True
+    #sel_shape = (images.shape[0],images[0,edges:-edges].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,edges:-edges].shape[0])))
+    #norm_images_gained = np.zeros(sel_shape, dtype=np.float32)
+    #sel_shape = (images.shape[0],images[0,edges:-edges:skip].shape[0], int(np.count_nonzero(sel)/images.shape[0]/(images[0,edges:-edges:skip].shape[0])))
+    #norm_images_ungained = np.zeros(sel_shape, dtype=np.float32)
     
-    gained_images = np.array([image*(1+gain/100) for image,gain in zip(images[sel].reshape(sel_shape), percent_gain)])
+    #gained_images = np.array([image*(1+gain/100) for image,gain in zip(images[sel].reshape(sel_shape), percent_gain)])
     
-    for i in range(len(fs)):
-        norm_img = gained_images[i].reshape(norm_images_gained[0].shape)
-        norm_images_gained[i] = norm_img
-        norm_img = images[i][sel[i]].reshape(norm_images_gained[0].shape)
-        norm_images_ungained[i] = norm_img
+    #for i in range(len(fs)):
+    #    norm_img = gained_images[i].reshape(norm_images_gained[0].shape)
+    #    norm_images_gained[i] = norm_img
+    #    norm_img = images[i][sel[i]].reshape(norm_images_gained[0].shape)
+    #    norm_images_ungained[i] = norm_img
 
-    #gain = 2.30
-    gain = 1
+    oskip = 2
+    #if images.shape[2] > 2000:
+    #    oskip *= 2
+    if edges <= 0:
+        norm_images_gained = np.array([image*(1+gain/100) for image,gain in zip(images[:,::1,::1], percent_gain)])
+        norm_images_ungained = np.array([image*(1+gain/100) for image,gain in zip(images[:,::1,::1], percent_gain)])
+    else:
+        norm_images_gained = np.array([image*(1+gain/100) for image,gain in zip(images[:,oedges:-oedges:1,oedges:-oedges:1], percent_gain)])
+        norm_images_ungained = np.array([image*(1+gain/100) for image,gain in zip(images[:,edges:-edges:1,edges:-edges:1], percent_gain)])
+        
+    norm_images_gained = block_reduce(norm_images_gained, (1,oskip,oskip), np.mean)
+    norm_images_ungained = block_reduce(norm_images_ungained, (1,skip,skip), np.median)
+    print("skip", skip, oskip)
+    #norm_images_ungained = images[:,edges:-edges:skip, edges:-edges:skip]
+    
+    gain = 2.30
+    #gain = 1
     offset = 400
     use = fs>1
-    while (np.max(norm_images_gained, axis=(1,2))[use] > (offset+gain*fs[use])).all():
+    while (np.max(norm_images_gained, axis=(1,2))[use] > (gain*fs[use])).all():
         gain += 1
     #gain = np.ones_like(fs)
     #offset = 0
-    for i in range(len(fs)):
-        norm_img = norm_images_gained[i] / (offset + (gain*fs)[i])
-        #norm_img = norm_images_gained[i] / (1.1*np.max(norm_images_gained[i]))
-        if (norm_img==0).any():
-            norm_img[norm_img==0] = np.min(norm_img[norm_img!=0])
-        norm_images_gained[i] = -np.log(norm_img)
+    if False:
+        for i in range(len(fs)):
+            norm_img = norm_images_gained[i] / (offset + (gain*fs)[i])
+            #norm_img = norm_images_gained[i] / (1.1*np.max(norm_images_gained[i]))
+            if (norm_img==0).any():
+                norm_img[norm_img==0] = np.min(norm_img[norm_img!=0])
+            norm_images_gained[i] = -np.log(norm_img)
 
     return norm_images_gained, norm_images_ungained, offset+gain*fs, fs
 
 def read_dicoms(indir, max_ims=np.inf):
-    print("read dicoms")
+    print("read dicoms", indir)
     kvs = []
     mas = []
     μas = []
@@ -103,6 +119,7 @@ def read_dicoms(indir, max_ims=np.inf):
     ims = []
     percent_gain = []
     coord_systems = []
+    cs_interpol = []
     sids = []
     sods = []
 
@@ -154,8 +171,52 @@ def read_dicoms(indir, max_ims=np.inf):
                 μas = xray_info[2::4]*0.001
 
             elif "NumberOfFrames" in dir(ds):
-                ims = ds.pixel_array
-                for i in range(int(ds.NumberOfFrames)):
+                NumberOfFrames = ds.NumberOfFrames
+                if len(ims) == 0:
+                    #ims = ds.pixel_array[54:]
+                    ims = ds.pixel_array[3:370]
+                    NumberOfFrames = len(ims)
+                else:
+                    ims = np.vstack([ims, ds.pixel_array])
+
+                thetas.append(float(ds.PositionerPrimaryAngle))
+                phis.append(float(ds.PositionerSecondaryAngle))
+
+                stparmdata = utils.unpack_sh_stparm(ds[0x0021,0x1012].value)
+
+                cs = np.array(stparmdata["COORD_SYS_C_ARM"]).reshape((3, 4))
+                #cs[:,2] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,2])
+                #cs[:,1] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,1])
+
+                #coord_systems.append(cs)
+                #cs_interpol.append([cs, float(ds.PositionerPrimaryAngle), float(ds.PositionerSecondaryAngle), int(NumberOfFrames)])
+
+                rv = cs[:,2]
+                rv /= np.sum(rv**2, axis=-1)
+                prim = np.arctan2(np.sqrt(rv[0]**2+rv[1]**2), rv[2])
+                prim = np.arccos(rv[2] / np.sqrt(rv[0]**2+rv[1]**2+rv[2]**2) )
+                prim = prim*180 / np.pi
+                
+
+                if cs[1,2]<0:
+                    prim *= -1
+
+                if (prim > 50 and prim < 135) or (prim <-45 and prim > -135):
+                    sec = np.arctan2(rv[1], rv[0])
+                    sec = sec * 180 / np.pi
+                    if cs[1,2]<0:
+                        sec *= -1
+                    sec -= 90
+                else:
+                    sec = np.arctan2(rv[2], rv[0])
+                    sec = sec * 180 / np.pi - 90
+
+                prims.append(prim)
+                secs.append(sec)
+
+                coord_systems = []
+                for i in range(int(NumberOfFrames)):
+                    coord_systems.append(cs)
                     ts.append(len(ts))
                     kvs.append(float(ds.KVP))
                     mas.append(float(ds.XRayTubeCurrent)*float(ds.ExposureTime)*0.001)
@@ -163,41 +224,10 @@ def read_dicoms(indir, max_ims=np.inf):
                         μas.append(float(ds[0x0021,0x1004].value)*0.001)
                     else:
                         μas.append(struct.unpack("<l", ds[0x0021,0x1004].value)[0]*0.001)
-                    thetas.append(float(ds.PositionerPrimaryAngle))
-                    phis.append(float(ds.PositionerSecondaryAngle))
-
-                    stparmdata = utils.unpack_sh_stparm(ds[0x0021,0x1012].value)
-
-                    cs = np.array(stparmdata["COORD_SYS_C_ARM"]).reshape((3, 4))
-                    cs[:,2] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,2])
-                    cs[:,1] = utils.rotMat(i*360/ims.shape[0], cs[:,0]).dot(cs[:,1])
-
-                    coord_systems.append(cs)
+                    
                     sids.append(np.array(stparmdata["SID_A"]))
                     sods.append(np.array(stparmdata["SOD_A"]))
-
-                    rv = cs[:,2]
-                    rv /= np.sum(rv**2, axis=-1)
-                    prim = np.arctan2(np.sqrt(rv[0]**2+rv[1]**2), rv[2])
-                    prim = np.arccos(rv[2] / np.sqrt(rv[0]**2+rv[1]**2+rv[2]**2) )
-                    prim = prim*180 / np.pi
                     
-
-                    if cs[1,2]<0:
-                        prim *= -1
-
-                    if (prim > 50 and prim < 135) or (prim <-45 and prim > -135):
-                        sec = np.arctan2(rv[1], rv[0])
-                        sec = sec * 180 / np.pi
-                        if cs[1,2]<0:
-                            sec *= -1
-                        sec -= 90
-                    else:
-                        sec = np.arctan2(rv[2], rv[0])
-                        sec = sec * 180 / np.pi - 90
-
-                    prims.append(prim)
-                    secs.append(sec)
                     if ds[0x0019,0x1008].VR == "US":
                         percent_gain.append(ds[0x0019,0x1008].value)
                     else:
@@ -261,135 +291,47 @@ def read_dicoms(indir, max_ims=np.inf):
     mas = np.array(mas)
     μas = np.array(μas)
     percent_gain = np.array(percent_gain)
-    thetas = np.array(thetas)
-    phis = np.array(phis)
     ims = np.array(ims)
-    coord_systems = np.array(coord_systems)
     sids = np.array(sids)
     sods = np.array(sods)
 
+        
+        #ims = ims[:no_ims]
+        #kvs = kvs[:no_ims]
+        #mas = mas[:no_ims]
+        #μas = μas[:no_ims]
+        #percent_gain = percent_gain[:no_ims]
+        #sids = sids[:no_ims]
+        #sods = sods[:no_ims]
+
+    thetas = np.array(thetas)
+    phis = np.array(phis)
+    
+    coord_systems = np.array(coord_systems)
+
     cs = coord_systems
     
-    rv = cs[:,:,2]
-    rv /= np.vstack((np.sum(rv, axis=-1),np.sum(rv, axis=-1),np.sum(rv, axis=-1))).T
-    prim = np.arctan2(np.sqrt(rv[:,0]**2+rv[:,1]**2), rv[:,2])
-    prim = np.arccos(rv[:,2] / np.sqrt(rv[:,0]**2+rv[:,1]**2+rv[:,2]**2) )
-    sec = 0.5*np.pi-np.arctan2(rv[:,1], rv[:,0])
-    prim = prim*180 / np.pi
-    sec = sec * 180 / np.pi
+    if False:
+        rv = cs[:,:,2]
+        rv /= np.vstack((np.sum(rv, axis=-1),np.sum(rv, axis=-1),np.sum(rv, axis=-1))).T
+        prim = np.arctan2(np.sqrt(rv[:,0]**2+rv[:,1]**2), rv[:,2])
+        prim = np.arccos(rv[:,2] / np.sqrt(rv[:,0]**2+rv[:,1]**2+rv[:,2]**2) )
+        sec = 0.5*np.pi-np.arctan2(rv[:,1], rv[:,0])
+        prim = prim*180 / np.pi
+        sec = sec * 180 / np.pi
 
-    prim[cs[:,1,2]<0] *= -1
-    sec[cs[:,1,2]<0] -= 180
-    prim[np.bitwise_and(cs[:,2,2]<0, cs[:,1,1]>0) ] -= 180
-    prim[cs[:,1,0]>0] -= 180
+        prim[cs[:,1,2]<0] *= -1
+        sec[cs[:,1,2]<0] -= 180
+        prim[np.bitwise_and(cs[:,2,2]<0, cs[:,1,1]>0) ] -= 180
+        prim[cs[:,1,0]>0] -= 180
 
     #thetas = prim
     #phis = sec
-    angles = np.vstack((thetas, phis, np.zeros_like(thetas))).T
+    angles = np.vstack((thetas*np.pi/180.0, phis*np.pi/180.0, np.zeros_like(thetas))).T
 
     ims_gained, ims_ungained, i0s_gained, i0s_ungained = normalize(ims, μas, kvs, percent_gain)
 
-    return ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods
+    #if len(cs_interpol) > 0:
+    #    coord_systems = np.array(cs_interpol)
 
-def add_noise(ims, angles):
-    random = np.random.default_rng(23)
-    #angles_noise = random.normal(loc=0, scale=0.5, size=(len(ims), 3))#*np.pi/180
-    angles_noise = random.uniform(low=-1, high=1, size=(len(ims),3))
-    #angles_noise = np.zeros_like(angles_noise)
-    #trans_noise = random.normal(loc=0, scale=20, size=(len(ims), 3))
-    min_trans, max_trans = -10, 10
-    trans_noise = np.array(np.round(random.uniform(low=min_trans, high=max_trans, size=(len(ims),2))), dtype=int)
-    zoom_noise = random.uniform(low=0.9, high=1, size=len(ims))
-
-    moved_ims = np.zeros((ims.shape[0], ims.shape[1]+min_trans-max_trans-2, ims.shape[2]-max_trans+min_trans-2), dtype=ims.dtype)
-    for i in range(ims.shape[0]):
-        dx, dy = trans_noise[i]
-        sx, ex = max_trans+1+dx, min_trans-1+dx
-        sy, ey = max_trans+1+dy, min_trans-1+dy
-
-        iy, ix = np.arange(0, ims.shape[2], 1), np.arange(0, ims.shape[1], 1)
-        f = scipy.interpolate.interp2d(iy, ix, ims[i], fill_value=np.max(ims[i]))
-
-        mid_x, mid_y = ims.shape[1]/2, ims.shape[2]/2
-        mid_x -= dx
-        mid_y -= dy
-        sx = mid_x-(ims.shape[1]/2) * zoom_noise[i]
-        ex = mid_x+(ims.shape[1]/2) * zoom_noise[i]
-
-        sy = mid_y-(ims.shape[2]/2) * zoom_noise[i]
-        ey = mid_y+(ims.shape[2]/2) * zoom_noise[i]
-
-        #print(i, (ex-sx) / (ey-sy), (len(ix)) / (len(iy)))
-
-        x = np.linspace(sx, ex, moved_ims.shape[1])
-        y = np.linspace(sy, ey, moved_ims.shape[2])
-        
-        moved_ims[i] = f(y,x)
-
-    return moved_ims, angles + angles_noise
-
-def get_path():
-    if os.path.exists("E:\\output"):
-        prefix = r"E:\output"
-    else:
-        prefix = r"D:\lumbal_spine_13.10.2020\output"
-    filepath = prefix + '\\CKM_LumbalSpine\\20201020-093446.875000\\20sDCT Head 70kV'
-    return filepath
-
-def save_dcm(ims, angles, sids, sods, orig_path, out_path):
-
-    if not os.path.isdir(os.path.dirname(out_path)):
-        os.makedirs(os.path.dirname(out_path))
-    
-    ds = pydicom.dcmread(os.path.join(orig_path, os.listdir(orig_path)[0]))
-    file_meta = ds.file_meta
-
-    # Create the FileDataset instance (initially no data elements, but file_meta
-    # supplied)
-    #ds = pydicom.dataset.FileDataset(out_path, {}, file_meta=file_meta, preamble=ds.preamble)
-
-    # Add the data elements -- not trying to set all required here. Check DICOM
-    # standard
-    #ds.PatientName = "Test^Firstname"
-    #ds.PatientID = "123456"
-
-    ds.PositionerPrimaryAngleIncrement = angles[:,0].tolist()
-    ds.PositionerSecondaryAngleIncrement = angles[:,1].tolist()
-    ds.Rows = ims.shape[1]
-    ds.Columns = ims.shape[2]
-
-    ds.add_new(0x00211017, 'SL', sods[0])
-    #ds.add_new(0x00211031, 'SS', np.array(sids*10, dtype=int))
-    #ds.DistanceSourceToDetector = sids[0]
-
-    # Set the transfer syntax
-    ds.is_little_endian = True
-    ds.is_implicit_VR = False
-
-    # Set creation date/time
-    #dt = datetime.datetime.now()
-    #ds.ContentDate = dt.strftime('%Y%m%d')
-    #timeStr = dt.strftime('%H%M%S.%f')  # long format with micro seconds
-    #ds.ContentTime = timeStr
-
-    pydicom.dataset.validate_file_meta(ds.file_meta, enforce_standard=True)
-    ims = ims.astype(np.uint16)
-    ds.PixelData = ims.flatten().tobytes()
-    #ds.add_new(0x7fe00009, "OD", ims.flatten())
-
-    ds.save_as(out_path, False)
-    
-def create():
-    ims_gained, ims_ungained, i0s_gained, i0s_ungained, angles, coord_systems, sids, sods = read_dicoms(get_path())
-    ims = ims_ungained[:, 10:-10, 10:-10]
-    noise_ims, noise_angles = add_noise(ims, angles)
-    if os.path.exists("E:\\output"):
-        prefix = r"E:\output"
-    else:
-        prefix = r"D:\lumbal_spine_13.10.2020\output"
-    save_dcm(noise_ims, np.round(noise_angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/noisy/sino.dcm')
-    save_dcm(noise_ims, np.round(angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/only_trans/sino.dcm')
-    save_dcm(ims, np.round(noise_angles, 2), sids, sods, get_path(), prefix+'/gen_dataset/only_angle/sino.dcm')
-
-if __name__ == "__main__":
-    create()
+    return ims_gained, ims_ungained, mas, kvs, angles, coord_systems, sids, sods
