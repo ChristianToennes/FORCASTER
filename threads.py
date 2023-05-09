@@ -19,22 +19,6 @@ def it_func(con, Ax_params, Ax_params_big, log_queue, ready, name, shm_meta):
         del Ax_params
         del Ax_params_big
         est_data, shms = utils.from_shm(shm_meta)
-        #cur0 = np.zeros((3, 3), dtype=float)
-        #cur0[1,0] = 1
-        #cur0[2,1] = 1
-        #est_data = cal.simulate_est_data(cur0, Ax)
-        #est_data_ser = [None, None]
-        #est_data = [None, None]
-        #shm1 = mp_shm.SharedMemory(est_data_name+"_0")
-        #est_data[0] = shm1.buf
-        #est_data_ser[0] = pickle.loads(shm.buf)
-        #shm2 = mp_shm.SharedMemory(est_data_name+"_1")
-        #est_data[1] = shm2.buf
-        #est_data_ser[1] = pickle.loads(shm.buf)
-        #with open(est_data_name, "rb") as f:
-        #    est_data_ser = pickle.load(f)
-        #    est_data = utils.unserialize_est_data(est_data_ser)
-        #    del est_data_ser
         con.send(("loaded",))
         while True:
             try:
@@ -90,6 +74,8 @@ def it_func(con, Ax_params, Ax_params_big, log_queue, ready, name, shm_meta):
             pass
         except BrokenPipeError:
             pass
+        for shm in shms:
+            shm.close()
         del shms
     except KeyboardInterrupt:
         exit()

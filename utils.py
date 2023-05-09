@@ -1255,11 +1255,6 @@ def from_shm(meta):
     
     return (pos, points, descs), shms
 
-def release_shm(meta):
-    for k in sorted(meta.keys()):
-        shm = sm.SharedMemory(k)
-        shm.unlink()
-
 def serialize_est_data(est_data):
     return est_data
 
@@ -1491,7 +1486,7 @@ def write_rec(geo, ims, filepath, out_rec_meta, mult=1):
     mask = create_circular_mask(rec.shape)
     rec = rec*mask
     del mask
-    write_images(toHU(rec), filepath, mult)
+    write_images(toHU(rec), filepath, out_rec_meta, mult)
     return
 
     rec = utils.SIRT_astra(out_shape, geo, np.swapaxes(ims, 0,1), 500)
@@ -1499,14 +1494,14 @@ def write_rec(geo, ims, filepath, out_rec_meta, mult=1):
     mask = create_circular_mask(rec.shape)
     rec = rec*mask
     del mask
-    write_images(utils.toHU(rec), filepath.rsplit('.', maxsplit=1)[0]+"_sirt."+filepath.rsplit('.', maxsplit=1)[1], mult)
+    write_images(utils.toHU(rec), filepath.rsplit('.', maxsplit=1)[0]+"_sirt."+filepath.rsplit('.', maxsplit=1)[1], out_rec_meta, mult)
 
     rec = utils.CGLS_astra(out_shape, geo, np.swapaxes(ims, 0,1), 50)
     #mask = np.zeros(rec.shape, dtype=bool)
     mask = create_circular_mask(rec.shape)
     rec = rec*mask
     del mask
-    write_images(utils.toHU(rec), filepath.rsplit('.', maxsplit=1)[0]+"_cgls."+filepath.rsplit('.', maxsplit=1)[1], mult)
+    write_images(utils.toHU(rec), filepath.rsplit('.', maxsplit=1)[0]+"_cgls."+filepath.rsplit('.', maxsplit=1)[1], out_rec_meta, mult)
 
 def write_images(rec, filepath, out_rec_meta, mult=1):
     rec = sitk.GetImageFromArray(rec)#*100

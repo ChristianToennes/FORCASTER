@@ -11,6 +11,7 @@ import load_data
 from config import *
 import multiprocessing as mp
 import threads
+import est_position
 
 def reg_rough(ims, ims_big, params, config, c=0):
     corrs = [None]*len(params)
@@ -441,7 +442,7 @@ def reg_real_data():
                 cur0 = np.zeros((3, 3), dtype=float)
                 cur0[1,0] = 1
                 cur0[2,1] = 1
-                est_data = cal.simulate_est_data(cur0, Ax)
+                est_data = est_position.simulate_est_data(cur0, Ax)
                 with open(config["data_dump_path"], "wb") as f:
                     pickle.dump(est_data, f)
                 #est_data = utils.unserialize_est_data(config["est_data_ser"])
@@ -470,7 +471,11 @@ def reg_real_data():
                 #print((vecs[0,0:3]+(sods/sids)*(vecs[0,3:6]-vecs[0,0:3])) /image_spacing)
                 #exit()
             
-            utils.release_shm(meta)
+            for shm in config["shms"]:
+                shm.unlink()
+                shm.close()
+            del shms
+            del config["shms"]
         except Exception as e:
             print(name, "cali failed", e)
             raise
