@@ -247,9 +247,9 @@ def reg_and_reco(ims_big, ims, in_params, config):
         reg_geo = Ax_big.create_geo(corrs)
         mult = 1
         utils.write_rec(reg_geo, ims_big, os.path.join(outpath, "forcast_"+name+("_est_" if config["estimate"] else "")+"_reco-output.nrrd"), out_rec_meta, mult)
-        reg_geo = Ax.create_geo(corrs)
-        mult = 1
-        utils.write_rec(reg_geo, ims, os.path.join(outpath, "forcast_"+name+("_est_" if config["estimate"] else "")+"_reco-output-small.nrrd"), out_rec_meta, mult)
+        #reg_geo = Ax.create_geo(corrs)
+        #mult = 1
+        #utils.write_rec(reg_geo, ims, os.path.join(outpath, "forcast_"+name+("_est_" if config["estimate"] else "")+"_reco-output-small.nrrd"), out_rec_meta, mult)
         
 
     return vecs, corrs

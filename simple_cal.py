@@ -46,13 +46,16 @@ def correctXY(in_cur, config):
                 break
     return cur
 
-def correctZ(in_cur, config):
+def correctZ(in_cur, in_config):
+    config = dict(in_config)
     #print("z", end=" ")
     cur = np.array(in_cur)
 
     data_real = config["data_real"]
     real_img = config["real_img"]
     Ax = config["Ax"]
+    config["mean"] = False
+    config["lowe_ratio"] = 0.7
 
     points_real, features_real = data_real
     real_img = Projection_Preprocessing(real_img)
@@ -64,10 +67,10 @@ def correctZ(in_cur, config):
         points,v = trackFeatures(projs[:,0], data_real, config)
         valid = v==1
     
-        dist_new = np.sqrt(np.sum((points[valid]-points[valid])**2, axis=1))
-        dist_real = np.sqrt(np.sum((points_real[valid]-points_real[valid])**2, axis=1))
-        #dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points[valid] for r in points[valid]])
-        #dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real[valid] for r in points_real[valid]])
+        #dist_new = np.sqrt(np.sum((points[valid]-points[valid])**2, axis=1))
+        #dist_real = np.sqrt(np.sum((points_real[valid]-points_real[valid])**2, axis=1))
+        dist_new = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points[valid] for r in points[valid]])
+        dist_real = np.array([ np.sqrt((n[0]-r[0])**2 + (n[1]-r[1])**2) for n in points_real[valid] for r in points_real[valid]])
         if np.count_nonzero(dist_new) > 5:
             if "mean" in config and config["mean"]:
                 scale = Ax.distance_source_origin*(np.mean(dist_real[dist_new!=0]/dist_new[dist_new!=0])-1)
@@ -83,7 +86,7 @@ def correctZ(in_cur, config):
                 #print(dist_new[dist_new!=0].shape, np.min(dist_new[dist_new!=0]), np.min(np.abs(dist_new[dist_new!=0])))
                 #raise Exception("z change to large")
                 return np.array(in_cur)
-            if (np.abs(scale*zdir)<0.1).all():
+            if False and (np.abs(scale*zdir)<0.1).all():
                 break
         else:
             cur = np.array(in_cur)

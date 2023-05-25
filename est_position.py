@@ -63,7 +63,7 @@ def est_position(in_cur, Ax, real_imgs, est_data):
             for j in range(0, sdim, 4):
                 for k in range(0, tdim, 1):
                     idx = k*pdim*sdim+i*sdim+j
-                    (p,v) = matchFeatures(data_real, (points[idx], descs[idx]), config={"lowe_ratio": 0.8})
+                    (p,v) = matchFeatures(data_real, (points[idx], descs[idx]), config={"lowe_ratio": 0.78}) # sin: 0.78 arc: 0.76
                     valid = np.count_nonzero(v==1)
                     no_valid.append(valid)
                     indexes.append((i,j,k))
@@ -84,7 +84,7 @@ def est_position(in_cur, Ax, real_imgs, est_data):
                         if k<0 or k>=tdim: continue
                         indexes2.add((i,j,k))
         for (i,j,k) in indexes2:
-            (p,v) = matchFeatures(data_real, (points[k*sdim*pdim+i*sdim+j], descs[k*sdim*pdim+i*sdim+j]), config={"lowe_ratio": 0.7})
+            (p,v) = matchFeatures(data_real, (points[k*sdim*pdim+i*sdim+j], descs[k*sdim*pdim+i*sdim+j]), config={"lowe_ratio": 0.75}) # sin: 0.75
             valid = np.count_nonzero(v==1)
             if vmax == 0 or valid > vmax:
                 vmax = valid

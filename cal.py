@@ -35,7 +35,7 @@ def linsearch(in_cur, axis, config):
     if "both" in config:
         both = config["both"]
 
-    objectives = {0:-5, 1:-5, 2:-5}
+    objectives = {0:-6, 1:-6, 2:-6}
     if "objectives" in config:
         objectives = config["objectives"]
 
@@ -46,7 +46,6 @@ def linsearch(in_cur, axis, config):
 
     if my:
         points_real, features_real = data_real
-        points_real = normalize_points(points_real, real_img)
         real_img = Projection_Preprocessing(real_img)
     else:
         config["GIoldold"] = [None]# = GI(real_img, real_img)
@@ -77,8 +76,8 @@ def linsearch(in_cur, axis, config):
         points = []
         valid = []
         valid2 = []
-        for (p,v), proj in [(trackFeatures(projs[:,i], data_real, config), projs[:,i]) for i in range(projs.shape[1])]:
-            points.append(normalize_points(p, proj))
+        for (p,v) in (trackFeatures(projs[:,i], data_real, config) for i in range(projs.shape[1])):
+            points.append(p)
             valid.append(v==1)
         combined_valid = valid[0]
         for v in valid:
@@ -511,6 +510,8 @@ def roughRegistration(in_cur, reg_config, c):
         config["data_real"] = findInitialFeatures(real_img, config)
         
     est_data = config["est_data"]
+
+    grad_widths = [(6,11),(5,11),(4,11),(3,9),(2,9),(1,9)]
 
     if c==3: # 3
         config["it"] = 1
@@ -1170,7 +1171,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
 
-        config["it"] = 1
+        config["it"] = 3
         cur = correctFlip(cur, config)
         cur = correctZ(cur, config)
         cur2 = np.array(cur)
@@ -1236,8 +1237,9 @@ def roughRegistration(in_cur, reg_config, c):
     elif c==62:
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
-        config["my"] = False
+        config["my"] = True
         config["name"] = "62 QUT-AF ngi " + config["name"]
+        config["lowe_ratio"] = 0.75
 
         cur0 = np.zeros((3, 3), dtype=float)
         cur0[1,0] = 1
@@ -1295,12 +1297,12 @@ def roughRegistration(in_cur, reg_config, c):
 
         config["it"] = 3
         config["both"] = True
-        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+        for grad_width in grad_widths:
             res["nit"] += 1
             res["nfev"] += grad_width[1] * 2 * 3
             res["njev"] += 3
             config["grad_width"]=grad_width
-            _cur, d2 = linsearch(cur, 2, config)
+            #_cur, d2 = linsearch(cur, 2, config)
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
             cur = applyRot(cur, d0, d1, 0)
@@ -1308,7 +1310,7 @@ def roughRegistration(in_cur, reg_config, c):
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
-            #cur = correctRotZ(cur, config)
+            cur = correctRotZ(cur, config)
             log_error(cur, config)
         
         config["it"] = 3
@@ -1326,6 +1328,7 @@ def roughRegistration(in_cur, reg_config, c):
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
         config["name"] = "62.5 QUT-AF my " + config["name"]
+        config["my"] = True
 
         cur0 = np.zeros((3, 3), dtype=float)
         cur0[1,0] = 1
@@ -1339,7 +1342,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
 
-        config["it"] = 1
+        config["it"] = 3
         cur = correctFlip(cur, config)
         cur = correctZ(cur, config)
         cur2 = np.array(cur)
@@ -1363,11 +1366,11 @@ def roughRegistration(in_cur, reg_config, c):
         cur = correctXY(cur, config)
         log_error(cur, config)
 
-        config["it"] = 2
+        config["it"] = 3
         config["both"] = True
         config["objectives"] = {0: -6, 1: -6, 2: -6}
         config["use_combined"] = True
-        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+        for grad_width in grad_widths:
             res["nit"] += 1
             res["nfev"] += grad_width[1] * 2 * 3
             res["njev"] += 3
@@ -1447,7 +1450,98 @@ def roughRegistration(in_cur, reg_config, c):
     elif c==63:
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
-        config["name"] = "63 QUT-AF my " + config["name"]
+        config["my"] = False
+        config["name"] = "62 QUT-AF ngi " + config["name"]
+        config["lowe_ratio"] = 0.75
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        #if("est_data" in config):
+        #    est_data = config["est_data"]
+        #else:
+        #    est_data = simulate_est_data(cur0, Ax)
+        #    config["est_data"] = est_data
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+        #print("e", cur)
+
+        config["it"] = 3
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        cur = correctZ(cur, config)
+        cur = correctRotZ(cur, config)
+        #print("f", cur)
+        log_error(cur, config)
+        cur2 = np.array(cur)
+        for i in range(1):
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            #print("z", cur)
+            cur2 = np.array(cur)
+            try:
+                cur = correctRotZ(cur, config)
+                #print("rz", cur)
+                log_error(cur, config)
+            except Exception as e:
+                print(e)
+                cur = cur2
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+
+        #config["Ax"] = config["Ax_big"]
+        #config["real_img"] = config["real_img_big"]
+
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        log_error(cur, config)
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+
+        config["it"] = 3
+        config["both"] = True
+        for grad_width in grad_widths:
+            res["nit"] += 1
+            res["nfev"] += grad_width[1] * 2 * 3
+            res["njev"] += 3
+            config["grad_width"]=grad_width
+            _cur, d2 = linsearch(cur, 2, config)
+            _cur, d0 = linsearch(cur, 0, config)
+            _cur, d1 = linsearch(cur, 1, config)
+            cur = applyRot(cur, d0, d1, d2)
+            log_error(cur, config)
+            cur = correctXY(cur, config)
+            cur = correctZ(cur, config)
+            cur = correctXY(cur, config)
+            #cur = correctRotZ(cur, config)
+            log_error(cur, config)
+        
+        config["it"] = 3
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        #cur = correctRotZ(cur, config)
+        #log_error(cur, config)
+        ml("62 EST-QUT-AF ngi", starttime, res)
+
+    elif c==63.5:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "62.5 QUT-AF my " + config["name"]
+
         cur0 = np.zeros((3, 3), dtype=float)
         cur0[1,0] = 1
         cur0[2,1] = 1
@@ -1460,25 +1554,35 @@ def roughRegistration(in_cur, reg_config, c):
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
 
-        config["it"] = 2
+        config["it"] = 3
+        cur = correctFlip(cur, config)
+        cur = correctZ(cur, config)
+        cur2 = np.array(cur)
+        try:
+            cur = correctRotZ(cur, config)
+            #print("rz", cur)
+            log_error(cur, config)
+        except Exception as e:
+            print(e)
+            cur = cur2
+        cur = correctXY(cur, config)
+
         log_error(cur, config)
         cur = correctFlip(cur, config)
+        config["it"] = 3
         log_error(cur, config)
-        for i in range(2):
-            cur = correctXY(cur, config)
-            log_error(cur, config)
-            cur = correctZ(cur, config)
-            log_error(cur, config)
-            cur = correctXY(cur, config)
-            log_error(cur, config)
-            cur = correctRotZ(cur, config)
-            log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
+        cur = correctZ(cur, config)
+        log_error(cur, config)
+        cur = correctXY(cur, config)
+        log_error(cur, config)
 
-        config["it"] = 1
+        config["it"] = 3
         config["both"] = True
         config["objectives"] = {0: -6, 1: -6, 2: -6}
         config["use_combined"] = True
-        for grad_width in [(2,9),(1.5,9), (1,9), (0.5,9), (0.25,9), (0.1,9)]:
+        for grad_width in grad_widths:
             res["nit"] += 1
             res["nfev"] += grad_width[1] * 2 * 3
             res["njev"] += 3
@@ -1487,11 +1591,18 @@ def roughRegistration(in_cur, reg_config, c):
             _cur, d0 = linsearch(cur, 0, config)
             _cur, d1 = linsearch(cur, 1, config)
             cur = applyRot(cur, d0, d1, 0)
+            cur2 = np.array(cur)
+            try:
+                cur = correctRotZ(cur, config)
+                #print("rz", cur)
+                log_error(cur, config)
+            except Exception as e:
+                print(e)
+                cur = cur2
             log_error(cur, config)
             cur = correctXY(cur, config)
             cur = correctZ(cur, config)
             cur = correctXY(cur, config)
-            cur = correctRotZ(cur, config)
             log_error(cur, config)
         
         config["it"] = 3
@@ -1501,9 +1612,8 @@ def roughRegistration(in_cur, reg_config, c):
         log_error(cur, config)
         cur = correctXY(cur, config)
         log_error(cur, config)
-        cur = correctRotZ(cur, config)
-        log_error(cur, config)
-        ml("63 EST-QUT-AF my", starttime, res)
+
+        ml("62.5 EST-QUT-AF my", starttime, res)
 
     elif c==630:
         starttime = time.perf_counter()
@@ -1809,6 +1919,56 @@ def roughRegistration(in_cur, reg_config, c):
     elif c==70:
         starttime = time.perf_counter()
         res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
+        config["name"] = "61 QUT-AF my " + config["name"]
+
+        cur0 = np.zeros((3, 3), dtype=float)
+        cur0[1,0] = 1
+        cur0[2,1] = 1
+
+        cur, _rots = est_position(cur0, Ax, [real_img], est_data)
+        cur = cur[0]
+        
+        config["it"] = 3
+        log_error(cur, config)
+        cur = correctFlip(cur, config)
+        cur = correctZ(cur, config)
+        cur2 = np.array(cur)
+        try:
+            cur = correctRotZ(cur, config)
+            #print("rz", cur)
+            log_error(cur, config)
+        except Exception as e:
+            print(e)
+            cur = cur2
+        #print("f", cur)
+        log_error(cur, config)
+        cur2 = np.array(cur)
+        for i in range(1):
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+            cur = correctZ(cur, config)
+            #print("z", cur)
+            log_error(cur, config)
+            cur2 = np.array(cur)
+            try:
+                cur = correctRotZ(cur, config)
+                #print("rz", cur)
+                log_error(cur, config)
+            except Exception as e:
+                print(e)
+                cur = cur2
+            cur = correctXY(cur, config)
+            #print("xy", cur)
+            log_error(cur, config)
+        
+        cur = cal_bfgs_both.bfgs(cur, config, -70)
+
+        ml("61 EST-QUT-AF my", starttime, res)
+
+    elif c==70.5:
+        starttime = time.perf_counter()
+        res = {"success": True, "nit": 0, "nfev": 0, "njev": 0, "nhev": 0}
         config["name"] = "70 EST-QUT-AF my" + config["name"]
 
         cur0 = np.zeros((3, 3), dtype=float)
@@ -1825,7 +1985,7 @@ def roughRegistration(in_cur, reg_config, c):
         cur, _rots = est_position(cur0, Ax, [real_img], est_data)
         cur = cur[0]
 
-        config["it"] = 1
+        config["it"] = 3
         cur = correctFlip(cur, config)
         cur = correctZ(cur, config)
         cur2 = np.array(cur)
