@@ -174,7 +174,9 @@ def read_dicoms(indir, max_ims=np.inf):
                 NumberOfFrames = ds.NumberOfFrames
                 if len(ims) == 0:
                     #ims = ds.pixel_array[54:]
-                    ims = ds.pixel_array[3:370]
+                    #ims = ds.pixel_array[3:370]
+                    ims = ds.pixel_array[3:669:2]
+                    #ims = ds.pixel_array[3:40]
                     NumberOfFrames = len(ims)
                 else:
                     ims = np.vstack([ims, ds.pixel_array])
