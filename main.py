@@ -11,6 +11,7 @@ import load_data
 from config import *
 import multiprocessing as mp
 import threads
+from evaluate import evalAllResults
 
 def reg_rough(ims, ims_big, params, config, c=0):
     corrs = [None]*len(params)

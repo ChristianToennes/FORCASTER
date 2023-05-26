@@ -15,7 +15,7 @@ import load_data
 import utils
 import config
 
-margin=50
+margin=0
 
 def evalNeedleArea(img, img2, projname, name):
     if False and projname in ("genA", "201020"):
@@ -383,7 +383,7 @@ def evalSinoResults(out_path, in_path, projname, methods=None):
             #evalPerformance(np.swapaxes(proj, 0, 1), ims, 5, name, 'stats_proj.csv')
             #evalPerformance(np.swapaxes(proj, 0, 1), ims2, 5, name+"sim", 'stats_proj.csv')
             #evalPerformance(np.swapaxes(proj, 0, 1), ims3, 0, name+"i0", 'stats_proj.csv')
-            #evalPerformance(np.swapaxes(proj, 0, 1), np.swapaxes(target,0,1), 0, name+"proj", 'stats_proj.csv')
+            evalPerformance(np.swapaxes(proj, 0, 1), np.swapaxes(target,0,1), 0, name+"proj", 'stats_proj.csv')
             #evalPerformance(Projection_Preprocessing(np.swapaxes(proj, 0, 1)), Projection_Preprocessing(ims), 0, name+"pre", 'stats_proj.csv')
         except Exception as e:
             print(e)
@@ -440,42 +440,42 @@ def evalRecoResults(out_path, in_path, projname, methods=None):
     def reco_data():
         input_sino = False
         for filename in os.listdir(out_path):
-            if re.fullmatch("forcast_matlab_(.+?)_reco-output.nrrd", filename) != None and projname in filename and int(filename.split("_")[-2]) in methods:
+            if re.fullmatch("forcast_matlab_(.+?)_reco-output.nrrd", filename) != None and projname in filename and float(filename.split("_")[-2]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[2:]))
                 yield "_".join(filename.split('_')[2:]), proj, filename
-            elif re.fullmatch("forcast_matlab_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename and int(filename.split("_")[-3]) in methods:
+            elif re.fullmatch("forcast_matlab_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename and float(filename.split("_")[-3]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[2:]))
                 yield "_".join(filename.split('_')[2:]), proj, filename
-            elif re.fullmatch("forcast_matlab_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename and int(filename.split("_")[-3]) in methods:
+            elif re.fullmatch("forcast_matlab_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename and float(filename.split("_")[-3]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[2:]))
                 yield "_".join(filename.split('_')[2:]), proj, filename
-            elif re.fullmatch("forcast_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename and int(filename.split("_")[-3]) in methods:
+            elif re.fullmatch("forcast_(.+?)_reco-output_sirt.nrrd", filename) != None and projname in filename and float(filename.split("_")[-3]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[1:]))
                 yield "_".join(filename.split('_')[1:]), proj, filename
-            elif re.fullmatch("forcast_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename and int(filename.split("_")[-3]) in methods:
+            elif re.fullmatch("forcast_(.+?)_reco-output_cgls.nrrd", filename) != None and projname in filename and float(filename.split("_")[-3]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
                 #print(filename, proj.shape)
                 #names.append("_".join(filename.split('_')[1:]))
                 yield "_".join(filename.split('_')[1:]), proj, filename
-            elif re.fullmatch("forcast_(.+?)_reco-output.nrrd", filename) != None and projname in filename and int(filename.split("_")[-2]) in methods:
+            elif re.fullmatch("forcast_(.+?)_reco-output.nrrd", filename) != None and projname in filename and float(filename.split("_")[-2]) in methods:
                 img = sitk.ReadImage(os.path.join(out_path, filename))
                 proj = sitk.GetArrayFromImage(img)
                 #projs.append(proj)
