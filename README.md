@@ -1,6 +1,8 @@
 # FORCASTER
 Source code for the FORCASTER and FORCASTEST algorithm.
 
+Data is available at: https://doi.org/10.11588/data/GIWRQA
+
 Also includes as a reference algorithm a CMA-ES minimizer using the NGI objective function.
 
 The config file contains the function get_proj_paths which generates a list with tuples that contain a name, the path to the dicom files that should be calibrated, the path to dicom files with the prior image, and then a list with the calibration algorithms.
