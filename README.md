@@ -1,6 +1,10 @@
 # FORCASTER
 Source code for the FORCASTER and FORCASTEST algorithm.
 
+If you use our algorithm in your research please cite:
+
+Tönnes, C.; Zöllner, F.G. Feature-Oriented CBCT Self-Calibration Parameter Estimator for Arbitrary Trajectories: FORCAST-EST. Appl. Sci. 2023, 13, 9179. https://doi.org/10.3390/app13169179
+
 Data is available at: https://doi.org/10.11588/data/GIWRQA
 
 Also includes as a reference algorithm a CMA-ES minimizer using the NGI objective function.
